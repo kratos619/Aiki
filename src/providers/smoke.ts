@@ -19,9 +19,6 @@ export async function smokeTest(
 ): Promise<Smoke> {
   const adapter = ADAPTERS[id];
   const n = nonce();
-  if (!adapter) {
-    return { ok: false, nonce: n, durationMs: 0, detail: 'adapter not implemented yet' };
-  }
   const prompt = `Reply with ONLY this JSON and nothing else: {"ok": true, "echo": "${n}"}`;
   const res = await adapter.run(
     { prompt, cwd: process.cwd(), timeoutMs: SMOKE_TIMEOUT_MS, expectJson: true, readOnly: true },

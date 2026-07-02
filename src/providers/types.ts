@@ -8,6 +8,18 @@ export type ProviderId = 'claude' | 'codex' | 'agy';
 
 export const PROVIDER_IDS: readonly ProviderId[] = ['claude', 'codex', 'agy'];
 
+/**
+ * User-facing display names. Internally (ids, artifacts, meta.json, logs) we always use the
+ * true id — `agy` — for audit accuracy. The UI shows the familiar model name instead: users
+ * know "Gemini", not the Antigravity binary. Command/binary references (e.g. "run `agy`") must
+ * still use the real id.
+ */
+export const DISPLAY_NAME: Record<ProviderId, string> = {
+  claude: 'Claude',
+  codex: 'Codex',
+  agy: 'Gemini',
+};
+
 /** Result of a raw metadata invocation (detection/probe). The seam T1 tests mock. */
 export interface RunResult {
   code: number | null;

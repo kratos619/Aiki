@@ -1,4 +1,4 @@
-import { PROVIDER_IDS, type Detection, type FlagProfile, type ProviderId, type ReadOnlyFlag, type Smoke } from '../providers/types.js';
+import { DISPLAY_NAME, PROVIDER_IDS, type Detection, type FlagProfile, type ProviderId, type ReadOnlyFlag, type Smoke } from '../providers/types.js';
 import { detect } from '../providers/detect.js';
 import { probeFlags } from '../providers/probe.js';
 import { smokeTest } from '../providers/smoke.js';
@@ -85,7 +85,7 @@ function renderRow(row: Row, runSmoke: boolean): string {
   const json = flags ? (flags.jsonOutput ? 'yes' : 'no') : '—';
   const ro = flags ? READONLY_LABEL[flags.readOnlyFlag] : '—';
   const smokeCell = renderSmoke(det.status === 'READY', runSmoke, smoke);
-  return `  ${pad(det.id, 10)}${pad(version, 11)}${pad(status, 15)}${pad(json, 6)}${pad(ro, 11)}${pad(smokeCell, 14)}${ROLE_LABEL[det.id]}`;
+  return `  ${pad(DISPLAY_NAME[det.id], 10)}${pad(version, 11)}${pad(status, 15)}${pad(json, 6)}${pad(ro, 11)}${pad(smokeCell, 14)}${ROLE_LABEL[det.id]}`;
 }
 
 function renderSmoke(detected: boolean, runSmoke: boolean, smoke?: Smoke): string {
@@ -97,7 +97,9 @@ function renderSmoke(detected: boolean, runSmoke: boolean, smoke?: Smoke): strin
 
 function fixLines(row: Row): string[] {
   const { det, smoke } = row;
-  if (det.status !== 'READY' && det.hint) return [`  ${det.id}: ${det.hint}`];
+  const name = DISPLAY_NAME[det.id];
+  // Fixes are user-facing (show display name) but reference the real binary for commands.
+  if (det.status !== 'READY' && det.hint) return [`  ${name}: ${det.hint}`];
   if (smoke && !smoke.ok) {
     const fix =
       smoke.error === 'AUTH'
@@ -105,7 +107,7 @@ function fixLines(row: Row): string[] {
         : smoke.error === 'QUOTA'
           ? 'provider quota/rate limited — retry later'
           : (smoke.detail ?? 'smoke failed');
-    return [`  ${det.id}: ${fix}`];
+    return [`  ${name}: ${fix}`];
   }
   return [];
 }

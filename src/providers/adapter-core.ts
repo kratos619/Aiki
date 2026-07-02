@@ -15,15 +15,21 @@ export function filterEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.Process
 const AUTH_RE = /\b(login|log in|unauthorized|expired|authenticat|not authenticated|ineligible|unsupported client|no longer supported|sign in|please run)\b/i;
 const QUOTA_RE = /\b(rate limit|quota|429|resource[_ ]exhausted|too many requests|usage limit|out of)\b/i;
 
-/** Map a raw process result to a ProviderError, or 'OK' (§7.2 taxonomy). Order is deliberate. */
+/**
+ * Map a raw process result to a ProviderError, or 'OK' (§7.2 taxonomy). Order is deliberate.
+ * Exit 0 short-circuits to OK — we do NOT scan stderr on success. Some CLIs (codex) write a
+ * full session transcript (prompt + result) to stderr, so pattern-matching it on success would
+ * false-positive AUTH/QUOTA on innocent content. AUTH/QUOTA are failure modes: only relevant
+ * when the process did not exit cleanly.
+ */
 export function classify(raw: RawResult): ProviderError | 'OK' {
   if (raw.notFound) return 'NOT_FOUND';
   if (raw.timedOut) return 'TIMEOUT';
+  if (raw.code === 0) return 'OK';
   const err = raw.stderr ?? '';
   if (AUTH_RE.test(err)) return 'AUTH';
   if (QUOTA_RE.test(err)) return 'QUOTA';
-  if (raw.code !== 0) return 'CRASH';
-  return 'OK';
+  return 'CRASH';
 }
 
 function tryParse(s: string): unknown | undefined {

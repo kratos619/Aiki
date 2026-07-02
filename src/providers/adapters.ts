@@ -1,9 +1,11 @@
 import type { Adapter, ProviderId } from './types.js';
 import { claude } from './claude.js';
+import { codex } from './codex.js';
 import { agy } from './agy.js';
 
-/** Adapters with a working run(). codex is added in T3 (parsing quarantined in codex.ts). */
-export const ADAPTERS: Partial<Record<ProviderId, Adapter>> = {
+/** All provider adapters with a working run(). */
+export const ADAPTERS: Record<ProviderId, Adapter> = {
   claude,
+  codex,
   agy,
 };

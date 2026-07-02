@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { classify, extractJson, filterEnv } from '../src/providers/adapter-core.js';
 import { claude } from '../src/providers/claude.js';
 import { agy } from '../src/providers/agy.js';
+import { codex } from '../src/providers/codex.js';
 import type { FlagProfile, RawResult, RunRequest, SpawnCaptureFn } from '../src/providers/types.js';
 
 const raw = (o: Partial<RawResult>): RawResult => ({
@@ -55,6 +56,9 @@ describe('classify', () => {
   it('QUOTA on rate-limit stderr', () => expect(classify(raw({ code: 1, stderr: 'HTTP 429 rate limit exceeded' }))).toBe('QUOTA'));
   it('CRASH on nonzero exit with generic stderr', () => expect(classify(raw({ code: 2, stderr: 'segfault' }))).toBe('CRASH'));
   it('OK on clean exit', () => expect(classify(raw({ code: 0 }))).toBe('OK'));
+  it('OK on clean exit even when stderr transcript contains auth/quota words (codex case)', () =>
+    // codex mirrors prompt+result to stderr; a successful run must not be misread as AUTH/QUOTA.
+    expect(classify(raw({ code: 0, stderr: 'user\nplease login and check the rate limit quota\ncodex\n{"ok":true}' }))).toBe('OK'));
 });
 
 describe('extractJson (§14)', () => {
@@ -102,6 +106,24 @@ describe('agy adapter', () => {
     expect(res.ok).toBe(true);
     if (res.ok) expect(res.json).toEqual({ ok: true, echo: 'z' });
     expect(calls[0]!.args).toEqual(['-p', 'hi', '--sandbox']);
+  });
+});
+
+describe('codex adapter', () => {
+  const CODEX_FLAGS: FlagProfile = { id: 'codex', jsonOutput: true, readOnlyFlag: 'sandbox' };
+
+  it('builds `exec -s read-only <prompt>`; parses clean stdout', async () => {
+    const { fn, calls } = scriptedSpawn([raw({ stdout: '{"ok":true,"echo":"c"}' })]);
+    const res = await codex.run(req(), CODEX_FLAGS, { spawn: fn });
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.json).toEqual({ ok: true, echo: 'c' });
+    expect(calls[0]!.args).toEqual(['exec', '-s', 'read-only', 'hi']);
+  });
+
+  it('succeeds despite auth-looking words in the stderr transcript', async () => {
+    const { fn } = scriptedSpawn([raw({ code: 0, stdout: '{"ok":true}', stderr: 'user: please login\ncodex\n{"ok":true}' })]);
+    const res = await codex.run(req(), CODEX_FLAGS, { spawn: fn });
+    expect(res.ok).toBe(true);
   });
 });
 

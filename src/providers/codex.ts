@@ -1,0 +1,35 @@
+import type { Adapter, AdapterSpec, FlagProfile, RunRequest } from './types.js';
+import { runAdapter } from './adapter-core.js';
+
+/**
+ * Codex CLI (`codex`). Invocation (verified live, T3):
+ *   codex exec [-s read-only] "<prompt>"   (cwd set via spawn's cwd option)
+ *
+ * Output split (verified): stdout carries ONLY the model's final message; the full session
+ * transcript (session id, echoed prompt, "tokens used") goes to stderr. So stdout *is* the
+ * result text → §14 extraction parses it directly, no envelope. (We deliberately avoid
+ * `--json` JSONL: plain stdout is already clean and needs no event-stream parsing.)
+ *
+ * Because codex mirrors the prompt + result into stderr, error classification must not scan
+ * stderr on success — adapter-core.classify short-circuits on exit 0 for exactly this reason.
+ *
+ * T10 note: `codex exec` may need a git-repo/writable-cwd check for arbitrary review dirs;
+ * verify when wiring code-review. NEVER pass --dangerously-bypass-approvals-and-sandbox (§19).
+ */
+const codexSpec: AdapterSpec = {
+  id: 'codex',
+  buildArgs(req: RunRequest, flags: FlagProfile): string[] {
+    const args = ['exec'];
+    if (req.readOnly !== false && flags.readOnlyFlag === 'sandbox') args.push('-s', 'read-only');
+    args.push(req.prompt);
+    return args;
+  },
+  extractText(stdout: string): string {
+    return stdout; // clean final message; §14 extraction handles whole/fenced/balanced JSON
+  },
+};
+
+export const codex: Adapter = {
+  id: 'codex',
+  run: (req, flags, deps) => runAdapter(codexSpec, req, flags, deps),
+};
