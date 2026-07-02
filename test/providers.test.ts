@@ -39,9 +39,9 @@ describe('parseFlagProfile', () => {
     const p = parseFlagProfile('codex', '-s, --sandbox <MODE>\n--json');
     expect(p).toEqual({ id: 'codex', jsonOutput: true, readOnlyFlag: 'sandbox' });
   });
-  it('gemini: --approval-mode → approval-plan; -o/--output-format → json', () => {
-    const p = parseFlagProfile('gemini', '--approval-mode\n-o, --output-format');
-    expect(p).toEqual({ id: 'gemini', jsonOutput: true, readOnlyFlag: 'approval-plan' });
+  it('agy: --sandbox → sandbox; no json flag → jsonOutput false', () => {
+    const p = parseFlagProfile('agy', '--sandbox   Run in a sandbox\n--print');
+    expect(p).toEqual({ id: 'agy', jsonOutput: false, readOnlyFlag: 'sandbox' });
   });
   it('reports none/false when flags absent (truncated/drift)', () => {
     expect(parseFlagProfile('claude', 'partial help').readOnlyFlag).toBe('none');
@@ -51,8 +51,8 @@ describe('parseFlagProfile', () => {
 
 describe('probeFlags', () => {
   it('routes captured help through parseFlagProfile', async () => {
-    const p = await probeFlags('gemini', async () => '--approval-mode\n--output-format');
-    expect(p.readOnlyFlag).toBe('approval-plan');
-    expect(p.jsonOutput).toBe(true);
+    const p = await probeFlags('agy', async () => '--sandbox\n--print');
+    expect(p.readOnlyFlag).toBe('sandbox');
+    expect(p.jsonOutput).toBe(false);
   });
 });

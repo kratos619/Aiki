@@ -1,54 +1,67 @@
-import { PROVIDER_IDS, type Detection, type FlagProfile, type ProviderId, type ReadOnlyFlag } from '../providers/types.js';
+import { PROVIDER_IDS, type Detection, type FlagProfile, type ProviderId, type ReadOnlyFlag, type Smoke } from '../providers/types.js';
 import { detect } from '../providers/detect.js';
 import { probeFlags } from '../providers/probe.js';
+import { smokeTest } from '../providers/smoke.js';
 
 // Default role labels for the status panel (§4.1 / §10). Assignment logic is T5+.
+// NOTE: agy = Gemini 3.1 Pro (strong + metered), not the old cheap/free gemini — §10 role
+// rationale should be revisited at T5.
 const ROLE_LABEL: Record<ProviderId, string> = {
   claude: 'judge',
   codex: 'critic/verifier',
-  gemini: 'analyst/prompt-builder',
+  agy: 'analyst/prompt-builder',
 };
 
 const READONLY_LABEL: Record<ReadOnlyFlag, string> = {
   plan: 'plan',
-  sandbox: 'read-only',
-  'approval-plan': 'approval:plan',
+  sandbox: 'sandbox',
   none: '⚠ none',
 };
 
 const pad = (s: string, w: number) => s.padEnd(w);
 
+interface Row {
+  det: Detection;
+  flags?: FlagProfile;
+  smoke?: Smoke;
+}
+
 /**
- * `aiki doctor` — detection + flag probe, table output, actionable fixes.
- * T1: no smoke test yet (wired in T2). Exit 0 iff ≥2 providers ready (§5, §8 quorum).
+ * `aiki doctor` — detection + flag probe + (optional) smoke test, table output, actionable
+ * fixes. Exit 0 iff ≥2 providers are "ready" (§5, §8 quorum). With smoke on, ready = smoke
+ * passed; with --no-smoke, ready = detected.
  */
-export async function doctor(): Promise<number> {
-  const rows = await Promise.all(
-    PROVIDER_IDS.map(async (id) => {
+export async function doctor(opts: { smoke?: boolean } = {}): Promise<number> {
+  const runSmoke = opts.smoke !== false;
+
+  const rows: Row[] = await Promise.all(
+    PROVIDER_IDS.map(async (id): Promise<Row> => {
       const det = await detect(id);
-      const flags = det.status === 'READY' ? await probeFlags(id) : undefined;
-      return { det, flags };
+      if (det.status !== 'READY') return { det };
+      const flags = await probeFlags(id);
+      const smoke = runSmoke ? await smokeTest(id, flags) : undefined;
+      return { det, flags, smoke };
     }),
   );
 
   const lines: string[] = [];
   lines.push('');
-  lines.push('  aiki doctor — provider status (detection + flag probe; smoke test: T2)');
+  lines.push(`  aiki doctor — provider status${runSmoke ? '' : ' (smoke skipped)'}`);
   lines.push('');
-  lines.push(`  ${pad('PROVIDER', 10)}${pad('VERSION', 12)}${pad('STATUS', 16)}${pad('JSON', 6)}${pad('READ-ONLY', 15)}ROLE`);
-  lines.push(`  ${'─'.repeat(72)}`);
+  lines.push(`  ${pad('PROVIDER', 10)}${pad('VERSION', 11)}${pad('STATUS', 15)}${pad('JSON', 6)}${pad('READ-ONLY', 11)}${pad('SMOKE', 14)}ROLE`);
+  lines.push(`  ${'─'.repeat(82)}`);
 
   let ready = 0;
   const fixes: string[] = [];
 
-  for (const { det, flags } of rows) {
-    if (det.status === 'READY') ready++;
-    lines.push(renderRow(det, flags));
-    if (det.status !== 'READY' && det.hint) fixes.push(`  ${det.id}: ${det.hint}`);
+  for (const row of rows) {
+    lines.push(renderRow(row, runSmoke));
+    if (isReady(row, runSmoke)) ready++;
+    fixes.push(...fixLines(row));
   }
 
   lines.push('');
-  lines.push(`  ${ready}/3 providers detected. Engine minimum quorum: 2.`);
+  lines.push(`  ${ready}/3 providers ready. Engine minimum quorum: 2.`);
   if (fixes.length) {
     lines.push('');
     lines.push('  Fixes:');
@@ -60,10 +73,39 @@ export async function doctor(): Promise<number> {
   return ready >= 2 ? 0 : 1;
 }
 
-function renderRow(det: Detection, flags: FlagProfile | undefined): string {
+function isReady(row: Row, runSmoke: boolean): boolean {
+  if (row.det.status !== 'READY') return false;
+  return runSmoke ? row.smoke?.ok === true : true;
+}
+
+function renderRow(row: Row, runSmoke: boolean): string {
+  const { det, flags, smoke } = row;
   const status = det.status === 'READY' ? '✔ ready' : '✖ NOT_INSTALLED';
   const version = det.version ?? '—';
   const json = flags ? (flags.jsonOutput ? 'yes' : 'no') : '—';
   const ro = flags ? READONLY_LABEL[flags.readOnlyFlag] : '—';
-  return `  ${pad(det.id, 10)}${pad(version, 12)}${pad(status, 16)}${pad(json, 6)}${pad(ro, 15)}${ROLE_LABEL[det.id]}`;
+  const smokeCell = renderSmoke(det.status === 'READY', runSmoke, smoke);
+  return `  ${pad(det.id, 10)}${pad(version, 11)}${pad(status, 15)}${pad(json, 6)}${pad(ro, 11)}${pad(smokeCell, 14)}${ROLE_LABEL[det.id]}`;
+}
+
+function renderSmoke(detected: boolean, runSmoke: boolean, smoke?: Smoke): string {
+  if (!detected || !runSmoke) return '—';
+  if (!smoke) return '—';
+  if (smoke.ok) return `✔ ${(smoke.durationMs / 1000).toFixed(1)}s`;
+  return `✖ ${smoke.error ?? 'FAIL'}`;
+}
+
+function fixLines(row: Row): string[] {
+  const { det, smoke } = row;
+  if (det.status !== 'READY' && det.hint) return [`  ${det.id}: ${det.hint}`];
+  if (smoke && !smoke.ok) {
+    const fix =
+      smoke.error === 'AUTH'
+        ? `run \`${det.id}\` once to log in`
+        : smoke.error === 'QUOTA'
+          ? 'provider quota/rate limited — retry later'
+          : (smoke.detail ?? 'smoke failed');
+    return [`  ${det.id}: ${fix}`];
+  }
+  return [];
 }

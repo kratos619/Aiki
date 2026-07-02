@@ -3,7 +3,10 @@ import { spawn } from 'node:child_process';
 import { openSync, closeSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { ProviderId, RunFn } from './types.js';
+import type { ProviderId, RunFn, SpawnCaptureFn } from './types.js';
+
+const STDERR_TAIL_CAP = 8000;
+let seq = 0;
 
 /**
  * Real process runner backing detection and flag probes (metadata calls only).
@@ -62,3 +65,74 @@ export function captureFull(id: ProviderId, bin: string, args: string[], timeout
     }
   });
 }
+
+/**
+ * Run a provider CLI and capture its full output for adapter run() (§7.2).
+ * - stdout → temp file via inherited fd (true redirect; avoids claude's 8KB pipe truncation).
+ * - stderr → pipe, kept as a tail (for error classification / stderrTail).
+ * - detached process group so a timeout kills the whole tree, not just the direct child.
+ * - env is supplied filtered by the caller (adapter-core strips /KEY|TOKEN|SECRET/i).
+ */
+export const spawnCapture: SpawnCaptureFn = (bin, args, { cwd, timeoutMs, env }) => {
+  const started = Date.now();
+  const outPath = join(tmpdir(), `aiki-run-${process.pid}-${seq++}.out`);
+  const fd = openSync(outPath, 'w');
+  return new Promise((resolve) => {
+    let stderr = '';
+    let timedOut = false;
+    let notFound = false;
+    let settled = false;
+
+    const child = spawn(bin, args, { cwd, env, detached: true, stdio: ['ignore', fd, 'pipe'] });
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      try {
+        if (child.pid) process.kill(-child.pid, 'SIGKILL'); // kill the process group
+      } catch {
+        try {
+          child.kill('SIGKILL');
+        } catch {
+          /* already gone */
+        }
+      }
+    }, timeoutMs);
+
+    const finish = (code: number | null, signal: NodeJS.Signals | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try {
+        closeSync(fd);
+      } catch {
+        /* already closed */
+      }
+      let stdout = '';
+      try {
+        stdout = readFileSync(outPath, 'utf8');
+      } catch {
+        /* empty */
+      }
+      rmSync(outPath, { force: true });
+      resolve({
+        code,
+        signal: signal ?? null,
+        stdout,
+        stderr: stderr.length > STDERR_TAIL_CAP ? stderr.slice(-STDERR_TAIL_CAP) : stderr,
+        timedOut,
+        notFound,
+        durationMs: Date.now() - started,
+      });
+    };
+
+    child.stderr?.on('data', (d: Buffer) => {
+      stderr += d.toString();
+      if (stderr.length > STDERR_TAIL_CAP * 2) stderr = stderr.slice(-STDERR_TAIL_CAP);
+    });
+    child.on('error', (e: NodeJS.ErrnoException) => {
+      notFound = e.code === 'ENOENT';
+      finish(null, null);
+    });
+    child.on('close', (code, signal) => finish(code, signal));
+  });
+};

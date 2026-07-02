@@ -3,6 +3,29 @@
 Records where an installed CLI's actual flags differ from the build plan §7.3 assumptions.
 Populated at build time by the flag probe (T1+).
 
+## ⚠ Provider migration (T2) — gemini → agy (Antigravity CLI)
+
+Google **discontinued the gemini CLI**; the free-tier `gemini` binary now fails every model
+call with `IneligibleTierError: ... no longer supported ... migrate to the Antigravity suite`.
+Google's supported replacement is the **Antigravity CLI (`agy`)**, authenticated on Google AI
+Pro, running **Gemini 3.1 Pro (High)**.
+
+**Decision:** the third provider is now `agy` (id renamed `gemini` → `agy` across the code).
+Wherever the plan says "gemini", it means `agy`.
+
+- **Invocation (verified live T2):** `agy -p "<prompt>" [--sandbox]`. Exit 0, clean stderr,
+  returns the model response as **raw text with no envelope** — the cleanest of the three for
+  JSON (`-p` output *is* the JSON we ask for → §14 whole-parse succeeds immediately).
+- **No JSON-output flag** (no `--output-format`/`-o json`). `jsonOutput: false`; rely on §14.
+- **Read-only:** `--sandbox` (boolean, "terminal restrictions"). Mapped to `readOnlyFlag:
+  'sandbox'`. **UNVERIFIED whether it blocks file writes** — verify at T10 (code-review) with
+  a prompt that attempts a write; if it doesn't block, fall back to a temp-copy cwd and record
+  the enforcement level in meta.json. NEVER pass `--dangerously-skip-permissions` (§19).
+- **Role rationale flip (revisit at T5, §10):** the plan chose gemini as the *cheap/free*
+  analyst to protect metered quotas. `agy` is Gemini 3.1 Pro — **strong + metered**. The §10
+  default role assignment (gemini = analyst/prompt-builder for high-frequency cheap calls) no
+  longer matches its cost profile. Re-evaluate judge/analyst assignment when building the engine.
+
 ## ⚠ Capture note (found T1) — claude truncates piped output at ~8KB
 
 `claude --help` emits ~15.7KB, but when its stdout is a **pipe** (execa's default capture,
@@ -25,5 +48,7 @@ redirect** (child's stdout inherits an open file descriptor) captures the full o
 | 2026-07-02 | codex | 0.135.0 | cwd flag "verify `--cwd`" | cwd is `-C, --cd <DIR>` (not `--cwd`) | use `--cd` | — |
 | 2026-07-02 | codex | 0.135.0 | JSON mode "if probe finds `--json`" | `--json` (JSONL) present on `codex exec` | prefer `--json` | — |
 | 2026-07-02 | codex | 0.135.0 | `--sandbox read-only` | present (`-s/--sandbox read-only`) | none | read-only enforceable ✔ |
-| 2026-07-02 | gemini | 0.46.0 | read-only "best-available / prompt-level fallback" | `--approval-mode plan` = true read-only mode | use `--approval-mode plan` | **upgrade** — real read-only, not prompt-level |
-| 2026-07-02 | gemini | 0.46.0 | JSON "probe for `--output-format json`/`-o json`" | `-o, --output-format json` present | use `-o json` | — |
+| 2026-07-02 | claude | 2.1.198 | envelope shape (verified live) | `{type, subtype, is_error, result, session_id, total_cost_usd, usage}`; model text in `.result` | extract `.result`; `is_error:true`→CRASH; cost→providerMeta | — |
+| 2026-07-02 | ~~gemini~~ → agy | 1.0.15 | gemini CLI discontinued | replaced by Antigravity `agy` (Gemini 3.1 Pro) | new adapter agy.ts | see migration note above |
+| 2026-07-02 | agy | 1.0.15 | (was gemini `-o json`) | no JSON flag; `-p` returns raw text | `jsonOutput:false`, §14 extraction | — |
+| 2026-07-02 | agy | 1.0.15 | (was gemini `--approval-mode plan`) | `--sandbox` (boolean, terminal restrictions) | `readOnlyFlag:'sandbox'` | ⚠ write-blocking UNVERIFIED, pin at T10 |

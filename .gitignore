@@ -4,3 +4,4 @@ dist/
 
 # Local run artifacts — committing is a deliberate user choice (decision records), not the default.
 .aiki/
+.agent
