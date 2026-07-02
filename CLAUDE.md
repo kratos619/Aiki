@@ -52,6 +52,12 @@ each switch wastes tokens for zero gain. Trust STATE.md; pull detail on demand.
   Never `--dangerously-skip-permissions` / `acceptEdits` / bypass.
 - The 3rd provider is **`agy`** (Antigravity CLI, Gemini 3.1 Pro), NOT gemini — gemini CLI is
   discontinued. Plan text says "gemini"; it means agy. See docs/PROVIDER_NOTES.md.
+- **Display naming:** internally/artifacts/meta/logs use the real id (`agy`, `codex`, `claude`);
+  user-facing UI shows `DISPLAY_NAME` (agy → "Gemini"). Don't show "agy" to users; keep it in
+  commands the user must type (e.g. "run `agy`").
+- **Judge default = `claude` (Opus 4.8, strongest)** — but the judge provider is
+  user-overridable (config `.aiki/config.json → roles`, and/or a run flag). Build that
+  overridability in T5 (roles) / T9 (config); don't hardcode claude as the only option.
 - Never read credential dirs (`~/.claude`, `~/.codex`, `~/.gemini`, `~/.antigravity`) or handle
   tokens. Filter
   env of `/KEY|TOKEN|SECRET/i` before spawning. aiki writes ONLY under `.aiki/`.

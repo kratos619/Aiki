@@ -40,6 +40,25 @@ redirect** (child's stdout inherits an open file descriptor) captures the full o
   JSON that parses partially. Capture claude output via fd redirect to a file, then read it.
   Re-verify codex/gemini for the same behavior before trusting pipe capture.
 
+## Display naming (T2 decision)
+
+Internal id / artifacts / meta.json / logs use the **true id** for audit accuracy:
+`claude`, `codex`, `agy`. The **UI shows familiar model names** via `DISPLAY_NAME` (types.ts):
+`agy → "Gemini"`, `codex → "Codex"`, `claude → "Claude"`. Users know "Gemini", not the
+Antigravity binary. Command/binary references in fixes (e.g. "run `agy`") keep the real id.
+
+## codex exec output (verified live, T3)
+
+- `codex exec [-s read-only] "<prompt>"` — **stdout = the model's final message only**; the
+  session transcript (session id, echoed prompt, "tokens used") goes to **stderr**. So stdout
+  *is* the result → §14 extraction parses directly. We use **plain mode, not `--json` JSONL**
+  (plain stdout is already clean; JSONL would need event-stream parsing for no gain).
+- Consequence: codex mirrors prompt + result into stderr. `adapter-core.classify` therefore
+  **short-circuits to OK on exit 0** and only scans stderr on failure — otherwise innocent
+  content ("rate limit", "login") in a successful transcript would false-positive AUTH/QUOTA.
+- cwd is set via the spawn cwd option (no `-C` needed for the common case). T10: verify
+  `codex exec` behavior for arbitrary review dirs (git-repo check / writable cwd).
+
 ## Flag discrepancies vs §7.3
 
 | Date | Provider | Version | Plan-assumed flag | Actual | Adapter change | Enforcement impact |

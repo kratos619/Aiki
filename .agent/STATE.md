@@ -5,12 +5,14 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
 
 ## Now
 
-- **Last commit:** `4b06027` — then T2 done + gemini→agy migration (UNCOMMITTED in tree; user commits).
-- **Next action:** start **T3** — codex adapter (`codex exec`, parsing quarantined in
-  `codex.ts`), add it to `ADAPTERS` in `adapters.ts`, probe-driven flag selection. Acceptance:
-  §24 T3 + codex smoke passes in doctor (→ 3/3 ready). Note codex uses `--cd` (not `--cwd`) and
-  `--json` (JSONL) — see PROVIDER_NOTES.
-- **In-flight?** No (T2 complete). But there are uncommitted changes for the user to commit.
+- **Last state:** T2 committed by user; T3 done + display-name mapping (UNCOMMITTED in tree; user commits).
+  (Note: `.agent/` is gitignored now — these files are local-only, not committed.)
+- **Next action:** start **T4** — core zod schemas (`src/schemas/`: IntentContract, Interpretation,
+  RoleOutput union, Verification, DisagreementMap, JudgeReport, RunMeta) + artifact writer
+  (`src/storage/runs.ts`: ordered crash-safe writes, out-of-order write rejected) + `meta.json`
+  (§15). Also `aiki providers --json` (§5). Acceptance: §24 T4 — out-of-order write rejected;
+  partial run leaves valid artifacts.
+- **In-flight?** No (T3 complete). Uncommitted changes present for the user to commit.
 
 ## Task ledger (§24)
 
@@ -19,8 +21,8 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
 | T0 Scaffold + pre-registration | ✅ | BENCHMARK.md, POLICY.md, TS skeleton, npm |
 | T1 Detection + probe + doctor | ✅ | 3/3 providers live; PROVIDER_NOTES filled |
 | T2 claude + agy adapters + smoke | ✅ | run()+retry+taxonomy+§14; 30 tests; doctor smoke live (claude+agy pass) |
-| T3 codex adapter | ⏳ NEXT | parsing quarantined in codex.ts; add to adapters.ts |
-| T4 schemas + artifact writer + meta.json | ⬜ | |
+| T3 codex adapter | ✅ | plain `codex exec`; stdout=final msg, stderr=transcript; 3/3 smoke live |
+| T4 schemas + artifact writer + meta.json | ⏳ NEXT | + `aiki providers --json` |
 | T5 engine + S1–S3 | ⬜ | |
 | T6 S4–S7 | ⬜ | |
 | T7 S8–S10 | ⬜ | idea-refinement end-to-end |
@@ -40,10 +42,14 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
   `-p --output-format json` (envelope, text in `.result`); agy `-p` (raw text, no envelope);
   codex `exec` (T3). Detail in `docs/PROVIDER_NOTES.md` — read before adapter work.
 - **agy smoke passes; codex smoke = FAIL until T3 adapter.** 2/3 ready now → quorum met.
-- **Default roles (§10) — REVISIT at T5:** plan picked gemini as cheap/free analyst; agy is
-  strong+metered (Gemini 3.1 Pro), so §10's cost rationale no longer holds. Re-decide
-  judge/analyst assignment when building the engine. (Plan default: idea-refinement S4
-  codex+agy judge claude; code-review S4 claude+codex judge agy.)
+- **Display naming (user decision):** id stays `agy` internally/artifacts/meta; UI shows
+  "Gemini" via `DISPLAY_NAME` (types.ts). Don't show "agy" to users; keep it in typed commands.
+- **Judge = claude by default (user decision):** Opus 4.8, strongest → default judge. But make
+  the judge provider **user-overridable** via config (`.aiki/config.json → roles`) and/or a run
+  flag. Build overridability at T5 (roles) / T9 (config); do NOT hardcode claude as only judge.
+- **Other roles (§10) — REVISIT at T5:** agy is strong+metered (Gemini 3.1 Pro), not the old
+  cheap/free gemini, so §10's analyst rationale no longer holds. Re-decide analyst/critic/
+  verifier assignment when building the engine. Judge stays claude (above) unless user overrides.
 - **npm install** needs `--cache <scratchpad>/.npmcache` on this box (default cache blocked).
 
 ## Traps live right now
