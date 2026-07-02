@@ -3,6 +3,7 @@
 
 import { Command } from 'commander';
 import { doctor } from './doctor.js';
+import { providers } from './providers.js';
 
 export const VERSION = '0.1.0';
 
@@ -19,6 +20,14 @@ program
   .option('--no-smoke', 'skip the live smoke test (detection + probe only; no model calls)')
   .action(async (opts: { smoke?: boolean }) => {
     process.exit(await doctor({ smoke: opts.smoke }));
+  });
+
+program
+  .command('providers')
+  .description('Machine-readable provider status: resolved capability profiles (§7.4). No model calls.')
+  .option('--json', 'print the resolved capability profiles as JSON')
+  .action(async (opts: { json?: boolean }) => {
+    process.exit(await providers({ json: opts.json }));
   });
 
 // Bare `aiki` launches the TUI in T8; until then, show help.
