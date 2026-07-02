@@ -1,0 +1,5 @@
+{
+  "claude": { "reasoning": 3, "codeNav": 3, "jsonReliability": 3, "cost": "quota-metered", "contextExplore": 3 },
+  "codex": { "reasoning": 2, "codeNav": 3, "jsonReliability": 2, "cost": "quota-metered", "contextExplore": 2 },
+  "agy": { "reasoning": 2, "codeNav": 2, "jsonReliability": 2, "cost": "quota-metered", "contextExplore": 2 }
+}
