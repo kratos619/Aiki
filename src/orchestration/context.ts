@@ -1,0 +1,266 @@
+// Run context + engine primitives (§6). A run is a single-threaded walk through typed stages;
+// `RunCtx` carries everything a stage needs and is the ONLY thing that spends the call budget.
+//
+// Invariants enforced here:
+// - Budget guard (§6, §19): a provider call that would exceed the budget throws `BudgetExceeded`
+//   BEFORE spawning anything; the run then fails gracefully with partial artifacts + meta.
+// - Wall-clock deadline (§19): checked before every call and between stages → `DeadlineExceeded`.
+//   A single in-flight call is separately bounded by the adapter's per-call timeout (process-tree
+//   kill), so the run cannot hang past deadline + one call timeout. (Mid-call abort is post-v1.)
+// - Full audit (§15): every call's exact prompt and raw output are written under `raw/`.
+
+import { randomBytes } from 'node:crypto';
+import type { CallRecord, RunMeta } from '../schemas/index.js';
+import type { Adapter, FlagProfile, ProviderId, ReadOnlyFlag, RunResultAdapter } from '../providers/types.js';
+import { PROVIDER_IDS } from '../providers/types.js';
+import { ADAPTERS } from '../providers/adapters.js';
+import { detect } from '../providers/detect.js';
+import { probeFlags } from '../providers/probe.js';
+import type { RunWriter } from '../storage/runs.js';
+
+export type WorkflowId = 'idea-refinement' | 'code-review';
+
+const DEFAULT_BUDGET = 9; // §19
+const DEFAULT_DEADLINE_MS = 10 * 60 * 1000; // §19: 10 minutes
+const DEFAULT_CALL_TIMEOUT_MS = 180_000; // §7.1
+
+export class BudgetExceeded extends Error {
+  constructor(limit: number) {
+    super(`call budget exhausted (limit ${limit})`);
+    this.name = 'BudgetExceeded';
+  }
+}
+
+export class DeadlineExceeded extends Error {
+  constructor(deadlineMs: number) {
+    super(`run wall-clock deadline exceeded (${deadlineMs}ms)`);
+    this.name = 'DeadlineExceeded';
+  }
+}
+
+/** Raised by a stage when a provider call fails unrecoverably (post adapter retry) or output is
+ *  unusable after the §14 repair retry. Carries the provider taxonomy code for meta/reporting. */
+export class StageError extends Error {
+  constructor(
+    readonly stage: string,
+    readonly code: string, // ProviderError | 'QUORUM' | 'ABORT'
+    message: string,
+  ) {
+    super(`${stage}: ${message}`);
+    this.name = 'StageError';
+  }
+}
+
+/** A ready provider: adapter + resolved flags + how read-only is enforced + detected version. */
+export interface ProviderHandle {
+  id: ProviderId;
+  adapter: Adapter;
+  flags: FlagProfile;
+  readOnly: ReadOnlyFlag;
+  version: string | null;
+}
+
+/** Default role assignment for a workflow (§10). `s4` = the fan-out analyst/reviewer seats. */
+export interface RoleMap {
+  analyst: ProviderId; // S1 intent + S3 prompt-gen (+ one S4 seat)
+  judge: ProviderId; // S9 adjudication — must not author an S4 output (§10)
+  verifier: ProviderId; // S8 cross-exam
+  s4: ProviderId[]; // S4 fan-out seats
+}
+
+export interface RunCtxOpts {
+  runId: string;
+  workflow: WorkflowId;
+  handles: ProviderHandle[];
+  roles: RoleMap;
+  writer: RunWriter;
+  cwd: string; // working dir for provider calls (run inputs dir for non-repo workflows)
+  budget?: number;
+  deadlineMs?: number;
+  signal?: AbortSignal;
+  now?: () => number; // injectable clock (tests)
+}
+
+export class RunCtx {
+  readonly runId: string;
+  readonly workflow: WorkflowId;
+  readonly roles: RoleMap;
+  readonly writer: RunWriter;
+  readonly cwd: string;
+  readonly budget: { limit: number; used: number };
+  readonly calls: CallRecord[] = [];
+
+  private readonly handles: Map<ProviderId, ProviderHandle>;
+  private readonly signal?: AbortSignal;
+  private readonly deadlineMs: number;
+  private readonly deadlineAt: number;
+  private readonly now: () => number;
+
+  constructor(opts: RunCtxOpts) {
+    this.runId = opts.runId;
+    this.workflow = opts.workflow;
+    this.roles = opts.roles;
+    this.writer = opts.writer;
+    this.cwd = opts.cwd;
+    this.budget = { limit: opts.budget ?? DEFAULT_BUDGET, used: 0 };
+    this.handles = new Map(opts.handles.map((h) => [h.id, h]));
+    this.signal = opts.signal;
+    this.deadlineMs = opts.deadlineMs ?? DEFAULT_DEADLINE_MS;
+    this.now = opts.now ?? Date.now;
+    this.deadlineAt = this.now() + this.deadlineMs;
+  }
+
+  /** Provider ids available this run (READY at setup). */
+  available(): ProviderId[] {
+    return [...this.handles.keys()];
+  }
+
+  handle(id: ProviderId): ProviderHandle {
+    const h = this.handles.get(id);
+    if (!h) throw new StageError('setup', 'QUORUM', `provider ${id} not available`);
+    return h;
+  }
+
+  /** Guard: throw if aborted or past the wall-clock deadline. Called before every provider call. */
+  guard(): void {
+    if (this.signal?.aborted) throw new StageError('run', 'ABORT', 'aborted');
+    if (this.now() > this.deadlineAt) throw new DeadlineExceeded(this.deadlineMs);
+  }
+
+  /**
+   * Make one budgeted provider call. Decrements budget (throws `BudgetExceeded` if it would go
+   * over), records a `CallRecord`, and dumps the exact prompt + raw output under `raw/` (§15).
+   */
+  async call(
+    handle: ProviderHandle,
+    req: { prompt: string; expectJson: boolean; timeoutMs?: number; cwd?: string },
+    stage: string,
+  ): Promise<RunResultAdapter> {
+    this.guard();
+    if (this.budget.used + 1 > this.budget.limit) throw new BudgetExceeded(this.budget.limit);
+    this.budget.used++;
+
+    const seq = this.budget.used;
+    await this.writer.writeRaw(`${stage}-${handle.id}-${seq}.prompt.txt`, req.prompt);
+
+    const res = await handle.adapter.run(
+      {
+        prompt: req.prompt,
+        cwd: req.cwd ?? this.cwd,
+        timeoutMs: req.timeoutMs ?? DEFAULT_CALL_TIMEOUT_MS,
+        expectJson: req.expectJson,
+        readOnly: true,
+      },
+      handle.flags,
+    );
+
+    this.calls.push({
+      provider: handle.id,
+      stage,
+      durationMs: res.durationMs,
+      ...(res.ok ? {} : { error: res.error }),
+    });
+    await this.writer.writeRaw(
+      `${stage}-${handle.id}-${seq}.out`,
+      res.ok ? res.text : `[${res.error}]\n${res.stderrTail}`,
+    );
+    return res;
+  }
+
+  /** Assemble the run's `meta.json` payload (§15) from the handles + call ledger accumulated so
+   *  far. Called at finalize (success) and in the failure path (partial artifacts stay valid). */
+  buildMeta(exitStatus: RunMeta['exit_status'], aborted: boolean, flags?: RunMeta['flags']): RunMeta {
+    const provider_versions: Record<string, string> = {};
+    const flag_profiles: Record<string, FlagProfile> = {};
+    const read_only: Record<string, ReadOnlyFlag> = {};
+    for (const h of this.handles.values()) {
+      if (h.version) provider_versions[h.id] = h.version;
+      flag_profiles[h.id] = h.flags;
+      read_only[h.id] = h.readOnly;
+    }
+    return {
+      run_id: this.runId,
+      workflow: this.workflow,
+      provider_versions,
+      flag_profiles,
+      // Singular roles only for now; S4 seats land in meta when S4 is built (T6).
+      roles: { analyst: this.roles.analyst, judge: this.roles.judge, verifier: this.roles.verifier },
+      read_only,
+      calls: this.calls,
+      call_count: this.calls.length,
+      budget: { limit: this.budget.limit, used: this.budget.used },
+      exit_status: exitStatus,
+      aborted,
+      ...(flags && flags.length ? { flags } : {}),
+    };
+  }
+}
+
+/** Run-fatal errors abort the whole run; everything else (e.g. a single provider failure in a
+ *  fan-out) is handled locally by the stage (drop provider, check quorum). */
+export function isFatal(e: unknown): boolean {
+  return e instanceof BudgetExceeded || e instanceof DeadlineExceeded || (e instanceof StageError && e.code === 'ABORT');
+}
+
+// ── Provider setup + role assignment ────────────────────────────────────────
+
+const READONLY_FROM_FLAG = (f: FlagProfile): ReadOnlyFlag => f.readOnlyFlag;
+
+/**
+ * Build handles for every provider that is READY (detect + flag probe; no model calls). Providers
+ * that aren't installed are simply omitted; quorum (§8) is checked by the caller.
+ */
+export async function setupProviders(): Promise<ProviderHandle[]> {
+  const handles: ProviderHandle[] = [];
+  for (const id of PROVIDER_IDS) {
+    const det = await detect(id);
+    if (det.status !== 'READY') continue;
+    const flags = await probeFlags(id);
+    handles.push({ id, adapter: ADAPTERS[id], flags, readOnly: READONLY_FROM_FLAG(flags), version: det.version ?? null });
+  }
+  return handles;
+}
+
+/** Preference order used when a role's default provider is unavailable. */
+const ANALYST_PREF: ProviderId[] = ['agy', 'codex', 'claude'];
+const JUDGE_PREF: ProviderId[] = ['claude', 'agy', 'codex'];
+
+/**
+ * Default role assignment (§10, decided at T5) with graceful degradation and an override seam.
+ * `overrides` is the config/flag hook (§10 "config can pin roles") — config loading itself is T9.
+ *
+ * idea-refinement default (3 providers): analyst=agy, judge=claude, verifier=codex, S4=[agy,codex].
+ * The one hard rule kept even under degradation: the judge must not be the sole S4 author it would
+ * adjudicate — with ≥2 S4 seats and judge picked outside them, that holds. Full §8/§10 fallbacks
+ * (2- and 1-provider self-consistency) are firmed at T6 when S4 lands.
+ */
+export function resolveRoles(
+  workflow: WorkflowId,
+  available: ProviderId[],
+  overrides?: Partial<RoleMap>,
+): RoleMap {
+  const has = (id: ProviderId) => available.includes(id);
+  const pick = (pref: ProviderId[], avoid: ProviderId[] = []): ProviderId => {
+    const chosen = pref.find((id) => has(id) && !avoid.includes(id)) ?? pref.find((id) => has(id)) ?? available[0];
+    if (!chosen) throw new StageError('setup', 'QUORUM', 'no providers available for role assignment');
+    return chosen;
+  };
+
+  // S4 seats: prefer the two non-judge providers so the judge stays a non-author (§10).
+  const judge = overrides?.judge ?? pick(JUDGE_PREF);
+  const analyst = overrides?.analyst ?? pick(ANALYST_PREF);
+  const s4 = overrides?.s4 ?? available.filter((id) => id !== judge);
+  const verifier = overrides?.verifier ?? (has('codex') ? 'codex' : pick(ANALYST_PREF, [judge]));
+
+  // Reference `workflow` so future per-workflow divergence (code-review flips judge→agy, §10) has
+  // an obvious hook; idea-refinement and code-review share the default resolver in v1.
+  void workflow;
+  return { analyst, judge, verifier, s4 };
+}
+
+/** Generate a run id: `<yyyymmdd>-<hhmm>-<workflow>-<rand4>` (§15). */
+export function makeRunId(workflow: WorkflowId, at: Date = new Date()): string {
+  const p = (n: number, w = 2) => String(n).padStart(w, '0');
+  const stamp = `${at.getFullYear()}${p(at.getMonth() + 1)}${p(at.getDate())}-${p(at.getHours())}${p(at.getMinutes())}`;
+  return `${stamp}-${workflow}-${randomBytes(2).toString('hex')}`;
+}

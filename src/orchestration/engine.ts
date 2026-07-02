@@ -1,0 +1,93 @@
+// Engine run wrapper (§6). Sets up the run folder, walks a workflow's stage composition, and — no
+// matter how the run ends — finalizes a valid `meta.json` with the exit status. A fatal error
+// (budget/deadline/abort/bad-output/quorum) becomes a graceful failure: partial artifacts on disk
+// stay valid (RunWriter atomic writes) and meta records what happened (§6, §19).
+
+import { BudgetExceeded, DeadlineExceeded, StageError, makeRunId, resolveRoles, setupProviders, RunCtx, type RoleMap, type WorkflowId } from './context.js';
+import { RunWriter } from '../storage/runs.js';
+import { runIdeaRefinement } from '../workflows/idea-refinement.js';
+
+export type WorkflowFn = (ctx: RunCtx, input: string) => Promise<void>;
+
+const WORKFLOWS: Record<WorkflowId, WorkflowFn> = {
+  'idea-refinement': runIdeaRefinement,
+  'code-review': async () => {
+    throw new StageError('setup', 'ABORT', 'code-review workflow not implemented until T10');
+  },
+};
+
+export interface RunOutcome {
+  ok: boolean;
+  runId: string;
+  dir: string;
+  callCount: number;
+  error?: { code: string; message: string };
+}
+
+function classifyError(e: unknown): { code: string; aborted: boolean } {
+  if (e instanceof BudgetExceeded) return { code: 'BUDGET', aborted: false };
+  if (e instanceof DeadlineExceeded) return { code: 'DEADLINE', aborted: false };
+  if (e instanceof StageError) return { code: e.code, aborted: e.code === 'ABORT' };
+  return { code: 'CRASH', aborted: false };
+}
+
+/** Execute a workflow within an already-built RunCtx. Writes 00-original.md, runs the stages, and
+ *  finalizes meta.json in both the success and failure paths. */
+export async function executeRun(ctx: RunCtx, input: string, fn: WorkflowFn): Promise<RunOutcome> {
+  await ctx.writer.init();
+  await ctx.writer.writeText('original', input);
+
+  const base = { runId: ctx.runId, dir: ctx.writer.dir };
+  try {
+    await fn(ctx, input);
+    await ctx.writer.writeMeta(ctx.buildMeta('ok', false));
+    return { ok: true, ...base, callCount: ctx.calls.length };
+  } catch (e) {
+    const { code, aborted } = classifyError(e);
+    // Best-effort finalize: never let a meta-write failure mask the original error.
+    await ctx.writer.writeMeta(ctx.buildMeta(aborted ? 'aborted' : 'failed', aborted)).catch(() => {});
+    return { ok: false, ...base, callCount: ctx.calls.length, error: { code, message: e instanceof Error ? e.message : String(e) } };
+  }
+}
+
+export interface RunOptions {
+  budget?: number;
+  deadlineMs?: number;
+  signal?: AbortSignal;
+  roleOverrides?: Partial<RoleMap>; // §10 override seam; config loading is T9
+}
+
+/**
+ * Top-level headless entry (backs `aiki run`): detect+probe providers, check quorum (§8), assign
+ * roles (§10), build the RunCtx, and execute the workflow. No smoke test here — a dead provider
+ * surfaces as a call failure handled by the stage's quorum logic.
+ */
+export async function run(workflow: WorkflowId, input: string, opts: RunOptions = {}): Promise<RunOutcome> {
+  const handles = await setupProviders();
+  if (handles.length < 2) {
+    return {
+      ok: false,
+      runId: '(none)',
+      dir: '',
+      callCount: 0,
+      error: { code: 'QUORUM', message: `need ≥2 providers, found ${handles.length} — run \`aiki doctor\`` },
+    };
+  }
+
+  const runId = makeRunId(workflow);
+  const roles = resolveRoles(workflow, handles.map((h) => h.id), opts.roleOverrides);
+  const writer = new RunWriter(runId);
+  const ctx = new RunCtx({
+    runId,
+    workflow,
+    handles,
+    roles,
+    writer,
+    cwd: writer.dir,
+    budget: opts.budget,
+    deadlineMs: opts.deadlineMs,
+    signal: opts.signal,
+  });
+
+  return executeRun(ctx, input, WORKFLOWS[workflow]);
+}

@@ -4,6 +4,7 @@
 import { Command } from 'commander';
 import { doctor } from './doctor.js';
 import { providers } from './providers.js';
+import { runCommand } from './run.js';
 
 export const VERSION = '0.1.0';
 
@@ -28,6 +29,16 @@ program
   .option('--json', 'print the resolved capability profiles as JSON')
   .action(async (opts: { json?: boolean }) => {
     process.exit(await providers({ json: opts.json }));
+  });
+
+program
+  .command('run')
+  .description('Headless run of a workflow on inline text or a file path (§5).')
+  .argument('<workflow>', 'workflow id: idea-refinement | code-review')
+  .argument('[input]', 'inline text or a path to a .md file')
+  .option('--budget <n>', 'max provider calls for this run (default 9)', (v) => parseInt(v, 10))
+  .action(async (workflow: string, input: string | undefined, opts: { budget?: number }) => {
+    process.exit(await runCommand(workflow, input, { budget: opts.budget }));
   });
 
 // Bare `aiki` launches the TUI in T8; until then, show help.

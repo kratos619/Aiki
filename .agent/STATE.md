@@ -5,33 +5,31 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
 
 ## Now
 
-- **Position:** T0–T4 all COMPLETE. `aiki doctor` shows **3/3 providers ready**; `aiki providers
-  --json` prints resolved capability profiles. 56 tests green (was 33; +23 for T4). Nothing half-done.
-- **First, sanity-check (30s):** `npm run typecheck && npm test` should be green (**56 tests**), and
-  `node dist/cli/index.js doctor --no-smoke` should list 3 providers. If green → build on it;
-  don't redo T0–T4. (Uncommitted changes in the tree = the finished T3+T4 work; the user handles
-  commits — do not re-implement.)
-- **Next action — START HERE: T5 (Engine + S1–S3).** Build in `src/orchestration/`:
-  1. **Stage runner + `RunCtx`** (§6 invariants): typed `Stage<In,Out>` where Out is
-     zod-validated before the next stage; RunCtx carries run id, workflow id, provider handles,
-     call budget (default 9), wall-clock deadline (default 10 min), abort signal, the **T4
-     `RunWriter`** (`src/storage/runs.ts`), logger. Every stage writes input+output before the
-     next starts (RunWriter already enforces ordered/crash-safe writes — just call it).
-  2. **Quorum + budget guard + deadline** (§6, §19 "runaway loops"): each provider call
-     decrements budget; a call that would exceed throws `BudgetExceeded` → run fails gracefully
-     with partial artifacts + finalized `meta.json`. Wall-clock kill = process-tree kill.
-  3. **S1 intent-contract, S2 misread-prediction, S3 prompt-gen** with idea-refinement prompts
-     (verbatim from §13). S1/S3 → analyst provider; S2 → ALL providers parallel + deterministic
-     cluster comparator (token-overlap ≥0.6; §9 S2 row). Schemas already exist: `IntentContract`,
-     `Interpretation` (T4). The **02 composite** ("all interpretations, clusters, chosen one") has
-     NO T4 schema — write it via `RunWriter.writeJson('misunderstanding-guard', …)` (schema:null,
-     writes as-is) or add its schema now.
-  - **Acceptance (§24 T5):** headless run produces artifacts 00–03 on sample input; a budget
-    breach aborts gracefully.
-  - **Role assignment (REVISIT now — see decided-facts below):** §10 role rationale assumed the
-    old free gemini; agy is metered Gemini 3.1 Pro. Re-decide analyst/critic/verifier here. Judge
-    stays claude default but must be config/flag-overridable (build the override seam at T5).
-- **In-flight?** No. T4 finished cleanly. See `.agent/HANDOFF.md`.
+- **Position:** T0–T5 all COMPLETE. Engine + S1–S3 live: `aiki run idea-refinement "<text>"`
+  produces artifacts 00–03 + meta.json (verified live, 6 calls incl. one §14 repair that recovered).
+  **65 tests** green (was 56; +9 for T5). Nothing half-done.
+- **First, sanity-check (30s):** `npm run typecheck && npm test` should be green (**65 tests**), and
+  `node dist/cli/index.js doctor --no-smoke` should list 3 providers. Green → build on it; don't
+  redo T0–T5. (Uncommitted tree = finished T3+T4+T5 work; user commits — do not re-implement.)
+- **Next action — START HERE: T6 (S4–S7).** Extend `runIdeaRefinement` (src/workflows/
+  idea-refinement.ts) past S3. Build in `src/orchestration/stages/`:
+  1. **S4 fan-out** (§9, §12.1): `Promise.allSettled` over `ctx.roles.s4` seats (default
+     `[agy, codex]`), each runs the filled analyst prompt from 03-prompts/. Validate each with
+     `RoleOutput` — **inject the `workflow` discriminator before `.parse()`** (model JSON has none;
+     see traps). Quorum ≥2 → continue; 1 → self-consistency; 0 → abort. Write 04-role-outputs/.
+     Each failed seat gets its single adapter retry first (already built). Reuse `jsonCall` +
+     `isFatal` fan-out pattern from `s2-misread.ts` — S4 is the same shape.
+  2. **S5 drift** (§9): deterministic — schema conformity + `task_echo` matches contract (hash/
+     similarity). Drifted output excluded; if exclusion breaks quorum → abort. Write 05.
+  3. **S6 claims** (§9): deterministic normalize + **fuzzy dedupe ≥0.85** → merged `Claim` with
+     multi-provider attribution (`Claim.providers` array already supports this). Write 06.
+  4. **S7 disagreement map** (§9): pure code → `DisagreementMap` {consensus, contradictions,
+     unique, blind_spots}. Empty contradictions legal → flag `low_diversity`. Firm the
+     `Contradiction`/`Claim` shapes now (T4 left them minimal). Write 07.
+  - **Acceptance (§24 T6):** fixture-driven tests for dedupe + map; live run yields 04–07.
+  - Schemas exist (T4): `RoleOutput`, `Claim`, `DisagreementMap`. `ClaimSet` (S6) composite has no
+    schema yet — add one or write as-is (like the 02 composite).
+- **In-flight?** No. T5 finished cleanly. See `.agent/HANDOFF.md`.
 
 ## Task ledger (§24)
 
@@ -42,8 +40,8 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
 | T2 claude + agy adapters + smoke | ✅ | run()+retry+taxonomy+§14; 30 tests; doctor smoke live (claude+agy pass) |
 | T3 codex adapter | ✅ | plain `codex exec`; stdout=final msg, stderr=transcript; 3/3 smoke live |
 | T4 schemas + artifact writer + meta.json | ✅ | 7 core zod schemas; RunWriter (ordered+atomic); `aiki providers --json`; 56 tests |
-| T5 engine + S1–S3 | ⏳ NEXT | + revisit role assignment (§10) for metered agy |
-| T6 S4–S7 | ⬜ | |
+| T5 engine + S1–S3 | ✅ | RunCtx+budget/deadline/quorum, S1–S3, `aiki run`, roles decided; live 00–03; 65 tests |
+| T6 S4–S7 | ⏳ NEXT | fan-out+drift+claim-dedupe+disagreement map |
 | T7 S8–S10 | ⬜ | idea-refinement end-to-end |
 | T8 TUI (ink) | ⬜ | |
 | T9 show / resolve / config | ⬜ | |
@@ -66,9 +64,12 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
 - **Judge = claude by default (user decision):** Opus 4.8, strongest → default judge. But make
   the judge provider **user-overridable** via config (`.aiki/config.json → roles`) and/or a run
   flag. Build overridability at T5 (roles) / T9 (config); do NOT hardcode claude as only judge.
-- **Other roles (§10) — REVISIT at T5:** agy is strong+metered (Gemini 3.1 Pro), not the old
-  cheap/free gemini, so §10's analyst rationale no longer holds. Re-decide analyst/critic/
-  verifier assignment when building the engine. Judge stays claude (above) unless user overrides.
+- **Roles (§10) — DECIDED at T5 (user, 2026-07-02):** idea-refinement → **analyst = agy**
+  (S1/S3 + one S4 seat), **judge = claude** (default, doesn't author S4 → clean adjudication),
+  **verifier = codex**, S4 seats = [agy, codex] (§10 resolved default). agy metered now, but keeping
+  it analyst preserves judge/author separation; revisit only if quota pain appears. Judge must stay
+  config/flag-overridable — override **seam** built at T5 (`resolveRoles(overrides?)`); actual config
+  loading is T9.
 - **npm install** needs `--cache <scratchpad>/.npmcache` on this box (default cache blocked).
 
 ## Traps live right now
@@ -80,9 +81,17 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
   temp-copy cwd fallback + record enforcement level in meta.json.
 - **doctor runs live smoke = paid model calls.** Use `aiki doctor --no-smoke` during dev. The
   §8 6h smoke cache is not built yet (belongs to the config store, T9).
-- **T4 schema/writer choices to know before T5–T7:** (1) `RoleOutput` is a zod
+- **S2 clustering is strict on prose (tuning, not a bug):** `cluster.ts` uses Jaccard token
+  overlap ≥0.6 (§9). Live, 3 semantically-identical restatements each formed their OWN cluster →
+  `how: 'majority-cluster'` (largest, ties→earliest). Real prose rarely hits 0.6 Jaccard, so S2
+  will over-report "multiple clusters" → over-triggers the TUI clarification (T8). Revisit at T8:
+  lower threshold, use overlap-coefficient `|A∩B|/min`, or normalize (stem/stopword). Spec-faithful
+  now; flagged for tuning.
+- **T4/T5 schema choices to know before T6–T7:** (1) `RoleOutput` is a zod
   `discriminatedUnion('workflow', …)` but the model JSON (§13) has NO `workflow` field — the
-  engine must inject it before `.parse()`. (2) `DisagreementMap` element shapes (`Claim.providers`
+  engine (S4, T6) MUST inject it: `RoleOutput.parse({ workflow, ...modelJson })`. `jsonCall` won't
+  do this for you — S4 needs a wrapper or a member schema (`IdeaRoleOutput`/`CodeReviewRoleOutput`,
+  both exported). (2) `DisagreementMap` element shapes (`Claim.providers`
   as array; `Contradiction {claim_ids,note?}`) were under-specified in the plan and chosen at T4 —
   firm them when S6/S7 land (T6/T7). (3) `RunWriter` refuses out-of-order + rewrites and skips are
   permanent-forward; `meta.json`/`raw/`/`inputs/` are unordered (meta is overwritable). (4) §14's
@@ -94,9 +103,13 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
   probe, adapter-core (filterEnv/classify/extractJson/runAdapter), claude/codex/agy, adapters
   (registry), smoke. DISPLAY_NAME lives in types.ts.
 - CLI: `src/cli/` (index = commander entry, doctor)
-- Schemas: `src/schemas/index.ts` (7 core zod schemas + inferred types, T4)  ·  Artifact writer:
+- Schemas: `src/schemas/index.ts` (7 core + `StagePrompts`, T4/T5)  ·  Artifact writer:
   `src/storage/runs.ts` (`RunWriter`, T4)  ·  Capability profiles: `src/providers/profiles.json` +
-  `profiles.ts` (`resolveProfiles`)  ·  `providers` cmd: `src/cli/providers.ts`  ·  Engine:
-  `src/orchestration/` (T5+)
+  `profiles.ts`  ·  `providers`/`run` cmds: `src/cli/providers.ts`, `src/cli/run.ts`
+- **Engine (T5):** `src/orchestration/context.ts` = `RunCtx` (budget/deadline/`call()`/`buildMeta`),
+  `setupProviders`, `resolveRoles` (override seam), `makeRunId`, errors (`BudgetExceeded`/
+  `DeadlineExceeded`/`StageError`), `isFatal`. `jsonStage.ts` = `jsonCall` (call+validate+§14 repair).
+  `cluster.ts` = S2 clustering. `engine.ts` = `executeRun`/`run`/WORKFLOWS. `stages/s1|s2|s3`.
+  Workflow composition: `src/workflows/idea-refinement.ts` (prompts inline, skills/ loader deferred).
 - Skills/workflows content: `skills/<workflow>/`  ·  Bench: `bench/` + `src/bench/`
 - Tests: `test/`  ·  Pre-registration: `BENCHMARK.md`  ·  Policy: `docs/POLICY.md`

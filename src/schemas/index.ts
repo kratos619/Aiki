@@ -103,6 +103,17 @@ export const CodeReviewRoleOutput = z
 
 export const RoleOutput = z.discriminatedUnion('workflow', [IdeaRoleOutput, CodeReviewRoleOutput]);
 
+// ── S3: StagePrompts (§9, §13) ──────────────────────────────────────────────
+//
+// S3 output: the role-specific S4 prompts with every {{SLOT}} filled. Deterministic validator
+// (S3) additionally rejects any prompt still containing an unresolved `{{...}}` (§9 S3 row).
+
+export const StagePrompts = z
+  .object({
+    prompts: z.record(z.string(), z.string()), // role name → filled prompt (non-empty map)
+  })
+  .strict();
+
 // ── S8: Verification (§13) ──────────────────────────────────────────────────
 //
 // `Verification` is the per-item verdict (§9 "per-item Verification"). `VerificationSet` is the
@@ -216,6 +227,7 @@ export const RunMeta = z.object({
 
 export type IntentContract = z.infer<typeof IntentContract>;
 export type Interpretation = z.infer<typeof Interpretation>;
+export type StagePrompts = z.infer<typeof StagePrompts>;
 export type RoleOutput = z.infer<typeof RoleOutput>;
 export type IdeaRoleOutput = z.infer<typeof IdeaRoleOutput>;
 export type CodeReviewRoleOutput = z.infer<typeof CodeReviewRoleOutput>;
