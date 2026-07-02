@@ -6,7 +6,7 @@ const DETECT_TIMEOUT_MS = 5000;
 const INSTALL_HINT: Record<ProviderId, string> = {
   claude: "not on PATH — install: npm i -g @anthropic-ai/claude-code",
   codex: "not on PATH — install: npm i -g @openai/codex",
-  gemini: "not on PATH — install: npm i -g @google/gemini-cli",
+  agy: "not on PATH — install the Antigravity CLI (agy) and log in",
 };
 
 /** Pull a semver-ish token out of a `--version` line (formats vary per CLI). */

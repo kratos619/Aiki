@@ -7,7 +7,7 @@ const PROBE_TIMEOUT_MS = 5000;
 const HELP_INVOCATION: Record<ProviderId, { bin: string; args: string[] }> = {
   claude: { bin: 'claude', args: ['--help'] },
   codex: { bin: 'codex', args: ['exec', '--help'] },
-  gemini: { bin: 'gemini', args: ['--help'] },
+  agy: { bin: 'agy', args: ['--help'] },
 };
 
 export type CaptureFn = (id: ProviderId, bin: string, args: string[], timeoutMs: number) => Promise<string>;
@@ -31,11 +31,13 @@ export function parseFlagProfile(id: ProviderId, help: string): FlagProfile {
         jsonOutput: has(/--json\b/),
         readOnlyFlag: has(/--sandbox/) ? 'sandbox' : 'none',
       };
-    case 'gemini':
+    case 'agy':
+      // agy has no JSON-output flag; `-p` returns raw text (the JSON we ask for) → §14 extraction.
+      // Read-only is best-effort via `--sandbox` (terminal restrictions); see docs/PROVIDER_NOTES.md.
       return {
         id,
-        jsonOutput: has(/--output-format/),
-        readOnlyFlag: has(/--approval-mode/) ? 'approval-plan' : 'none',
+        jsonOutput: false,
+        readOnlyFlag: has(/--sandbox/) ? 'sandbox' : 'none',
       };
   }
 }

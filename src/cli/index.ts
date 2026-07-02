@@ -15,9 +15,10 @@ program
 
 program
   .command('doctor')
-  .description('Detect providers + probe flags; print status table. Exit 0 iff ≥2 ready.')
-  .action(async () => {
-    process.exit(await doctor());
+  .description('Detect providers + probe flags + smoke test; print status table. Exit 0 iff ≥2 ready.')
+  .option('--no-smoke', 'skip the live smoke test (detection + probe only; no model calls)')
+  .action(async (opts: { smoke?: boolean }) => {
+    process.exit(await doctor({ smoke: opts.smoke }));
   });
 
 // Bare `aiki` launches the TUI in T8; until then, show help.
