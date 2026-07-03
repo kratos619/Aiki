@@ -5,31 +5,33 @@ keep it current, not cumulative (history lives in `git log`).
 
 ---
 
-**Status: CLEAN — no in-flight work. T0–T5 complete; start T6.**
+**Status: CLEAN — T7 (S8–S10) code-complete, all gates green. The full S1→S10 pipeline is wired.
+One thing pending: the LIVE 00–10 run, which the USER runs (metered). No half-written code.**
 
 Resume steps for the new session:
-1. Read `.agent/STATE.md` (position, task ledger, decided-facts, traps). Do NOT read the rest
-   of the tree to "get oriented" — the map in STATE.md is enough.
-2. Sanity check: `npm run typecheck && npm test` (expect **65 passing**) and
-   `node dist/cli/index.js doctor --no-smoke` (expect 3 providers). Green → proceed.
-3. Do **T6 (S4–S7)** exactly as spelled out under "Next action" in STATE.md. Extend
-   `runIdeaRefinement` (`src/workflows/idea-refinement.ts`) past S3. Follow §9 + §12.1.
-   - S4 is the same fan-out shape as `s2-misread.ts` (allSettled + `isFatal` rethrow + quorum) —
-     copy that pattern. Validate with `RoleOutput` but INJECT the `workflow` discriminator first
-     (model JSON has none — see STATE traps). S4 seats = `ctx.roles.s4` (default `[agy, codex]`).
-   - S5/S6/S7 are deterministic (no model calls) → unit-test the dedupe + map directly.
-   - Reuse: `jsonCall` (jsonStage.ts), `RunWriter.writeJson('drift-report'|'claims'|
-     'disagreement-map', …)` (ordinals 5/6/7 already defined; 07 has the `DisagreementMap` schema
-     wired, 05/06 are schema:null write-as-is), `writeRoleOutput(name, obj)` for 04.
-4. When done: update STATE.md ledger + Next action, keep this file current, STOP before
-   committing — the user commits.
+1. Read `.agent/STATE.md` (position, ledger, T6+T7 decisions, traps). Do NOT re-scan the tree.
+2. Sanity check: `npm run typecheck && npm test` (expect **80 passing**) and
+   `node dist/cli/index.js doctor --no-smoke` (expect 3/3). Green → proceed.
+3. **If the user's live T7 run hasn't happened yet:** they run it (token budget) — `npm run build`
+   then `node dist/cli/index.js run idea-refinement examples/sample-idea.md`, then inspect
+   `.aiki/runs/<id>/` for `08-verifications.json`, `09-judge-report.json`, `final-report.md` (+ 00–07),
+   and confirm consensus is now non-empty (the S7 grouping call working). Green → flip T7 ledger to ✅.
+4. **Then start T8 (TUI, ink)** — §4.2 stage timeline, S2-clarification screen, completion view. Also
+   revisit the S2 Jaccard-clustering tuning (traps) — it over-triggers the T8 clarification.
 
-Nothing is half-written. Uncommitted diff = finished T3+T4+T5. A live T5 run left artifacts under
-`.aiki/runs/` (gitignored) — safe to inspect or delete.
+What T7 added (uncommitted diff — user commits), all to the grilled+locked design:
+- `src/orchestration/stages/{s8-verify,s9-judge,s10-render}.ts` (new).
+- `s7-disagreement.ts`: S7 now makes ONE model call — `s7SemanticGroup` (judge role, IDs-only,
+  attribution-withheld, validated by-reference, graceful lexical fallback) + `applyGroups` (pure merge).
+- `src/schemas/index.ts`: `ClaimGroups` (S7 call), `JudgeReportModel` (dissent min-0 for S9 salvage).
+- `src/orchestration/context.ts`: `DEFAULT_BUDGET` 9 → 12 (deviation from §19, with arithmetic).
+- `src/workflows/idea-refinement.ts`: wired S8→S9→S10 (full S1→S10).
+- Tests: `test/synthesis.test.ts` (new — grouping merge, §602 anti-blending, audit, §272 demotion);
+  `engine.test.ts` now drives S1→S10 end-to-end (00–10 + final-report.md).
 
-T5 (just finished) added: `src/orchestration/{context,jsonStage,cluster,engine}.ts` +
-`stages/{s1-intent,s2-misread,s3-prompts}.ts`, `src/workflows/idea-refinement.ts`,
-`src/cli/run.ts` (+ index wiring), `StagePrompts` schema, `test/{cluster,engine}.test.ts`.
-Verified live: `aiki run idea-refinement "<text>"` → valid 00–03 + meta; §14 repair loop fired and
-recovered on agy's S2 output. Known limitation logged in STATE traps: S2 Jaccard clustering is
-strict on prose (tune at T8).
+Traps / gotchas for T8+:
+- Live run is metered — I don't run it (see memory `no-live-paid-runs`); give the user steps + sample.
+- S7 grouping graceful-fallback means consensus can still be empty if that call fails — that's by design,
+  not a bug; `low_diversity` flag + the fallback note cover it.
+- S9 semantic guards (anti-blending, dissent) are enforced OUTSIDE jsonCall's schema-repair, in `s9Judge`.
+- Rubric still inline (`IDEA_RUBRIC`); the skills/`rubric.json` loader (§11) is still deferred.
