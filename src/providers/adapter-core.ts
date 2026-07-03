@@ -101,7 +101,7 @@ export async function runAdapter(
 
   const attempt = async (): Promise<RunResultAdapter> => {
     const args = spec.buildArgs(req, flags);
-    const raw = await spawnFn(spec.id, args, { cwd: req.cwd, timeoutMs: req.timeoutMs, env: filterEnv() });
+    const raw = await spawnFn(spec.id, args, { cwd: req.cwd, timeoutMs: req.timeoutMs, env: filterEnv(), signal: req.signal });
 
     const cls = classify(raw);
     if (cls !== 'OK') {
@@ -126,7 +126,8 @@ export async function runAdapter(
 
   const first = await attempt();
   if (first.ok) return first;
-  if (first.error === 'TIMEOUT' || first.error === 'BAD_OUTPUT' || first.error === 'CRASH') {
+  // Don't burn a retry (a fresh child) when the run is being aborted (Ctrl+C, T8).
+  if (!req.signal?.aborted && (first.error === 'TIMEOUT' || first.error === 'BAD_OUTPUT' || first.error === 'CRASH')) {
     return attempt(); // exactly one retry
   }
   return first;

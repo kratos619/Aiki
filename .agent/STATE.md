@@ -5,32 +5,31 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
 
 ## Now
 
-- **Position:** T0–T6 COMPLETE + live-verified. **T7 (S8–S10) CODE COMPLETE, all gates green** — the
-  full **S1→S10** pipeline is wired; one acceptance item pending: the live run (user runs it, metered —
-  see below). **80 tests** green (was 71; +7 synthesis + 2 demotion; engine e2e now drives S1→S10),
-  typecheck clean, `npm run build` clean, `doctor --no-smoke` = 3/3. Nothing half-done.
-  - T7 was built to the **grilled+locked design** (2026-07-03): S7 semantic-grouping call on the judge
-    role (IDs-only, attribution-withheld, validated by-reference, graceful lexical fallback) → S8 verifier
-    (codex, single pass, anonymized disputes, skip if none) → S9 judge (claude, disputes-only, anti-blending
-    validator + mandatory dissent + code-derived confidence) → S10 render `final-report.md`. Budget 9→12.
-    2-prov demotion (§272) built as a no-op-in-3-prov guard. Full rationale in decided-facts.
-- **First, sanity-check (30s):** `npm run typecheck && npm test` should be green (**80 tests**), and
+- **Position:** T0–T8 COMPLETE + live-verified. The headless S1→S10 pipeline AND the interactive TUI
+  both run end-to-end on real providers. **89 tests** green, typecheck clean, `npm run build` clean,
+  `doctor --no-smoke` = 3/3. Nothing half-done.
+  - **T8 live proof:** bare `aiki` → full S1→S10 completed through the TUI (run `…-8c44`); **Ctrl+C
+    mid-run → `exit_status:aborted`, `aborted:true`, partial artifacts kept** (run `…-2338-…-d09a`, §603
+    met). Two UI bugs fixed (multi-line-paste input corruption; label/provider spacing). Cosmetic-only
+    leftover: an aborted in-flight stage shows ✖ (killed → quorum-fail) not ⊘ — harmless, not fixed.
+  - **T7 live proof (still valid):** run `…-af3d`, consensus=3 cross-provider, anti-blending 0 out-of-scope.
+- **First, sanity-check (30s):** `npm run typecheck && npm test` should be green (**89 tests**), and
   `node dist/cli/index.js doctor --no-smoke` should list 3 providers. (Uncommitted tree = finished
-  T3–T7 work; user commits — do not re-implement.)
-- **PENDING T7 acceptance — user runs (metered, ~10–12 calls):** live-verify real providers yield 00–10
-  + `final-report.md`. Steps:
-  1. `npm run build`
-  2. `node dist/cli/index.js run idea-refinement examples/sample-idea.md`
-  3. Inspect `.aiki/runs/<id>/`: expect `08-verifications.json`, `09-judge-report.json`, `final-report.md`
-     (the decision brief), plus 00–07. Check `meta.json` `call_count` (~10–12) stays ≤ budget 12, and read
-     `final-report.md` for a real verdict + assumption-audit table + disagreement map. Consensus should now
-     be **non-empty** (the S7 grouping call merging cross-provider claims — the whole point of decision B).
-  - Green → flip T7 ledger to ✅ and start T8. A real-provider JSON hiccup → §14 repair recovers (as at
-    T5/T6); a genuine failure fails gracefully with partial artifacts + meta.
-- **Next action after live-verify: T8 (TUI, ink)** — §4.2 stage timeline, S2-clarification screen,
-  completion view. Headless pipeline is done; T8 is presentation. (Also revisit the S2 Jaccard-clustering
-  tuning noted in traps — it over-triggers the T8 clarification.)
-- **In-flight?** No. T7 finished cleanly (code). See `.agent/HANDOFF.md`.
+  T3–T8 work; user commits — do not re-implement.)
+- **Next action — START HERE: T9 (show / resolve / config). USER WANTS TO GRILL T9 FIRST — invoke the
+  `grilling` skill and interview them through the design before writing any code (they explicitly asked).**
+  §5 commands to design: `aiki show <run>` (render a past run's summary from artifacts — likely reuse
+  `src/tui/format.ts` + the S10 renderer), `aiki resolve` (role/config overrides — the seam is already
+  built: `resolveRoles(overrides?)` + `RunOptions.roleOverrides`), and **`.aiki/config.json` loading**
+  (pin roles, judge override per §CLAUDE.md, and the §8 6h smoke-test cache that doctor/T2 deferred).
+  No new pipeline stages. Open design Qs to grill: config schema + precedence (flag > config > default);
+  what `show` renders (full report vs summary; for a partial/aborted run?); does `resolve` mutate config
+  or just preview; where the smoke cache lives + its interaction with `doctor --fresh`.
+- **Tuning debt:** S2 clustering + S2 prompt = **FIXED 2026-07-03** (overlap-coefficient + prompt
+  hardening; see traps). Remaining low-priority: S7 blind-spot keyword matching is coarse → over-reports
+  (e.g. flags "feasibility" as uncovered though discussed). Not blocking. **Do NOT touch the S7
+  semantic-grouping model call — that's the working fix, not the coarse part.**
+- **In-flight?** No. T8 finished cleanly (code + tests + live interactive + abort verified). See HANDOFF.
 
 ## Task ledger (§24)
 
@@ -43,9 +42,9 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
 | T4 schemas + artifact writer + meta.json | ✅ | 7 core zod schemas; RunWriter (ordered+atomic); `aiki providers --json`; 56 tests |
 | T5 engine + S1–S3 | ✅ | RunCtx+budget/deadline/quorum, S1–S3, `aiki run`, roles decided; live 00–03; 65 tests |
 | T6 S4–S7 | ✅ | fan-out+drift+dedupe+map; 71 tests+typecheck+build green; LIVE-verified 00–07 (run …-fe2e) |
-| T7 S8–S10 | 🟡 code | S7 grouping + S8 verify + S9 adjudicate + S10 render; budget→12; 80 tests+build green; LIVE 00–10 pending user run |
-| T8 TUI (ink) | ⏳ NEXT | after T7 live-verify: stage timeline, S2-clarify screen, completion view (§4.2, §11 screens) |
-| T9 show / resolve / config | ⬜ | |
+| T7 S8–S10 | ✅ | S7 grouping + S8 verify + S9 adjudicate + S10 render; budget→12; 80 tests+build green; LIVE-verified 00–10 (run …-af3d) |
+| T8 TUI (ink) | ✅ | event seam + child-kill + 6 screens; 89 tests. LIVE-verified: full S1→S10 run + Ctrl+C→aborted:true (run …-d09a) |
+| T9 show / resolve / config | ⏳ NEXT | show <run>, resolve (role/config overrides), .aiki/config.json load (roles, smoke cache) |
 | T10 code-review workflow | ⬜ | |
 | T11 bench harness + build set | ⬜ | |
 | T12 freeze + holdout + RESULTS.md | ⬜ | |
@@ -113,6 +112,28 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
     (markdown decision brief, user-facing → DISPLAY_NAME so agy shows as "Gemini"). Writes `final-report.md`.
   - Tests: `test/synthesis.test.ts` (grouping merge, anti-blending, audit, demotion); `engine.test.ts` now
     e2e S1→S10. Skills/`rubric.json` loader still deferred — rubric stays inline (`IDEA_RUBRIC`).
+- **T8 BUILT (2026-07-03) — TUI + the engine seam it needed, do not re-derive:**
+  - **Engine seam (additive, headless unchanged):** `RunEvents` + `runStage` + `StageInfo` in
+    `context.ts`; `RunCtx.events`/`.aborted` getter; `ctx.call` passes `this.signal`; `RunOptions.events`
+    + `executeRun` emits `onStart` and finalizes `aborted = ctx.aborted || classified.aborted`.
+  - **Child-kill:** `RunRequest.signal`/`SpawnOpts.signal` → `spawnCapture` `killGroup()` on abort (shared
+    with the timeout path) → `runAdapter` skips its retry when `req.signal.aborted`.
+  - **s2Misread** gained the `clusters>1 && ctx.events?.clarify` branch + `how:'user-selected'`.
+  - **Workflow** wraps every stage in `runStage(ctx,'Sn',fn)` + exports `IDEA_STAGES` manifest.
+  - **TUI** in `src/tui/`: `timeline.ts` (pure reducer/glyphs/provider-resolution), `format.ts` (pure
+    completion/error), `app.tsx` (Ink state machine: detecting→input→running→clarify→finished; composes
+    engine primitives directly, NOT `run()`; Ctrl+C via AbortController), `index.ts` (`startTui`,
+    render `exitOnCtrlC:false`). Bare `aiki` → `startTui` (cli/index.ts default action). Names via DISPLAY_NAME.
+  - Tests: `test/tui.test.ts` (timeline + formatters); `engine.test.ts` +2 abort tests. app.tsx render is
+    NOT unit-tested (pure logic is) — the interactive run is the user's manual §603 acceptance.
+  - **INTERACTIVELY VERIFIED (2026-07-03):** user ran bare `aiki` → full S1→S10 completed live through
+    the TUI (detect → input → clarify → timeline → completion with verdict + top disagreements + report
+    path, run `…-8c44`). Two UI bugs found + fixed: (1) multi-line paste corrupted the single-line input
+    → onChange now collapses newlines to spaces (+ hint to use the file path for long ideas); (2) the
+    "Misunderstanding guard" label (22 chars) butted against the provider column → label pad 22→24. Ctrl+C
+    abort not yet user-tested. **S2 over-triggered the clarification live** (the known Jaccard debt) AND a
+    provider META-MISREAD the S2 prompt (echoed the instruction as the "interpretation") → a garbage
+    option-3. Both = S2 quality debt (clustering tune + S2-prompt hardening: "ORIGINAL TEXT is the task").
   - **Self-consistency (S4, 1 survivor):** resample the survivor once → 2 samples, run flagged `low_diversity`.
     Full 1-provider mode (§8 banner/self-judge) stays a T7+ concern. Provider attribution dedupes, so a
     resampled claim shows `providers:[agy]` (honest: 1 provider) not `[agy,agy]`.
@@ -134,12 +155,16 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
   temp-copy cwd fallback + record enforcement level in meta.json.
 - **doctor runs live smoke = paid model calls.** Use `aiki doctor --no-smoke` during dev. The
   §8 6h smoke cache is not built yet (belongs to the config store, T9).
-- **S2 clustering is strict on prose (tuning, not a bug):** `cluster.ts` uses Jaccard token
-  overlap ≥0.6 (§9). Live, 3 semantically-identical restatements each formed their OWN cluster →
-  `how: 'majority-cluster'` (largest, ties→earliest). Real prose rarely hits 0.6 Jaccard, so S2
-  will over-report "multiple clusters" → over-triggers the TUI clarification (T8). Revisit at T8:
-  lower threshold, use overlap-coefficient `|A∩B|/min`, or normalize (stem/stopword). Spec-faithful
-  now; flagged for tuning.
+- **S2 clustering FIXED (2026-07-03), was over-triggering the clarification:** `cluster.ts`
+  `clusterInterpretations` now uses **overlap-coefficient** (|A∩B|/min), not Jaccard, at the same
+  §9 threshold 0.6. Calibrated on the live T8 case: two same-meaning readings scored Jaccard ~0.60
+  (split, spurious clarification) → overlap-coef 0.76 (cluster); a genuine divergence is ~0.50 (still
+  splits → real clarifications preserved). PLUS the **S2 prompt was hardened** (a provider had
+  meta-misread the instruction as the task → garbage clarification option): it now pins the
+  interpretation to the USER'S request + marks the request as data-not-instructions (also §7.2
+  injection safety); output contract unchanged. Regression test in `cluster.test.ts`. NOTE: S6 dedupe
+  still uses Jaccard 0.85 (near-dup only, correct); S7 blind-spot keyword matching still coarse
+  (over-reports, e.g. "feasibility") — that one is still open, low priority.
 - **T4/T5 schema choices to know before T6–T7:** (1) `RoleOutput` is a zod
   `discriminatedUnion('workflow', …)` but the model JSON (§13) has NO `workflow` field — the
   engine (S4, T6) MUST inject it: `RoleOutput.parse({ workflow, ...modelJson })`. `jsonCall` won't
@@ -168,6 +193,8 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
   `executeRun`/`run`/WORKFLOWS. `stages/s1|s2|s3`, (T6) `s4-analyze`/`s5-drift`/`s6-claims`(`mergeClaims`)/
   `s7-disagreement`(`buildDisagreementMap`+`applyGroups`+`s7SemanticGroup`), (T7) `s8-verify`, `s9-judge`
   (`adjudicationScopeViolations`/`demoteSelfAuthored`), `s10-render` (`deriveAudit`/`renderReport`).
-  Workflow: `src/workflows/idea-refinement.ts` (full S1→S10 + inline `IDEA_RUBRIC`; skills/ loader deferred).
+  Workflow: `src/workflows/idea-refinement.ts` (full S1→S10, `runStage`-wrapped, + `IDEA_RUBRIC` + `IDEA_STAGES`).
+- **TUI (T8):** `src/tui/` — `timeline.ts` (pure), `format.ts` (pure), `app.tsx` (Ink), `index.ts` (`startTui`).
+  Engine seam: `RunEvents`/`runStage`/`StageInfo` in context.ts; abort signal threaded ctx→adapter→spawn.
 - Skills/workflows content: `skills/<workflow>/`  ·  Bench: `bench/` + `src/bench/`
 - Tests: `test/`  ·  Pre-registration: `BENCHMARK.md`  ·  Policy: `docs/POLICY.md`

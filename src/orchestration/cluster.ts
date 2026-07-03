@@ -2,6 +2,12 @@
 // normalized token overlap; a threshold ≥ 0.6 puts two restatements in the same cluster. Pure
 // code (no model call) → directly unit-tested. This — not a model — decides whether the providers
 // agree on what the task is (§19 "deterministic validators decide what enters downstream").
+//
+// The overlap metric is the OVERLAP COEFFICIENT (|A∩B|/min), not Jaccard. §9 says "normalized token
+// overlap ≥ 0.6"; Jaccard was too strict on real prose — two same-meaning 1-sentence readings scored
+// right at ~0.60 and split, spuriously triggering the S2 clarification (observed live at T8). The
+// coefficient isn't penalized by length/filler differences: the two same-meaning readings score 0.76,
+// a genuine divergence scores ~0.50 — so real disagreement still clusters apart. (Fixed 2026-07-03.)
 
 export const SAME_CLUSTER_THRESHOLD = 0.6; // §9
 
@@ -54,7 +60,7 @@ export function clusterInterpretations(items: ClusterItem[], threshold = SAME_CL
   const clusters: { members: string[]; representative: string; repTokens: Set<string> }[] = [];
   for (const item of items) {
     const tokens = tokenize(item.text);
-    const home = clusters.find((c) => overlap(tokens, c.repTokens) >= threshold);
+    const home = clusters.find((c) => overlapCoefficient(tokens, c.repTokens) >= threshold);
     if (home) home.members.push(item.key);
     else clusters.push({ members: [item.key], representative: item.text, repTokens: tokens });
   }

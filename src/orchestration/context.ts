@@ -20,6 +20,41 @@ import type { RunWriter } from '../storage/runs.js';
 
 export type WorkflowId = 'idea-refinement' | 'code-review';
 
+/**
+ * Optional observation/interaction seam for the TUI (T8). Entirely additive: headless runs pass no
+ * `events`, so the engine behaves exactly as without it. `clarify` is the one interactive point —
+ * present only in the TUI; when absent, S2 falls back to the majority cluster (headless).
+ */
+export interface RunEvents {
+  onStart?(runId: string, dir: string): void;
+  onStageStart?(id: string): void;
+  onStageEnd?(id: string, status: 'done' | 'failed' | 'skipped'): void;
+  /** Ask the user to pick among diverging S2 interpretations; resolves to the chosen option index. */
+  clarify?(question: string, options: string[]): Promise<number>;
+}
+
+/** Declarative timeline row for a workflow's stages (T8). The TUI renders the pending skeleton from
+ *  the per-workflow manifest and resolves each row's provider(s) from `RoleMap` via `role`. */
+export interface StageInfo {
+  id: string; // 'S1'..'S10' — matches the runStage/event ids
+  label: string; // human label for the timeline
+  role: 'analyst' | 'judge' | 'verifier' | 's4' | 'all' | null; // whose chip(s) show; null = deterministic (—)
+}
+
+/** Bracket a stage call with the TUI's start/end events (no-op headless). A thrown StageError marks
+ *  the row `failed` and re-propagates unchanged — the engine's failure handling is untouched. */
+export async function runStage<T>(ctx: RunCtx, id: string, fn: () => Promise<T>): Promise<T> {
+  ctx.events?.onStageStart?.(id);
+  try {
+    const result = await fn();
+    ctx.events?.onStageEnd?.(id, 'done');
+    return result;
+  } catch (e) {
+    ctx.events?.onStageEnd?.(id, 'failed');
+    throw e;
+  }
+}
+
 const DEFAULT_BUDGET = 12; // §19 said 9, but that never summed: full idea-refinement pipeline is
 // S1(1)+S2(3)+S3(1)+S4(2)+S7-grouping(1)+S8(1)+S9(1) = 10 min, 11 with S8's 2nd pass, 11–12 with the
 // routine agy-S2 §14 repair. 9 aborts right before the judge. 12 = full run + 1 repair, still a real
@@ -81,6 +116,7 @@ export interface RunCtxOpts {
   budget?: number;
   deadlineMs?: number;
   signal?: AbortSignal;
+  events?: RunEvents; // TUI observation/interaction seam (T8); absent = headless
   now?: () => number; // injectable clock (tests)
 }
 
@@ -90,6 +126,7 @@ export class RunCtx {
   readonly roles: RoleMap;
   readonly writer: RunWriter;
   readonly cwd: string;
+  readonly events?: RunEvents;
   readonly budget: { limit: number; used: number };
   readonly calls: CallRecord[] = [];
   /** §16 report-header flags accumulated by stages (S4 → low_diversity, S7 → low_diversity,
@@ -108,6 +145,7 @@ export class RunCtx {
     this.roles = opts.roles;
     this.writer = opts.writer;
     this.cwd = opts.cwd;
+    this.events = opts.events;
     this.budget = { limit: opts.budget ?? DEFAULT_BUDGET, used: 0 };
     this.handles = new Map(opts.handles.map((h) => [h.id, h]));
     this.signal = opts.signal;
@@ -119,6 +157,12 @@ export class RunCtx {
   /** Provider ids available this run (READY at setup). */
   available(): ProviderId[] {
     return [...this.handles.keys()];
+  }
+
+  /** True once the run's abort signal has fired (Ctrl+C). Lets the finalizer record `aborted:true`
+   *  even when the triggering error surfaced as something else (e.g. a killed in-flight call). */
+  get aborted(): boolean {
+    return this.signal?.aborted ?? false;
   }
 
   handle(id: ProviderId): ProviderHandle {
@@ -161,6 +205,7 @@ export class RunCtx {
         timeoutMs: req.timeoutMs ?? DEFAULT_CALL_TIMEOUT_MS,
         expectJson: req.expectJson,
         readOnly: true,
+        signal: this.signal, // Ctrl+C kills the in-flight child (T8); undefined headless
       },
       handle.flags,
     );
