@@ -5,7 +5,8 @@
 // v1 T5 scope: S1 → S2 → S3. S4–S10 are added as later tasks extend this composition.
 
 import { resolve } from 'node:path';
-import type { RunCtx } from '../orchestration/context.js';
+import type { RunCtx, StageInfo } from '../orchestration/context.js';
+import { runStage } from '../orchestration/context.js';
 import { s1Intent } from '../orchestration/stages/s1-intent.js';
 import { s2Misread } from '../orchestration/stages/s2-misread.js';
 import { s3Prompts } from '../orchestration/stages/s3-prompts.js';
@@ -51,29 +52,48 @@ Produce ONLY JSON matching {{S4_SCHEMA_REF}} with:
 - open_questions: ≤5 questions whose answers would change the verdict.
 Rules: no motivation, no summaries of your own output, no markdown, JSON only.`;
 
-/** Runs the full idea-refinement pipeline S1–S10. Throws on any fatal condition; the engine's
- *  `executeRun` wrapper turns that into a graceful failure + meta. */
-export async function runIdeaRefinement(ctx: RunCtx, input: string): Promise<void> {
-  const contract = await s1Intent(ctx, input);
-  const guard = await s2Misread(ctx, contract, input);
+/** Timeline manifest (T8): the 10 stages in order, each with the provider-role its row displays.
+ *  The TUI draws the pending skeleton from this and resolves chips from `ctx.roles`. Ids match the
+ *  `runStage` calls below. S7 shows the judge (it makes the grouping call); S5/S6/S10 are pure (—). */
+export const IDEA_STAGES: StageInfo[] = [
+  { id: 'S1', label: 'Intent contract', role: 'analyst' },
+  { id: 'S2', label: 'Misunderstanding guard', role: 'all' },
+  { id: 'S3', label: 'Prompt generation', role: 'analyst' },
+  { id: 'S4', label: 'Parallel analysis', role: 's4' },
+  { id: 'S5', label: 'Drift check', role: null },
+  { id: 'S6', label: 'Claim extraction', role: null },
+  { id: 'S7', label: 'Disagreement map', role: 'judge' },
+  { id: 'S8', label: 'Verifier loop', role: 'verifier' },
+  { id: 'S9', label: 'Judge synthesis', role: 'judge' },
+  { id: 'S10', label: 'Report', role: null },
+];
 
-  // Persist the input as a file so S4's "read the file at {{INPUT_PATH}}" resolves.
+/** Runs the full idea-refinement pipeline S1–S10. Throws on any fatal condition; the engine's
+ *  `executeRun` wrapper turns that into a graceful failure + meta. Each stage is wrapped in
+ *  `runStage` so the TUI timeline (T8) gets start/end events; headless, that's a no-op. */
+export async function runIdeaRefinement(ctx: RunCtx, input: string): Promise<void> {
+  const contract = await runStage(ctx, 'S1', () => s1Intent(ctx, input));
+  const guard = await runStage(ctx, 'S2', () => s2Misread(ctx, contract, input));
+
+  // Persist the input as a file so S4's "read the file at {{INPUT_PATH}}" resolves (not a stage).
   await ctx.writer.writeInput('idea.md', input);
   const inputPath = resolve(ctx.writer.dir, 'inputs', 'idea.md');
 
-  const stagePrompts = await s3Prompts(ctx, {
-    contract,
-    interpretation: guard.chosen.my_interpretation,
-    templates: { analyst: IDEA_S4_ANALYST_TEMPLATE },
-    slots: { INPUT_PATH: inputPath, S4_SCHEMA_REF: 'the idea-refinement S4 RoleOutput schema' },
-  });
+  const stagePrompts = await runStage(ctx, 'S3', () =>
+    s3Prompts(ctx, {
+      contract,
+      interpretation: guard.chosen.my_interpretation,
+      templates: { analyst: IDEA_S4_ANALYST_TEMPLATE },
+      slots: { INPUT_PATH: inputPath, S4_SCHEMA_REF: 'the idea-refinement S4 RoleOutput schema' },
+    }),
+  );
 
   // s3Prompts guarantees an entry for every template key (it iterates them), so `analyst` is present.
-  const seats = await s4Analyze(ctx, stagePrompts.prompts.analyst!);
-  const { kept } = await s5Drift(ctx, contract, seats);
-  const claimSet = await s6Claims(ctx, kept);
-  const map = await s7Disagreement(ctx, claimSet, kept, IDEA_RUBRIC);
-  const verifications = await s8Verify(ctx, map);
-  const judgeReport = await s9Judge(ctx, contract, map, verifications, IDEA_RUBRIC);
-  await s10Render(ctx, { contract, seats: kept, map, verifications, judgeReport });
+  const seats = await runStage(ctx, 'S4', () => s4Analyze(ctx, stagePrompts.prompts.analyst!));
+  const { kept } = await runStage(ctx, 'S5', () => s5Drift(ctx, contract, seats));
+  const claimSet = await runStage(ctx, 'S6', () => s6Claims(ctx, kept));
+  const map = await runStage(ctx, 'S7', () => s7Disagreement(ctx, claimSet, kept, IDEA_RUBRIC));
+  const verifications = await runStage(ctx, 'S8', () => s8Verify(ctx, map));
+  const judgeReport = await runStage(ctx, 'S9', () => s9Judge(ctx, contract, map, verifications, IDEA_RUBRIC));
+  await runStage(ctx, 'S10', () => s10Render(ctx, { contract, seats: kept, map, verifications, judgeReport }));
 }

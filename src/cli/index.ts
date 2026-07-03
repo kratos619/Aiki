@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-// aiki CLI entrypoint. T1: `doctor` wired. TUI (bare `aiki`) + other commands land later.
+// aiki CLI entrypoint. Subcommands: doctor / providers / run. Bare `aiki` mounts the interactive TUI (T8).
 
 import { Command } from 'commander';
 import { doctor } from './doctor.js';
 import { providers } from './providers.js';
 import { runCommand } from './run.js';
+import { startTui } from '../tui/index.js';
 
 export const VERSION = '0.1.0';
 
@@ -36,14 +37,14 @@ program
   .description('Headless run of a workflow on inline text or a file path (§5).')
   .argument('<workflow>', 'workflow id: idea-refinement | code-review')
   .argument('[input]', 'inline text or a path to a .md file')
-  .option('--budget <n>', 'max provider calls for this run (default 9)', (v) => parseInt(v, 10))
+  .option('--budget <n>', 'max provider calls for this run (default 12)', (v) => parseInt(v, 10))
   .action(async (workflow: string, input: string | undefined, opts: { budget?: number }) => {
     process.exit(await runCommand(workflow, input, { budget: opts.budget }));
   });
 
-// Bare `aiki` launches the TUI in T8; until then, show help.
+// Bare `aiki` (no subcommand) → interactive TUI.
 program.action(() => {
-  program.help();
+  startTui();
 });
 
 program.parseAsync(process.argv);

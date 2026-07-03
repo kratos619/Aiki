@@ -3,7 +3,7 @@
 // (budget/deadline/abort/bad-output/quorum) becomes a graceful failure: partial artifacts on disk
 // stay valid (RunWriter atomic writes) and meta records what happened (§6, §19).
 
-import { BudgetExceeded, DeadlineExceeded, StageError, makeRunId, resolveRoles, setupProviders, RunCtx, type RoleMap, type WorkflowId } from './context.js';
+import { BudgetExceeded, DeadlineExceeded, StageError, makeRunId, resolveRoles, setupProviders, RunCtx, type RoleMap, type RunEvents, type WorkflowId } from './context.js';
 import { RunWriter } from '../storage/runs.js';
 import { runIdeaRefinement } from '../workflows/idea-refinement.js';
 
@@ -36,6 +36,7 @@ function classifyError(e: unknown): { code: string; aborted: boolean } {
 export async function executeRun(ctx: RunCtx, input: string, fn: WorkflowFn): Promise<RunOutcome> {
   await ctx.writer.init();
   await ctx.writer.writeText('original', input);
+  ctx.events?.onStart?.(ctx.runId, ctx.writer.dir);
 
   const base = { runId: ctx.runId, dir: ctx.writer.dir };
   try {
@@ -43,10 +44,13 @@ export async function executeRun(ctx: RunCtx, input: string, fn: WorkflowFn): Pr
     await ctx.writer.writeMeta(ctx.buildMeta('ok', false));
     return { ok: true, ...base, callCount: ctx.calls.length };
   } catch (e) {
-    const { code, aborted } = classifyError(e);
+    const classified = classifyError(e);
+    // A fired abort signal wins: record `aborted` even if the surfacing error was e.g. a killed
+    // in-flight call classified as CRASH/QUORUM (§472/§603 — Ctrl+C leaves aborted:true meta).
+    const aborted = ctx.aborted || classified.aborted;
     // Best-effort finalize: never let a meta-write failure mask the original error.
     await ctx.writer.writeMeta(ctx.buildMeta(aborted ? 'aborted' : 'failed', aborted)).catch(() => {});
-    return { ok: false, ...base, callCount: ctx.calls.length, error: { code, message: e instanceof Error ? e.message : String(e) } };
+    return { ok: false, ...base, callCount: ctx.calls.length, error: { code: classified.code, message: e instanceof Error ? e.message : String(e) } };
   }
 }
 
@@ -54,6 +58,7 @@ export interface RunOptions {
   budget?: number;
   deadlineMs?: number;
   signal?: AbortSignal;
+  events?: RunEvents; // TUI seam (T8); absent = headless
   roleOverrides?: Partial<RoleMap>; // §10 override seam; config loading is T9
 }
 
@@ -87,6 +92,7 @@ export async function run(workflow: WorkflowId, input: string, opts: RunOptions 
     budget: opts.budget,
     deadlineMs: opts.deadlineMs,
     signal: opts.signal,
+    events: opts.events,
   });
 
   return executeRun(ctx, input, WORKFLOWS[workflow]);

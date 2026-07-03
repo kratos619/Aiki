@@ -60,6 +60,7 @@ export interface RunRequest {
   expectJson: boolean; // apply §14 JSON extraction when true
   readOnly?: boolean; // default true — pass the provider's read-only flag (§19)
   inputFiles?: string[]; // large inputs passed by path reference, never via stdin
+  signal?: AbortSignal; // Ctrl+C (T8): aborts the in-flight process-tree; undefined = headless
 }
 
 export type RunResultAdapter =
@@ -81,6 +82,7 @@ export interface SpawnOpts {
   cwd: string;
   timeoutMs: number;
   env: NodeJS.ProcessEnv;
+  signal?: AbortSignal; // abort → SIGKILL the process group (same machinery as the timeout)
 }
 
 export type SpawnCaptureFn = (bin: string, args: string[], opts: SpawnOpts) => Promise<RawResult>;

@@ -42,9 +42,20 @@ describe('clusterInterpretations', () => {
   it('honors the threshold (higher threshold splits more)', () => {
     const items = [
       { key: 'a', text: 'a b c d e' },
-      { key: 'b', text: 'a b c x y' }, // overlap 3/7 ≈ 0.43
+      { key: 'b', text: 'a b c x y' }, // overlap-coefficient = 3/min(5,5) = 0.6
     ];
-    expect(clusterInterpretations(items, 0.4)).toHaveLength(1);
-    expect(clusterInterpretations(items, 0.6)).toHaveLength(2);
+    expect(clusterInterpretations(items, 0.5)).toHaveLength(1); // 0.6 ≥ 0.5 → same cluster
+    expect(clusterInterpretations(items, 0.7)).toHaveLength(2); // 0.6 < 0.7 → split
+  });
+
+  it('clusters same-meaning readings that differ in length/filler (S2 fix — Jaccard false-split)', () => {
+    // The live T8 case: claude + codex read the idea identically but phrased it differently, scoring
+    // right at Jaccard ~0.60 and splitting → spurious clarification. Overlap-coefficient merges them.
+    const clusters = clusterInterpretations([
+      { key: 'claude', text: 'an ios first app where busy professionals photograph their fridge and an ai generates a personalized 7 day meal plan from only the detected ingredients for 15 a month' },
+      { key: 'codex', text: 'an ios first mobile app for busy professionals that uses fridge photos to detect ingredients and generate personalized 7 day meal plans using only those detected ingredients for 15 a month' },
+    ]);
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0]!.members).toEqual(['claude', 'codex']);
   });
 });

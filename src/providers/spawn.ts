@@ -73,7 +73,7 @@ export function captureFull(id: ProviderId, bin: string, args: string[], timeout
  * - detached process group so a timeout kills the whole tree, not just the direct child.
  * - env is supplied filtered by the caller (adapter-core strips /KEY|TOKEN|SECRET/i).
  */
-export const spawnCapture: SpawnCaptureFn = (bin, args, { cwd, timeoutMs, env }) => {
+export const spawnCapture: SpawnCaptureFn = (bin, args, { cwd, timeoutMs, env, signal }) => {
   const started = Date.now();
   const outPath = join(tmpdir(), `aiki-run-${process.pid}-${seq++}.out`);
   const fd = openSync(outPath, 'w');
@@ -85,10 +85,10 @@ export const spawnCapture: SpawnCaptureFn = (bin, args, { cwd, timeoutMs, env })
 
     const child = spawn(bin, args, { cwd, env, detached: true, stdio: ['ignore', fd, 'pipe'] });
 
-    const timer = setTimeout(() => {
-      timedOut = true;
+    // SIGKILL the whole detached process group. Shared by the timeout and the Ctrl+C abort (T8).
+    const killGroup = () => {
       try {
-        if (child.pid) process.kill(-child.pid, 'SIGKILL'); // kill the process group
+        if (child.pid) process.kill(-child.pid, 'SIGKILL');
       } catch {
         try {
           child.kill('SIGKILL');
@@ -96,12 +96,25 @@ export const spawnCapture: SpawnCaptureFn = (bin, args, { cwd, timeoutMs, env })
           /* already gone */
         }
       }
+    };
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      killGroup();
     }, timeoutMs);
 
-    const finish = (code: number | null, signal: NodeJS.Signals | null) => {
+    // Ctrl+C: kill the in-flight child immediately so no orphaned metered call survives (§472, T8).
+    const onAbort = () => killGroup();
+    if (signal) {
+      if (signal.aborted) killGroup();
+      else signal.addEventListener('abort', onAbort, { once: true });
+    }
+
+    const finish = (code: number | null, signal2: NodeJS.Signals | null) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
       try {
         closeSync(fd);
       } catch {
@@ -116,7 +129,7 @@ export const spawnCapture: SpawnCaptureFn = (bin, args, { cwd, timeoutMs, env })
       rmSync(outPath, { force: true });
       resolve({
         code,
-        signal: signal ?? null,
+        signal: signal2 ?? null,
         stdout,
         stderr: stderr.length > STDERR_TAIL_CAP ? stderr.slice(-STDERR_TAIL_CAP) : stderr,
         timedOut,

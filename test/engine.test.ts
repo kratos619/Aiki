@@ -17,7 +17,7 @@ function fakeAdapter(id: ProviderId): Adapter {
       let obj: unknown;
       if (p.includes('intake analyst')) {
         obj = { task: 'build a local multi-model orchestration CLI', task_type: 'idea-refinement', constraints: [], unknowns: ['target user'], success_criteria: ['a verdict'] };
-      } else if (p.includes('how you read it')) {
+      } else if (p.includes('their request could be misread')) {
         obj = { my_interpretation: 'build a local multi model orchestration cli', plausible_misreadings: ['a cloud chat product'] };
       } else if (p.includes('Fill the role prompt templates')) {
         obj = { prompts: { analyst: 'ROLE: analyst. Task fully specified, no slots remain.' } };
@@ -174,5 +174,47 @@ describe('executeRun budget breach (§24 T5: aborts gracefully)', () => {
     expect(meta.exit_status).toBe('failed');
     expect(meta.call_count).toBe(1); // only S1's call was accounted (breach throws pre-increment)
     expect(meta.budget).toEqual({ limit: 1, used: 1 });
+  });
+});
+
+describe('Ctrl+C abort (§472/§603: leaves aborted:true meta)', () => {
+  function ctxWith(handles: ProviderHandle[], signal: AbortSignal): RunCtx {
+    const runId = makeRunId('idea-refinement');
+    const roles = resolveRoles('idea-refinement', handles.map((h) => h.id));
+    const writer = new RunWriter(runId, root);
+    return new RunCtx({ runId, workflow: 'idea-refinement', handles, roles, writer, cwd: writer.dir, signal });
+  }
+
+  it('a pre-aborted signal finalizes the run as aborted', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const ctx = ctxWith([handle('agy'), handle('codex'), handle('claude')], controller.signal);
+    const outcome = await executeRun(ctx, INPUT, runIdeaRefinement);
+
+    expect(outcome.ok).toBe(false);
+    const meta = JSON.parse(await readFile(join(ctx.writer.dir, 'meta.json'), 'utf8'));
+    expect(meta.exit_status).toBe('aborted');
+    expect(meta.aborted).toBe(true);
+    expect(meta.call_count).toBe(0); // guard aborts before the first call
+  });
+
+  it('an abort that surfaces as a non-ABORT error (killed in-flight call) still records aborted', async () => {
+    const controller = new AbortController();
+    // Simulate a child killed by Ctrl+C: the call aborts the signal then returns CRASH.
+    const crashOnAbort = (id: ProviderId): Adapter => ({
+      id,
+      run: async (): Promise<RunResultAdapter> => {
+        controller.abort();
+        return { ok: false, error: 'CRASH', stderrTail: 'killed', durationMs: 1 };
+      },
+    });
+    const handles = (['agy', 'codex', 'claude'] as ProviderId[]).map((id) => ({ ...handle(id), adapter: crashOnAbort(id) }));
+    const ctx = ctxWith(handles, controller.signal);
+    const outcome = await executeRun(ctx, INPUT, runIdeaRefinement);
+
+    expect(outcome.ok).toBe(false);
+    const meta = JSON.parse(await readFile(join(ctx.writer.dir, 'meta.json'), 'utf8'));
+    expect(meta.exit_status).toBe('aborted'); // ctx.aborted wins over the CRASH classification
+    expect(meta.aborted).toBe(true);
   });
 });
