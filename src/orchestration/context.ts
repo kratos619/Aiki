@@ -20,7 +20,10 @@ import type { RunWriter } from '../storage/runs.js';
 
 export type WorkflowId = 'idea-refinement' | 'code-review';
 
-const DEFAULT_BUDGET = 9; // §19
+const DEFAULT_BUDGET = 12; // §19 said 9, but that never summed: full idea-refinement pipeline is
+// S1(1)+S2(3)+S3(1)+S4(2)+S7-grouping(1)+S8(1)+S9(1) = 10 min, 11 with S8's 2nd pass, 11–12 with the
+// routine agy-S2 §14 repair. 9 aborts right before the judge. 12 = full run + 1 repair, still a real
+// cap (a repair-storm fails gracefully + flagged). Overridable via `--budget` / config (T9). (T7 decision.)
 const DEFAULT_DEADLINE_MS = 10 * 60 * 1000; // §19: 10 minutes
 const DEFAULT_CALL_TIMEOUT_MS = 180_000; // §7.1
 
@@ -89,6 +92,9 @@ export class RunCtx {
   readonly cwd: string;
   readonly budget: { limit: number; used: number };
   readonly calls: CallRecord[] = [];
+  /** §16 report-header flags accumulated by stages (S4 → low_diversity, S7 → low_diversity,
+   *  S9 → synthesis_suspect). Folded into meta.json at finalize by `buildMeta`. */
+  readonly flags = new Set<NonNullable<RunMeta['flags']>[number]>();
 
   private readonly handles: Map<ProviderId, ProviderHandle>;
   private readonly signal?: AbortSignal;
@@ -119,6 +125,11 @@ export class RunCtx {
     const h = this.handles.get(id);
     if (!h) throw new StageError('setup', 'QUORUM', `provider ${id} not available`);
     return h;
+  }
+
+  /** Raise a §16 report-header flag; deduped, folded into meta at finalize. */
+  addFlag(flag: NonNullable<RunMeta['flags']>[number]): void {
+    this.flags.add(flag);
   }
 
   /** Guard: throw if aborted or past the wall-clock deadline. Called before every provider call. */
@@ -178,20 +189,28 @@ export class RunCtx {
       flag_profiles[h.id] = h.flags;
       read_only[h.id] = h.readOnly;
     }
+    // Roles record: the three singular roles plus one `s4_<n>` entry per fan-out seat (T6).
+    const roles: Record<string, ProviderId> = {
+      analyst: this.roles.analyst,
+      judge: this.roles.judge,
+      verifier: this.roles.verifier,
+    };
+    this.roles.s4.forEach((id, i) => (roles[`s4_${i + 1}`] = id));
+    // Fold stage-raised flags in with any explicitly passed by the caller; dedupe.
+    const allFlags = [...new Set([...(flags ?? []), ...this.flags])];
     return {
       run_id: this.runId,
       workflow: this.workflow,
       provider_versions,
       flag_profiles,
-      // Singular roles only for now; S4 seats land in meta when S4 is built (T6).
-      roles: { analyst: this.roles.analyst, judge: this.roles.judge, verifier: this.roles.verifier },
+      roles,
       read_only,
       calls: this.calls,
       call_count: this.calls.length,
       budget: { limit: this.budget.limit, used: this.budget.used },
       exit_status: exitStatus,
       aborted,
-      ...(flags && flags.length ? { flags } : {}),
+      ...(allFlags.length ? { flags: allFlags } : {}),
     };
   }
 }

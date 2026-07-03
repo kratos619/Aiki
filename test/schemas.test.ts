@@ -102,16 +102,23 @@ describe('DisagreementMap', () => {
   it('accepts the four buckets', () => {
     const dm = {
       consensus: [{ id: 'C1', statement: 's', type: 'VERIFIABLE' as const, providers: ['claude' as const, 'codex' as const] }],
-      contradictions: [{ claim_ids: ['C2', 'C3'] }],
+      contradictions: [
+        { id: 'D1', claim_ids: ['C2'], attacks: [{ provider: 'codex' as const, argument: 'weak', severity: 'HIGH' as const }] },
+      ],
       unique: [],
       blind_spots: ['kill criteria'],
     };
     expect(DisagreementMap.parse(dm)).toMatchObject({ blind_spots: ['kill criteria'] });
   });
 
-  it('rejects a contradiction referencing <2 claims', () => {
+  it('rejects a contradiction with no attacks (a dispute must carry its conflict content, §9 S8)', () => {
     expect(() =>
-      DisagreementMap.parse({ consensus: [], contradictions: [{ claim_ids: ['C1'] }], unique: [], blind_spots: [] }),
+      DisagreementMap.parse({
+        consensus: [],
+        contradictions: [{ id: 'D1', claim_ids: ['C1'], attacks: [] }],
+        unique: [],
+        blind_spots: [],
+      }),
     ).toThrow();
   });
 });

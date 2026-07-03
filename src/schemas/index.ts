@@ -103,6 +103,12 @@ export const CodeReviewRoleOutput = z
 
 export const RoleOutput = z.discriminatedUnion('workflow', [IdeaRoleOutput, CodeReviewRoleOutput]);
 
+/** The exact JSON the model returns for an idea-refinement S4 seat: `IdeaRoleOutput` WITHOUT the
+ *  `workflow` discriminator (§13 — model output carries no `workflow`). S4 validates the raw call
+ *  against this, then injects `workflow` and re-validates as `RoleOutput` before persisting.
+ *  `.omit` preserves the object's strict mode, so extra keys still trigger the §14 repair retry. */
+export const IdeaRoleOutputModel = IdeaRoleOutput.omit({ workflow: true });
+
 // ── S3: StagePrompts (§9, §13) ──────────────────────────────────────────────
 //
 // S3 output: the role-specific S4 prompts with every {{SLOT}} filled. Deterministic validator
@@ -111,6 +117,18 @@ export const RoleOutput = z.discriminatedUnion('workflow', [IdeaRoleOutput, Code
 export const StagePrompts = z
   .object({
     prompts: z.record(z.string(), z.string()), // role name → filled prompt (non-empty map)
+  })
+  .strict();
+
+// ── S7: ClaimGroups — semantic grouping call output (T7, decision B refined) ──
+//
+// The one constrained model call inside S7 (run on the judge role). It receives claim IDs +
+// statements with attribution WITHHELD and returns ONLY groupings of existing IDs that mean the
+// same thing. Strict + IDs-only is the anti-blending guard: the model groups by reference, never
+// rewrites a claim. Empty `groups` = nothing merged (legal). Each group needs ≥2 IDs to be a merge.
+export const ClaimGroups = z
+  .object({
+    groups: z.array(z.array(z.string().min(1)).min(2)),
   })
   .strict();
 
@@ -153,8 +171,24 @@ export const Claim = z.object({
   evidence: z.string().optional(),
 });
 
+// A dispute over a claim. For idea-refinement (T6) a contradiction is a contested assumption: one
+// or more analysts asserted the claim, and ≥1 analyst attacked it. The `attacks` ARE the dispute
+// content — they are exactly the "disputed items + evidence" the S8 verifier loop consumes (§9 S8),
+// so a contradiction without attacks would be meaningless. `id` is the stable target S8/S9 reference.
+// (Shape firmed at T6, as the T4 note anticipated: the old `claim_ids ≥2` assumed contradictions
+//  linked two claims, but the deterministic idea-refinement signal centers on one contested claim.)
 export const Contradiction = z.object({
-  claim_ids: z.array(z.string()).min(2), // the conflicting claims
+  id: z.string().min(1), // "D1", ...
+  claim_ids: z.array(z.string()).min(1), // the contested claim id(s)
+  attacks: z
+    .array(
+      z.object({
+        provider: ProviderIdSchema,
+        argument: z.string().min(1),
+        severity: z.enum(['HIGH', 'MED', 'LOW']),
+      }),
+    )
+    .min(1),
   note: z.string().optional(),
 });
 
@@ -184,6 +218,13 @@ export const JudgeReport = z
     confidence_notes: z.string().min(1), // which conclusions are HIGH/MEDIUM/LOW and why
   })
   .strict();
+
+/** S9 call-time variant: `dissent` relaxed to min-0 so an empty dissent does NOT auto-throw inside
+ *  jsonCall. S9 enforces the non-empty rule itself (one re-ask → else flag `synthesis_suspect` +
+ *  inject a placeholder) so it can salvage the rest of the report instead of failing the run (§260). */
+export const JudgeReportModel = JudgeReport.extend({
+  dissent: z.array(z.string()),
+});
 
 // ── RunMeta (§15, §16) ──────────────────────────────────────────────────────
 //
@@ -230,11 +271,15 @@ export type Interpretation = z.infer<typeof Interpretation>;
 export type StagePrompts = z.infer<typeof StagePrompts>;
 export type RoleOutput = z.infer<typeof RoleOutput>;
 export type IdeaRoleOutput = z.infer<typeof IdeaRoleOutput>;
+export type IdeaRoleOutputModel = z.infer<typeof IdeaRoleOutputModel>;
 export type CodeReviewRoleOutput = z.infer<typeof CodeReviewRoleOutput>;
+export type ClaimGroups = z.infer<typeof ClaimGroups>;
 export type Verification = z.infer<typeof Verification>;
 export type VerificationSet = z.infer<typeof VerificationSet>;
 export type Claim = z.infer<typeof Claim>;
+export type Contradiction = z.infer<typeof Contradiction>;
 export type DisagreementMap = z.infer<typeof DisagreementMap>;
 export type JudgeReport = z.infer<typeof JudgeReport>;
+export type JudgeReportModel = z.infer<typeof JudgeReportModel>;
 export type RunMeta = z.infer<typeof RunMeta>;
 export type CallRecord = z.infer<typeof CallRecord>;

@@ -24,6 +24,18 @@ export function overlap(a: Set<string>, b: Set<string>): number {
   return union === 0 ? 0 : inter / union;
 }
 
+/**
+ * Overlap coefficient of two token sets: |A∩B| / min(|A|,|B|). 0 when either is empty. Unlike
+ * Jaccard, it is not penalized when one text is much longer than the other — the right measure for
+ * "is this short restatement a subset of this longer text" (S5 drift: task_echo vs contract.task).
+ */
+export function overlapCoefficient(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let inter = 0;
+  for (const t of a) if (b.has(t)) inter++;
+  return inter / Math.min(a.size, b.size);
+}
+
 export interface ClusterItem {
   key: string; // stable label (e.g. provider id)
   text: string; // the restatement

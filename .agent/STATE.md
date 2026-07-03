@@ -5,31 +5,32 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
 
 ## Now
 
-- **Position:** T0–T5 all COMPLETE. Engine + S1–S3 live: `aiki run idea-refinement "<text>"`
-  produces artifacts 00–03 + meta.json (verified live, 6 calls incl. one §14 repair that recovered).
-  **65 tests** green (was 56; +9 for T5). Nothing half-done.
-- **First, sanity-check (30s):** `npm run typecheck && npm test` should be green (**65 tests**), and
-  `node dist/cli/index.js doctor --no-smoke` should list 3 providers. Green → build on it; don't
-  redo T0–T5. (Uncommitted tree = finished T3+T4+T5 work; user commits — do not re-implement.)
-- **Next action — START HERE: T6 (S4–S7).** Extend `runIdeaRefinement` (src/workflows/
-  idea-refinement.ts) past S3. Build in `src/orchestration/stages/`:
-  1. **S4 fan-out** (§9, §12.1): `Promise.allSettled` over `ctx.roles.s4` seats (default
-     `[agy, codex]`), each runs the filled analyst prompt from 03-prompts/. Validate each with
-     `RoleOutput` — **inject the `workflow` discriminator before `.parse()`** (model JSON has none;
-     see traps). Quorum ≥2 → continue; 1 → self-consistency; 0 → abort. Write 04-role-outputs/.
-     Each failed seat gets its single adapter retry first (already built). Reuse `jsonCall` +
-     `isFatal` fan-out pattern from `s2-misread.ts` — S4 is the same shape.
-  2. **S5 drift** (§9): deterministic — schema conformity + `task_echo` matches contract (hash/
-     similarity). Drifted output excluded; if exclusion breaks quorum → abort. Write 05.
-  3. **S6 claims** (§9): deterministic normalize + **fuzzy dedupe ≥0.85** → merged `Claim` with
-     multi-provider attribution (`Claim.providers` array already supports this). Write 06.
-  4. **S7 disagreement map** (§9): pure code → `DisagreementMap` {consensus, contradictions,
-     unique, blind_spots}. Empty contradictions legal → flag `low_diversity`. Firm the
-     `Contradiction`/`Claim` shapes now (T4 left them minimal). Write 07.
-  - **Acceptance (§24 T6):** fixture-driven tests for dedupe + map; live run yields 04–07.
-  - Schemas exist (T4): `RoleOutput`, `Claim`, `DisagreementMap`. `ClaimSet` (S6) composite has no
-    schema yet — add one or write as-is (like the 02 composite).
-- **In-flight?** No. T5 finished cleanly. See `.agent/HANDOFF.md`.
+- **Position:** T0–T6 COMPLETE + live-verified. **T7 (S8–S10) CODE COMPLETE, all gates green** — the
+  full **S1→S10** pipeline is wired; one acceptance item pending: the live run (user runs it, metered —
+  see below). **80 tests** green (was 71; +7 synthesis + 2 demotion; engine e2e now drives S1→S10),
+  typecheck clean, `npm run build` clean, `doctor --no-smoke` = 3/3. Nothing half-done.
+  - T7 was built to the **grilled+locked design** (2026-07-03): S7 semantic-grouping call on the judge
+    role (IDs-only, attribution-withheld, validated by-reference, graceful lexical fallback) → S8 verifier
+    (codex, single pass, anonymized disputes, skip if none) → S9 judge (claude, disputes-only, anti-blending
+    validator + mandatory dissent + code-derived confidence) → S10 render `final-report.md`. Budget 9→12.
+    2-prov demotion (§272) built as a no-op-in-3-prov guard. Full rationale in decided-facts.
+- **First, sanity-check (30s):** `npm run typecheck && npm test` should be green (**80 tests**), and
+  `node dist/cli/index.js doctor --no-smoke` should list 3 providers. (Uncommitted tree = finished
+  T3–T7 work; user commits — do not re-implement.)
+- **PENDING T7 acceptance — user runs (metered, ~10–12 calls):** live-verify real providers yield 00–10
+  + `final-report.md`. Steps:
+  1. `npm run build`
+  2. `node dist/cli/index.js run idea-refinement examples/sample-idea.md`
+  3. Inspect `.aiki/runs/<id>/`: expect `08-verifications.json`, `09-judge-report.json`, `final-report.md`
+     (the decision brief), plus 00–07. Check `meta.json` `call_count` (~10–12) stays ≤ budget 12, and read
+     `final-report.md` for a real verdict + assumption-audit table + disagreement map. Consensus should now
+     be **non-empty** (the S7 grouping call merging cross-provider claims — the whole point of decision B).
+  - Green → flip T7 ledger to ✅ and start T8. A real-provider JSON hiccup → §14 repair recovers (as at
+    T5/T6); a genuine failure fails gracefully with partial artifacts + meta.
+- **Next action after live-verify: T8 (TUI, ink)** — §4.2 stage timeline, S2-clarification screen,
+  completion view. Headless pipeline is done; T8 is presentation. (Also revisit the S2 Jaccard-clustering
+  tuning noted in traps — it over-triggers the T8 clarification.)
+- **In-flight?** No. T7 finished cleanly (code). See `.agent/HANDOFF.md`.
 
 ## Task ledger (§24)
 
@@ -41,9 +42,9 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
 | T3 codex adapter | ✅ | plain `codex exec`; stdout=final msg, stderr=transcript; 3/3 smoke live |
 | T4 schemas + artifact writer + meta.json | ✅ | 7 core zod schemas; RunWriter (ordered+atomic); `aiki providers --json`; 56 tests |
 | T5 engine + S1–S3 | ✅ | RunCtx+budget/deadline/quorum, S1–S3, `aiki run`, roles decided; live 00–03; 65 tests |
-| T6 S4–S7 | ⏳ NEXT | fan-out+drift+claim-dedupe+disagreement map |
-| T7 S8–S10 | ⬜ | idea-refinement end-to-end |
-| T8 TUI (ink) | ⬜ | |
+| T6 S4–S7 | ✅ | fan-out+drift+dedupe+map; 71 tests+typecheck+build green; LIVE-verified 00–07 (run …-fe2e) |
+| T7 S8–S10 | 🟡 code | S7 grouping + S8 verify + S9 adjudicate + S10 render; budget→12; 80 tests+build green; LIVE 00–10 pending user run |
+| T8 TUI (ink) | ⏳ NEXT | after T7 live-verify: stage timeline, S2-clarify screen, completion view (§4.2, §11 screens) |
 | T9 show / resolve / config | ⬜ | |
 | T10 code-review workflow | ⬜ | |
 | T11 bench harness + build set | ⬜ | |
@@ -71,6 +72,58 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
   config/flag-overridable — override **seam** built at T5 (`resolveRoles(overrides?)`); actual config
   loading is T9.
 - **npm install** needs `--cache <scratchpad>/.npmcache` on this box (default cache blocked).
+- **T6 decisions (2026-07-03) — do not re-litigate:**
+  - **Claims = the S4 `assumptions`** (already `{statement, type: VERIFIABLE|JUDGMENT}`). `attacks` are
+    NOT claims — they are the disagreement signal, re-anchored (per-seat assumption id → merged claim id)
+    and carried in the `ClaimSet` for S7. `open_questions`/`strongest_version` feed only the blind-spot corpus.
+  - **S7 contradiction = a contested assumption** (a claim with ≥1 attack). This is the deterministic,
+    pure-code disagreement signal AND exactly the `{disputed item + evidence}` S8 verifies (§9 S8). This is
+    why S7 can be pure code yet still feed S8 — attacks are the disputes.
+  - **Thresholds (tunable, same class as the S2 note):** S6 dedupe = Jaccard `overlap` ≥ **0.85** (plan
+    number, strict → most claims stay per-provider). S5 drift = **overlapCoefficient** (new export in
+    cluster.ts, |A∩B|/min) of `task_echo` vs `contract.task` ≥ **0.3** (coefficient not Jaccard, so a short
+    echo isn't penalized vs a long paragraph). Drift also requires ≥1 assumption.
+  - **S6 lexical dedup CANNOT do cross-provider consensus — decided, do NOT retune (decision B, 2026-07-03).**
+    Calibrated on the live run's 13 real claims: no bag-of-words threshold (Jaccard / overlap-coef /
+    +stopwords) separates true merges (C2↔C10 recognition, C1↔C12 willingness-to-pay) from false ones
+    (C2↔C3, C1↔C2) — models express the same claim with different words, and different claims share
+    context words. Lowering the threshold buys FALSE consensus (worse than none). **Resolution (refined by
+    grilling 2026-07-03):** S6 stays deterministic near-dup (correct as-built; `consensus=0` on prose is
+    expected, not a bug). Semantic consensus is established by a **constrained model call INSIDE S7** (run
+    on the judge role, IDs-only + attribution-withheld + validated by-reference → graceful lexical fallback)
+    — NOT by the S9 judge (the plan's S9 keeps consensus read-only, §13/§624). Full build spec in "Next
+    action" (T7 step 1). No embeddings (§3 forbids API keys). Do not reopen as a threshold tweak.
+- **Budget raised 9 → 12 (T7 grilling, 2026-07-03) — deviation from §19, on evidence.** The plan's
+  budget-9/default-8 never summed: real full pipeline = S1(1)+S2(3)+S3(1)+S4(2)+S7-grouping(1)+S8(1)+S9(1)
+  = **10** min, **11** with S8's 2nd pass, **11–12** with the routine agy-S2 §14 repair (live run burned 8
+  on S1–S4 alone). 9 aborts right before the judge, wasting every prior call. 12 = full run + 1 repair
+  without aborting a normal run, still a real cap (pathological repair-storm fails gracefully + flagged).
+  `--budget <n>` flag + T9 config override it. Change = `DEFAULT_BUDGET` in `context.ts`.
+- **T7 BUILT (2026-07-03) — how the synthesis half works, do not re-derive:**
+  - **S7 grouping call** lives in `s7-disagreement.ts` (`s7SemanticGroup` wrapper + `applyGroups` pure).
+    Runs on `ctx.roles.judge`, sees IDs+statements only, validates groups by-reference, merges into
+    lowest-id canonical (verbatim) with unioned providers; **any non-fatal failure → lexical map unchanged**
+    (skips the call entirely if <2 claims). Schema `ClaimGroups` (strict, IDs-only).
+  - **S8** `s8-verify.ts`: single anonymized pass on codex; zero disputes → writes empty `08` + no call;
+    verifier failure → all items `UNCERTAIN`("unverified"). `REFUTE≥1-or-justify` is prompt-enforced (soft).
+  - **S9** `s9-judge.ts`: `JudgeReportModel` (dissent min-0) for the call so S9 can salvage; pure
+    `adjudicationScopeViolations` (anti-blending, the §602 test) + `demoteSelfAuthored` (§272, no-op in
+    3-prov). One targeted re-ask on scope/dissent violation, then filter + placeholder-dissent + flag.
+  - **S10** `s10-render.ts`: pure `deriveAudit` (held/failed/unverified + HIGH/MED/LOW) + `renderReport`
+    (markdown decision brief, user-facing → DISPLAY_NAME so agy shows as "Gemini"). Writes `final-report.md`.
+  - Tests: `test/synthesis.test.ts` (grouping merge, anti-blending, audit, demotion); `engine.test.ts` now
+    e2e S1→S10. Skills/`rubric.json` loader still deferred — rubric stays inline (`IDEA_RUBRIC`).
+  - **Self-consistency (S4, 1 survivor):** resample the survivor once → 2 samples, run flagged `low_diversity`.
+    Full 1-provider mode (§8 banner/self-judge) stays a T7+ concern. Provider attribution dedupes, so a
+    resampled claim shows `providers:[agy]` (honest: 1 provider) not `[agy,agy]`.
+  - **Flags plumbing:** `RunCtx.flags` set + `ctx.addFlag(...)`; `buildMeta` folds them into `meta.flags`.
+    S4 & S7 raise `low_diversity`; `synthesis_suspect` reserved for S9 (T7).
+  - **meta.roles** now also carries `s4_1..s4_n` seat entries (RunMeta.roles is `record<string,ProviderId>`;
+    seats appended as separate keys — no schema change).
+  - **Rubric (12 items) inlined** as `IDEA_RUBRIC` in `workflows/idea-refinement.ts` (T5 precedent — the
+    skill/`rubric.json` loader is still deferred). Moves to `skills/idea-refinement/rubric.json` at the loader task.
+  - **S6/S7 split pure core** (`mergeClaims`, `buildDisagreementMap`) from the ctx/write wrapper → the
+    fixture tests (`test/disagreement.test.ts`) hit the pure fns directly, no engine/I-O.
 
 ## Traps live right now
 
@@ -90,10 +143,12 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
 - **T4/T5 schema choices to know before T6–T7:** (1) `RoleOutput` is a zod
   `discriminatedUnion('workflow', …)` but the model JSON (§13) has NO `workflow` field — the
   engine (S4, T6) MUST inject it: `RoleOutput.parse({ workflow, ...modelJson })`. `jsonCall` won't
-  do this for you — S4 needs a wrapper or a member schema (`IdeaRoleOutput`/`CodeReviewRoleOutput`,
-  both exported). (2) `DisagreementMap` element shapes (`Claim.providers`
-  as array; `Contradiction {claim_ids,note?}`) were under-specified in the plan and chosen at T4 —
-  firm them when S6/S7 land (T6/T7). (3) `RunWriter` refuses out-of-order + rewrites and skips are
+  do this for you — S4 uses `IdeaRoleOutputModel` (= `IdeaRoleOutput` minus `workflow`, exported at
+  T6) with `jsonCall`, then injects `workflow` + persists via `writeRoleOutput`. (2) `DisagreementMap`
+  element shapes now FIRMED (T6): `Claim.providers` stays an array; `Contradiction` is now
+  `{id, claim_ids(min1), attacks[{provider,argument,severity}](min1), note?}` — a contested assumption
+  + the attacks against it (= the S8-ready disputed item); old `claim_ids min2` replaced. (3) `RunWriter`
+  refuses out-of-order + rewrites and skips are
   permanent-forward; `meta.json`/`raw/`/`inputs/` are unordered (meta is overwritable). (4) §14's
   zod→JSON-Schema export was deferred (needs a dep; belongs with skills, T5+).
 
@@ -109,7 +164,10 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
 - **Engine (T5):** `src/orchestration/context.ts` = `RunCtx` (budget/deadline/`call()`/`buildMeta`),
   `setupProviders`, `resolveRoles` (override seam), `makeRunId`, errors (`BudgetExceeded`/
   `DeadlineExceeded`/`StageError`), `isFatal`. `jsonStage.ts` = `jsonCall` (call+validate+§14 repair).
-  `cluster.ts` = S2 clustering. `engine.ts` = `executeRun`/`run`/WORKFLOWS. `stages/s1|s2|s3`.
-  Workflow composition: `src/workflows/idea-refinement.ts` (prompts inline, skills/ loader deferred).
+  `cluster.ts` = S2 clustering + `overlap`(Jaccard)/`overlapCoefficient`. `engine.ts` =
+  `executeRun`/`run`/WORKFLOWS. `stages/s1|s2|s3`, (T6) `s4-analyze`/`s5-drift`/`s6-claims`(`mergeClaims`)/
+  `s7-disagreement`(`buildDisagreementMap`+`applyGroups`+`s7SemanticGroup`), (T7) `s8-verify`, `s9-judge`
+  (`adjudicationScopeViolations`/`demoteSelfAuthored`), `s10-render` (`deriveAudit`/`renderReport`).
+  Workflow: `src/workflows/idea-refinement.ts` (full S1→S10 + inline `IDEA_RUBRIC`; skills/ loader deferred).
 - Skills/workflows content: `skills/<workflow>/`  ·  Bench: `bench/` + `src/bench/`
 - Tests: `test/`  ·  Pre-registration: `BENCHMARK.md`  ·  Policy: `docs/POLICY.md`
