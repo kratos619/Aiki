@@ -6,3 +6,4 @@ dist/
 .aiki/
 .agent
 graphify-out/*
+bench/*

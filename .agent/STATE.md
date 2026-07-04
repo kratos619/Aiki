@@ -5,30 +5,71 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
 
 ## Now
 
-- **Position:** T0–T10 COMPLETE. T10 (code-review workflow) built + tested + CLI-verified (pre-provider
-  paths) this session. **136 tests** green (124 + 12 T10), typecheck clean, `npm run build` clean.
-  T0–T8 remain live-verified; T9/T10 verified by tests + free CLI paths (full live runs are metered →
-  user's manual acceptance). Nothing half-done.
-  - **T10 proof:** scripted-adapter e2e S4→S10 (5 calls; §487 merge → 1 consensus; file:line validator
-    dropped claude's hallucinated-line + not-in-diff findings PRE-model — §605; agy judge UPHELD the
-    disputed auth finding; report shows "Gemini"). Real-git integration test (three-dot `main...feature`).
-    Free CLI: `run code-review` no-flags → usage err; `--base HEAD --head HEAD` → "no changes" exit 0;
-    `--diff /missing` → read err. LIVE run on a real diff = user's manual §605 acceptance (cheap sample below).
+- **Position:** T0–T11 COMPLETE. T11 (bench harness + build set) built + tested this session. **145 tests**
+  green (136 + 9 T11), typecheck clean, `npm run build` clean. T0–T8 live-verified; T9/T10/T11 verified by
+  tests + free CLI paths (metered runs are the user's manual acceptance). Nothing half-done.
+  - **T11 proof:** scripted-adapter bench e2e — all 4 arms A/B/C/D scored, recall computed, result JSON
+    written incrementally, table rendered; provider-absent arms skipped. Units: scorer (category-strict
+    match), micro-aggregation, Arm-C `mergeSamples` (≥2/3 consensus), resolve-CR (finding verdicts). Real
+    build set = 5 cases / 20 seeded bugs, each diff→bug-file→exists verified. Free CLI: `bench idea-refinement`
+    rejected, bad `--arms` rejected, empty `--set` → "no cases". LIVE 4-arm bench = user's §606 acceptance.
+  - **T10 proof:** scripted e2e S4→S10 + LIVE run `…-aa6d` (4 calls, §487 merged 3 dup pairs → 5 consensus,
+    0 disputes → judge-skip, file:line validator ran, "Gemini" judge). §605 met.
   - **T9 (still true):** config/show/resolve/config.json all built + CLI-verified; §604 met.
   - **T8 live proof:** bare `aiki` → full S1→S10 completed through the TUI (run `…-8c44`); **Ctrl+C
     mid-run → `exit_status:aborted`, `aborted:true`, partial artifacts kept** (run `…-2338-…-d09a`, §603
     met). Two UI bugs fixed (multi-line-paste input corruption; label/provider spacing). Cosmetic-only
     leftover: an aborted in-flight stage shows ✖ (killed → quorum-fail) not ⊘ — harmless, not fixed.
   - **T7 live proof (still valid):** run `…-af3d`, consensus=3 cross-provider, anti-blending 0 out-of-scope.
-- **First, sanity-check (30s):** `npm run typecheck && npm test` should be green (**136 tests**), and
-  `node dist/cli/index.js doctor --no-smoke` should list 3 providers. (Uncommitted tree = finished
-  T3–T10 work; user commits — do not re-implement.)
-- **Next action — START HERE: T11 (bench harness + build set, §17/§24).** Arms A–D runners, the
-  seeded-bug matcher (matching rule = same file + overlapping lines + same defect class — **already
-  built** as `sameFinding` in `stages/cr-map.ts`, reuse it), `aiki bench code-review --set build`, and
-  5 seeded diffs. Also lands here per T10 deferrals: **resolve-CR** (fixed/wontfix/false-positive +
-  FeedbackEntry generalization) for the FP/precision metric (§487); the zod→JSON-Schema skill loader if
-  it fits. See `.agent/HANDOFF.md` for the T10 file map.
+- **First, sanity-check (30s):** `npm run typecheck && npm test` should be green (**145 tests**), and
+  `node dist/cli/index.js doctor --no-smoke` should list 3 providers. (Uncommitted tree = finished T11
+  work; T0–T10 committed through a9ca5a2; user commits — do not re-implement.)
+- **Next action — START HERE: T12 (freeze, holdout, RESULTS).** §24 T12: create the 10-diff HOLDOUT set
+  (AFTER pipeline freeze — never used for tuning), run ONE evaluation pass of all 4 arms on it, write
+  `RESULTS.md` honestly (all arms, all tasks, cost/latency columns, explicit pass/fail per §23 kill
+  criterion). Precision needs FP labeling (`aiki resolve <run>` on each holdout run → false-positive).
+  Then the §23 decision gate. The bench harness + scorer + resolve-CR are all built (T11) — T12 is
+  content (10 holdout diffs) + the frozen eval run + honest write-up. Note: BENCHMARK.md forbids any
+  pipeline edit after the first holdout run.
+- **T11 SHIPPED 2026-07-04 (as-built, do not re-litigate).** BENCHMARK.md is FROZEN pre-registration —
+  arms/metrics/matching/thresholds NOT editable. `aiki bench code-review --arms A,B,C,D --set build`
+  (code-review only). Pieces:
+  1. **Arms = engine compositions** (each run via `executeRun` → a full `.aiki/runs` record per
+     BENCHMARK.md §5, and returns its `Finding[]` to the harness for in-memory scoring). Each case runs
+     with **cwd = the case dir** so the reviewer file:line validator resolves. Arms:
+     - **A** = 1 claude call, plain "review this diff" → findings (validate file:line). No synthesis.
+     - **B** = 1 claude call, structured adversarial (analyze → self-attack → re-answer, schema-forced).
+       **B is the real opponent** — draft a strong single prompt.
+     - **C** = **bespoke sample-keyed** self-consistency: sample claude 3× (keyed by sample idx, NOT
+       provider — 3 claude samples all have provider=claude, which would break the provider-keyed D
+       pipeline), file:line-validate each, merge via `sameFinding` (found in ≥2/3 → consensus), reuse
+       `s9ReviewJudge` on singletons/disputes. Leaves the live-verified D pipeline untouched.
+     - **D** = existing `runCodeReview` (claude+codex reviewers, agy judge).
+  2. **Ground truth:** each build case = dir `bench/sets/code-review/build/<name>/` holding the buggy
+     source file + `diff.patch` (whole-file add via `git diff --no-index`, so every bug line is a
+     reviewable change) + `bugs.json` = `[{id, file, line_start, line_end, category (6-enum), class}]`.
+     **Matcher = loosen `sameFinding`** to compare file + overlap + category enum (reuse for scoring).
+     Enum map: off-by-one→CORRECTNESS, race→CONCURRENCY, unhandled-rejection→ERROR_HANDLING,
+     auth-gap→SECURITY, N+1→PERF. Category-enum equality IS the frozen "same defect class" (a
+     mis-categorized find won't count — pre-registered rule, not changeable).
+  3. **Metrics:** recall (PRIMARY, **micro** = total matched / total seeded across cases; macro shown as
+     secondary), precision (**nullable** — needs FP adjudication), F1, calls, wall-clock. Also report
+     reported/matched/**unmatched** counts (unmatched = candidate FPs, labeled UNADJUDICATED, not precision).
+  4. **resolve-CR (build now — the deferred T10 piece):** generalize `FeedbackEntry` (item_type
+     `finding|adjudication`; verdict = union of idea `correct/incorrect/unsure` + CR
+     `fixed/wontfix/false-positive`; `ruling`→string snapshot). `resolve` reads `meta.workflow` → picks
+     item source (idea: adjudications; CR: review-map kept findings) + vocab. True precision fills from
+     `feedback.jsonl` when FP labels exist, else null.
+  5. **CLI + results:** `aiki bench` command; writes `bench/results/<suite>-<date>.json` (per-case
+     per-arm {recall, matched, reported, unmatched, calls, wallMs, runId} + summary) — zod schema. Run
+     cases/arms SEQUENTIALLY, write results INCREMENTALLY after each case (a ~20-run metered bench must
+     survive a mid-run quota stop). Detect providers; skip/mark arms whose providers are absent (D needs 3).
+  6. **Build set:** author all **5** cases now, each a SINGLE small file + 4-6 precisely-located seeded
+     bugs (off-by-one, race, unhandled-rejection, auth-gap, N+1 across the set) + bugs.json.
+  - **Verify (NO paid calls):** scripted-adapter e2e (fake providers → canned per-arm findings → assert
+     recall/result-JSON/table + resolve-CR JSONL) + pure-unit the matcher/scorer. Real 4-arm bench run is
+     metered → user's manual §606 acceptance. Acceptance §606: `bench code-review --set build` outputs
+     per-arm scores table + result JSON.
 - **T10 SHIPPED 2026-07-04 (as-built, do not re-litigate). Bespoke lean composition — NOT the idea
   S1–S10 stages** (findings have no assumption/attack structure; §12.2 only specs CR's S4/S8/S9/report).
   ~5 model calls. Pipeline:
@@ -120,7 +161,7 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
   hardening; see traps). Remaining low-priority: S7 blind-spot keyword matching is coarse → over-reports
   (e.g. flags "feasibility" as uncovered though discussed). Not blocking. **Do NOT touch the S7
   semantic-grouping model call — that's the working fix, not the coarse part.**
-- **In-flight?** No. T10 finished cleanly (code + 12 tests + scripted e2e + free CLI paths). See HANDOFF.
+- **In-flight?** No. T11 finished cleanly (code + 9 tests + scripted bench e2e + 5 seeded cases). See HANDOFF.
 
 ## Task ledger (§24)
 
@@ -137,8 +178,8 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
 | T8 TUI (ink) | ✅ | event seam + child-kill + 6 screens; 89 tests. LIVE-verified: full S1→S10 run + Ctrl+C→aborted:true (run …-d09a) |
 | T9 show / resolve / config | ✅ | show <run>, resolve (feedback→JSONL), config cmd, .aiki/config.json load + separate smoke-cache; 35 tests, CLI-verified |
 | T10 code-review workflow | ✅ | bespoke S4→S10; §487 matcher (`sameFinding`); file:line validator; agy judge; 12 tests + scripted e2e |
-| T11 bench harness + build set | ⏳ NEXT | seeded-bug matcher = reuse `sameFinding`; resolve-CR vocab lands here |
-| T12 freeze + holdout + RESULTS.md | ⬜ | |
+| T11 bench harness + build set | ✅ | arms A–D, `sameFinding` scorer, resolve-CR, 5 cases/20 bugs, incremental results; 9 tests + scripted bench e2e |
+| T12 freeze + holdout + RESULTS.md | ⏳ NEXT | harness+scorer+resolve-CR built; T12 = 10 holdout diffs + one frozen eval + RESULTS.md |
 
 ## Facts already decided (do not re-derive, do not re-litigate)
 
