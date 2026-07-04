@@ -55,11 +55,11 @@ export async function runStage<T>(ctx: RunCtx, id: string, fn: () => Promise<T>)
   }
 }
 
-const DEFAULT_BUDGET = 12; // §19 said 9, but that never summed: full idea-refinement pipeline is
+export const DEFAULT_BUDGET = 12; // §19 said 9, but that never summed: full idea-refinement pipeline is
 // S1(1)+S2(3)+S3(1)+S4(2)+S7-grouping(1)+S8(1)+S9(1) = 10 min, 11 with S8's 2nd pass, 11–12 with the
 // routine agy-S2 §14 repair. 9 aborts right before the judge. 12 = full run + 1 repair, still a real
 // cap (a repair-storm fails gracefully + flagged). Overridable via `--budget` / config (T9). (T7 decision.)
-const DEFAULT_DEADLINE_MS = 10 * 60 * 1000; // §19: 10 minutes
+export const DEFAULT_DEADLINE_MS = 10 * 60 * 1000; // §19: 10 minutes
 const DEFAULT_CALL_TIMEOUT_MS = 180_000; // §7.1
 
 export class BudgetExceeded extends Error {
@@ -288,6 +288,11 @@ export async function setupProviders(): Promise<ProviderHandle[]> {
 /** Preference order used when a role's default provider is unavailable. */
 const ANALYST_PREF: ProviderId[] = ['agy', 'codex', 'claude'];
 const JUDGE_PREF: ProviderId[] = ['claude', 'agy', 'codex'];
+// code-review (§271): reviewers = claude + codex (strongest code-nav, they AUTHOR findings); judge =
+// agy (Gemini) so the judge never adjudicates its own finding. Verifier role is unused (S8 = mutual
+// cross-exam by the two reviewers).
+const CR_REVIEWERS: ProviderId[] = ['claude', 'codex'];
+const CR_JUDGE_PREF: ProviderId[] = ['agy', 'claude', 'codex'];
 
 /**
  * Default role assignment (§10, decided at T5) with graceful degradation and an override seam.
@@ -310,15 +315,24 @@ export function resolveRoles(
     return chosen;
   };
 
-  // S4 seats: prefer the two non-judge providers so the judge stays a non-author (§10).
+  // code-review (§271): reviewers author findings, judge must not be one of them. Verifier unused.
+  if (workflow === 'code-review') {
+    const reviewers = CR_REVIEWERS.filter(has);
+    const s4 = overrides?.s4 ?? (reviewers.length ? reviewers : available);
+    const judge = overrides?.judge ?? pick(CR_JUDGE_PREF, s4); // prefer agy, avoid the reviewers
+    return {
+      analyst: overrides?.analyst ?? s4[0] ?? judge, // unused in code-review (S1/S3 are deterministic)
+      judge,
+      verifier: overrides?.verifier ?? judge, // unused (S8 is mutual cross-exam) — kept type-valid
+      s4,
+    };
+  }
+
+  // idea-refinement: S4 seats = the two non-judge providers so the judge stays a non-author (§10).
   const judge = overrides?.judge ?? pick(JUDGE_PREF);
   const analyst = overrides?.analyst ?? pick(ANALYST_PREF);
   const s4 = overrides?.s4 ?? available.filter((id) => id !== judge);
   const verifier = overrides?.verifier ?? (has('codex') ? 'codex' : pick(ANALYST_PREF, [judge]));
-
-  // Reference `workflow` so future per-workflow divergence (code-review flips judge→agy, §10) has
-  // an obvious hook; idea-refinement and code-review share the default resolver in v1.
-  void workflow;
   return { analyst, judge, verifier, s4 };
 }
 

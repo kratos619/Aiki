@@ -15,6 +15,7 @@ import {
   resolveRoles,
   setupProviders,
   type ProviderHandle,
+  type RoleMap,
   type RunEvents,
 } from '../orchestration/context.js';
 import { executeRun } from '../orchestration/engine.js';
@@ -37,7 +38,14 @@ async function loadCompletion(dir: string): Promise<CompletionView | null> {
   }
 }
 
-export function App(): React.JSX.Element {
+/** Config passed from the CLI entry (T9): role pins + budget from .aiki/config.json. */
+export interface AppProps {
+  roleOverrides?: Partial<RoleMap>;
+  budget?: number;
+}
+
+export function App(props: AppProps): React.JSX.Element {
+  const { roleOverrides, budget: budgetOverride } = props;
   const { exit } = useApp();
   const [phase, setPhase] = useState<Phase>('detecting');
   const [handles, setHandles] = useState<ProviderHandle[]>([]);
@@ -97,7 +105,7 @@ export function App(): React.JSX.Element {
     const trimmed = text.trim();
     if (!trimmed) return;
     const available = handles.map((h) => h.id);
-    const rs = resolveRoles('idea-refinement', available);
+    const rs = resolveRoles('idea-refinement', available, roleOverrides);
     const runId = makeRunId('idea-refinement');
     const writer = new RunWriter(runId);
     const controller = new AbortController();
@@ -119,7 +127,7 @@ export function App(): React.JSX.Element {
           setPhase('clarify');
         }),
     };
-    const ctx = new RunCtx({ runId, workflow: 'idea-refinement', handles, roles: rs, writer, cwd: writer.dir, signal: controller.signal, events });
+    const ctx = new RunCtx({ runId, workflow: 'idea-refinement', handles, roles: rs, writer, cwd: writer.dir, budget: budgetOverride, signal: controller.signal, events });
     ctxRef.current = ctx;
     setRows(initTimeline(IDEA_STAGES, rs, available));
     setBudget(ctx.budget.limit);

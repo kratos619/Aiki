@@ -2,6 +2,7 @@ import { DISPLAY_NAME, PROVIDER_IDS, type Detection, type FlagProfile, type Prov
 import { detect } from '../providers/detect.js';
 import { probeFlags } from '../providers/probe.js';
 import { smokeTest } from '../providers/smoke.js';
+import { entryToSmoke, isFresh, readSmokeCache, toEntry, writeSmokeCache, type SmokeCache } from '../config/smoke-cache.js';
 
 // Default role labels for the status panel (§4.1 / §10). Assignment logic is T5+.
 // NOTE: agy = Gemini 3.1 Pro (strong + metered), not the old cheap/free gemini — §10 role
@@ -24,25 +25,40 @@ interface Row {
   det: Detection;
   flags?: FlagProfile;
   smoke?: Smoke;
+  cached?: boolean; // smoke result came from the §242 cache, not a fresh call
 }
 
 /**
  * `aiki doctor` — detection + flag probe + (optional) smoke test, table output, actionable
  * fixes. Exit 0 iff ≥2 providers are "ready" (§5, §8 quorum). With smoke on, ready = smoke
  * passed; with --no-smoke, ready = detected.
+ *
+ * Smoke results are cached 6h in `.aiki/smoke-cache.json` (§242); `--fresh` bypasses the cache.
+ * A cache entry is reused only when its provider version still matches (an upgrade re-smokes).
  */
-export async function doctor(opts: { smoke?: boolean } = {}): Promise<number> {
+export async function doctor(opts: { smoke?: boolean; fresh?: boolean } = {}): Promise<number> {
   const runSmoke = opts.smoke !== false;
+  const cache = runSmoke ? await readSmokeCache() : {};
+  const now = Date.now();
+  const updates: SmokeCache = {};
 
   const rows: Row[] = await Promise.all(
     PROVIDER_IDS.map(async (id): Promise<Row> => {
       const det = await detect(id);
       if (det.status !== 'READY') return { det };
       const flags = await probeFlags(id);
-      const smoke = runSmoke ? await smokeTest(id, flags) : undefined;
+      if (!runSmoke) return { det, flags };
+      const cached = opts.fresh ? undefined : cache[id];
+      if (cached && isFresh(cached, det.version ?? null, now)) {
+        return { det, flags, smoke: entryToSmoke(cached), cached: true };
+      }
+      const smoke = await smokeTest(id, flags);
+      updates[id] = toEntry(smoke, det.version ?? null, new Date(now));
       return { det, flags, smoke };
     }),
   );
+
+  if (Object.keys(updates).length) await writeSmokeCache({ ...cache, ...updates });
 
   const lines: string[] = [];
   lines.push('');
@@ -62,6 +78,7 @@ export async function doctor(opts: { smoke?: boolean } = {}): Promise<number> {
 
   lines.push('');
   lines.push(`  ${ready}/3 providers ready. Engine minimum quorum: 2.`);
+  if (rows.some((r) => r.cached)) lines.push('  (smoke: cached ≤6h — `aiki doctor --fresh` re-runs)');
   if (fixes.length) {
     lines.push('');
     lines.push('  Fixes:');
