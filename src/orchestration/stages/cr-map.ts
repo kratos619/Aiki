@@ -13,8 +13,12 @@ import type { CrossExam } from './cr-s8-crossexam.js';
 
 const SEV_RANK: Record<Finding['severity'], number> = { P0: 0, P1: 1, P2: 2, P3: 3 };
 
-/** §487 matcher: two findings describe the same defect iff same file, overlapping lines, same category. */
-export function sameFinding(a: Finding, b: Finding): boolean {
+/** The location fields the §487 matcher compares — the subset shared by a Finding and a seeded bug. */
+export type FindingLoc = Pick<Finding, 'file' | 'category' | 'line_start' | 'line_end'>;
+
+/** §487 matcher (BENCHMARK.md §3): same defect iff same file, overlapping lines, same category. Also
+ *  the seeded-bug scorer's match (T11) — a seeded bug is just a `FindingLoc`. */
+export function sameFinding(a: FindingLoc, b: FindingLoc): boolean {
   return a.file === b.file && a.category === b.category && a.line_start <= b.line_end && b.line_start <= a.line_end;
 }
 

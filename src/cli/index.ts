@@ -9,6 +9,7 @@ import { runCommand } from './run.js';
 import { show } from './show.js';
 import { resolve } from './resolve.js';
 import { config } from './config.js';
+import { benchCommand } from './bench.js';
 import { ConfigError, loadConfig } from '../config/config.js';
 import { startTui } from '../tui/index.js';
 
@@ -73,6 +74,16 @@ program
   .option('--verdict <id=verdict>', 'non-interactive verdict, repeatable: <item-id>=<correct|incorrect|unsure>', collect, [])
   .action(async (runId: string | undefined, opts: { verdict?: string[] }) => {
     process.exit(await resolve(runId, { verdict: opts.verdict }));
+  });
+
+program
+  .command('bench')
+  .description('Run benchmark arms A–D on a task set; writes bench/results/*.json + summary table (§17).')
+  .argument('<workflow>', 'workflow id (v1: code-review)')
+  .option('--arms <list>', 'comma-separated arms to run', 'A,B,C,D')
+  .option('--set <name>', 'task set: build | holdout', 'build')
+  .action(async (workflow: string, opts: { arms?: string; set?: string }) => {
+    process.exit(await benchCommand(workflow, { arms: opts.arms, set: opts.set }));
   });
 
 program

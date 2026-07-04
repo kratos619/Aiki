@@ -292,7 +292,7 @@ describe('show / resolve / config (cwd-based)', () => {
     await mkRun(aiki, 'r6', { '09-judge-report.json': JUDGE, '07-disagreement-map.json': MAP, 'meta.json': META });
     const { code, err } = await capture(() => resolve('r6', { verdict: ['D9=correct'] }));
     expect(code).toBe(1);
-    expect(err).toMatch(/no adjudicated item/);
+    expect(err).toMatch(/no adjudication "D9"/);
   });
 
   it('resolve: run with no adjudications → exit 0, nothing written', async () => {

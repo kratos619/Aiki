@@ -78,6 +78,11 @@ export const IdeaRoleOutput = z
   })
   .strict();
 
+/** Defect categories a finding (and a seeded bug, T11) can carry. BENCHMARK.md's "defect class" match
+ *  is equality on this enum (off-by-one→CORRECTNESS, race→CONCURRENCY, unhandled-rejection→ERROR_HANDLING,
+ *  auth-gap→SECURITY, N+1→PERF). */
+export const FindingCategory = z.enum(['CORRECTNESS', 'SECURITY', 'CONCURRENCY', 'ERROR_HANDLING', 'PERF', 'MAINTAINABILITY']);
+
 export const Finding = z
   .object({
     id: z.string().min(1), // "F1", ...
@@ -85,7 +90,7 @@ export const Finding = z
     line_start: z.number().int().nonnegative(),
     line_end: z.number().int().nonnegative(),
     severity: z.enum(['P0', 'P1', 'P2', 'P3']),
-    category: z.enum(['CORRECTNESS', 'SECURITY', 'CONCURRENCY', 'ERROR_HANDLING', 'PERF', 'MAINTAINABILITY']),
+    category: FindingCategory,
     claim: z.string().min(1),
     evidence: z.string().min(1), // the code/behavior that proves it
     suggested_fix: z.string().min(1),
@@ -311,6 +316,7 @@ export type IdeaRoleOutputModel = z.infer<typeof IdeaRoleOutputModel>;
 export type CodeReviewRoleOutput = z.infer<typeof CodeReviewRoleOutput>;
 export type CodeReviewRoleOutputModel = z.infer<typeof CodeReviewRoleOutputModel>;
 export type Finding = z.infer<typeof Finding>;
+export type FindingCategory = z.infer<typeof FindingCategory>;
 export type CrossVerdict = z.infer<typeof CrossVerdict>;
 export type AnnotatedFinding = z.infer<typeof AnnotatedFinding>;
 export type ReviewMap = z.infer<typeof ReviewMap>;
