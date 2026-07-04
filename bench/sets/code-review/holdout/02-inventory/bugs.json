@@ -1,0 +1,8 @@
+{
+  "bugs": [
+    { "id": "B1", "file": "inventory-service.js", "line_start": 7, "line_end": 9, "category": "CONCURRENCY", "class": "race (read-modify-write of stock; concurrent reserves lose updates → oversell)" },
+    { "id": "B2", "file": "inventory-service.js", "line_start": 8, "line_end": 8, "category": "CORRECTNESS", "class": "negative-stock (no guard for stock - qty < 0; stock can go below zero)" },
+    { "id": "B3", "file": "inventory-service.js", "line_start": 17, "line_end": 19, "category": "PERF", "class": "N+1 (Supplier.findById per product inside the loop)" },
+    { "id": "B4", "file": "inventory-service.js", "line_start": 27, "line_end": 28, "category": "ERROR_HANDLING", "class": "unhandled-rejection (external http.get unguarded; res.body may be undefined → throws)" }
+  ]
+}

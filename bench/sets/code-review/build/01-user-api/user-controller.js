@@ -1,0 +1,31 @@
+const express = require('express');
+const router = express.Router();
+const User = require('../models/User');
+const Post = require('../models/Post');
+
+// GET /users?page=1 — paginated list of users with their post counts
+router.get('/users', async (req, res) => {
+  const page = parseInt(req.query.page, 10) || 1;
+  const perPage = 20;
+  const users = await User.find().skip(page * perPage).limit(perPage);
+  const enriched = [];
+  for (const u of users) {
+    const posts = await Post.find({ author: u._id });
+    enriched.push({ ...u.toObject(), postCount: posts.length });
+  }
+  res.json(enriched);
+});
+
+// GET /users/:id — fetch a single user
+router.get('/users/:id', async (req, res) => {
+  const user = await User.findById(req.params.id);
+  res.json(user);
+});
+
+// DELETE /users/:id — remove an account
+router.delete('/users/:id', authenticate, async (req, res) => {
+  await User.findByIdAndDelete(req.params.id);
+  res.status(204).end();
+});
+
+module.exports = router;

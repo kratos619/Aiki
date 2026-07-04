@@ -1,0 +1,9 @@
+{
+  "bugs": [
+    { "id": "B1", "file": "search-service.js", "line_start": 9, "line_end": 9, "category": "CORRECTNESS", "class": "off-by-one (skip(page * perPage) skips the first page; should be (page-1)*perPage)" },
+    { "id": "B2", "file": "search-service.js", "line_start": 7, "line_end": 7, "category": "SECURITY", "class": "regex-injection (user query compiled straight into RegExp → ReDoS / injection)" },
+    { "id": "B3", "file": "search-service.js", "line_start": 12, "line_end": 14, "category": "PERF", "class": "N+1 (Category.findById per result inside the loop)" },
+    { "id": "B4", "file": "search-service.js", "line_start": 24, "line_end": 24, "category": "CORRECTNESS", "class": "off-by-one (slice(0, n + 1) returns n+1 suggestions instead of n)" },
+    { "id": "B5", "file": "search-service.js", "line_start": 13, "line_end": 14, "category": "ERROR_HANDLING", "class": "null-deref (category can be null; category.title then throws)" }
+  ]
+}

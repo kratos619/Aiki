@@ -5,9 +5,27 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
 
 ## Now
 
-- **Position:** T0–T11 COMPLETE. T11 (bench harness + build set) built + tested this session. **145 tests**
-  green (136 + 9 T11), typecheck clean, `npm run build` clean. T0–T8 live-verified; T9/T10/T11 verified by
-  tests + free CLI paths (metered runs are the user's manual acceptance). Nothing half-done.
+- **Position:** T0–T11 COMPLETE. **T12 buildable half DONE this session** (frozen 10-diff holdout set +
+  locate-check test + RESULTS.md scaffold + .gitignore fix). Remaining T12 = the USER's metered holdout
+  eval + RESULTS fill + §23 verdict (no-live-paid-runs). **148 tests** green (145 + 3 T12), typecheck +
+  `npm run build` clean. T0–T8 live-verified; T9/T10/T11 verified by tests + free CLI paths.
+  - **T12 built (2026-07-04):** `bench/sets/code-review/holdout/{01-payments…10-analytics}/` = **10 cases /
+    43 seeded bugs** (4–5 each, MERN-style, all 5 canonical classes + 6 categories). Each = src file +
+    `diff.patch` (whole-file add via `git diff --no-index`, `+++ b/<file>`) + `bugs.json`. Ground truth
+    verified by `test/t12.test.ts` (loadCases=10, per-bug file-exists + line-in-bounds + valid category +
+    class-coverage). `RESULTS.md` = full scaffold: protocol/freeze table, holdout table, run commands,
+    per-arm summary + per-case×per-arm recall tables (placeholders `—`), cost/latency, and **an explicit
+    pass/fail line per §23 criterion with the gate arithmetic pre-wired** (KC#1 `rD≥1.20·rB ∧ pD≥pB−0.10`,
+    KC#2 `rD≥1.10·rC`, KC#4 wall<8min ∧ ≤15% quota). Fill from `bench/results/*.json` + resolve FP labels.
+  - **Cheap sample verified (2026-07-04, 1 metered call):** Arm A on a throwaway copy of `01-payments` →
+    **4/4 recall**, 10 reported / 5 unmatched, scorer resolved file:line correctly, ~93s/call. Confirms
+    wiring + ground-truth matchability end-to-end. (Temp `_sample` set + its results JSON deleted after.)
+    Implication: full 120-call sequential bench ≈ 2.5–3h wall; incremental writes survive a mid-run stop.
+  - **.gitignore FIX (2026-07-04, user-approved):** `bench/*` had been ignoring ALL bench content — the
+    T11 build set was NEVER committed (only `.gitkeep` was tracked; STATE's "committed through 63b9fd8"
+    was true for src/ but NOT the seeded diffs). Added `!bench/sets/` + `!bench/sets/**` so ground-truth
+    task sets are committable (freeze integrity, §18) while `bench/results/*` stays ignored. 45 set files
+    (15 build + 30 holdout) now show as `??` — user commits them.
   - **T11 proof:** scripted-adapter bench e2e — all 4 arms A/B/C/D scored, recall computed, result JSON
     written incrementally, table rendered; provider-absent arms skipped. Units: scorer (category-strict
     match), micro-aggregation, Arm-C `mergeSamples` (≥2/3 consensus), resolve-CR (finding verdicts). Real
@@ -21,16 +39,19 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
     met). Two UI bugs fixed (multi-line-paste input corruption; label/provider spacing). Cosmetic-only
     leftover: an aborted in-flight stage shows ✖ (killed → quorum-fail) not ⊘ — harmless, not fixed.
   - **T7 live proof (still valid):** run `…-af3d`, consensus=3 cross-provider, anti-blending 0 out-of-scope.
-- **First, sanity-check (30s):** `npm run typecheck && npm test` should be green (**145 tests**), and
-  `node dist/cli/index.js doctor --no-smoke` should list 3 providers. (Uncommitted tree = finished T11
-  work; T0–T10 committed through a9ca5a2; user commits — do not re-implement.)
-- **Next action — START HERE: T12 (freeze, holdout, RESULTS).** §24 T12: create the 10-diff HOLDOUT set
-  (AFTER pipeline freeze — never used for tuning), run ONE evaluation pass of all 4 arms on it, write
-  `RESULTS.md` honestly (all arms, all tasks, cost/latency columns, explicit pass/fail per §23 kill
-  criterion). Precision needs FP labeling (`aiki resolve <run>` on each holdout run → false-positive).
-  Then the §23 decision gate. The bench harness + scorer + resolve-CR are all built (T11) — T12 is
-  content (10 holdout diffs) + the frozen eval run + honest write-up. Note: BENCHMARK.md forbids any
-  pipeline edit after the first holdout run.
+- **First, sanity-check (30s):** `npm run typecheck && npm test` should be green (**148 tests**), and
+  `node dist/cli/index.js doctor --no-smoke` should list 3 providers.
+- **Next action — FINISH T12 (the USER's metered pass + write-up).** The set + scaffold are built; what
+  remains is metered → the user runs it (no-live-paid-runs). Steps (also in `RESULTS.md` §3):
+  1. `node dist/cli/index.js bench code-review --arms A,B,C,D --set holdout` (~120 calls; sequential;
+     results written incrementally → `bench/results/code-review-<today>.json`). **This is the ONE
+     evaluation pass — BENCHMARK.md forbids any pipeline edit after it.**
+  2. For each run id in the results JSON, label non-real findings:
+     `node dist/cli/index.js resolve <run-id> --verdict <findingId>=false-positive` (→ precision).
+  3. Fill `RESULTS.md` §4–§6 from the JSON, compute the §7 gate lines, write the §23 verdict.
+  Do NOT edit the pipeline (src/), the arms, the matcher, or `bugs.json` after step 1. NOTE: `aiki bench`
+  does NOT yet print a pre-run call estimate / require `--yes` (§19 gap, pre-existing from T11, unfixed
+  under freeze) — the user knows it's ~120 metered calls.
 - **T11 SHIPPED 2026-07-04 (as-built, do not re-litigate).** BENCHMARK.md is FROZEN pre-registration —
   arms/metrics/matching/thresholds NOT editable. `aiki bench code-review --arms A,B,C,D --set build`
   (code-review only). Pieces:
@@ -161,7 +182,8 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
   hardening; see traps). Remaining low-priority: S7 blind-spot keyword matching is coarse → over-reports
   (e.g. flags "feasibility" as uncovered though discussed). Not blocking. **Do NOT touch the S7
   semantic-grouping model call — that's the working fix, not the coarse part.**
-- **In-flight?** No. T11 finished cleanly (code + 9 tests + scripted bench e2e + 5 seeded cases). See HANDOFF.
+- **In-flight?** No half-written code. T12's buildable half is complete + green; the only remaining T12
+  work is the USER's metered holdout eval + RESULTS fill (see "Next action"). See HANDOFF.
 
 ## Task ledger (§24)
 
@@ -179,7 +201,7 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
 | T9 show / resolve / config | ✅ | show <run>, resolve (feedback→JSONL), config cmd, .aiki/config.json load + separate smoke-cache; 35 tests, CLI-verified |
 | T10 code-review workflow | ✅ | bespoke S4→S10; §487 matcher (`sameFinding`); file:line validator; agy judge; 12 tests + scripted e2e |
 | T11 bench harness + build set | ✅ | arms A–D, `sameFinding` scorer, resolve-CR, 5 cases/20 bugs, incremental results; 9 tests + scripted bench e2e |
-| T12 freeze + holdout + RESULTS.md | ⏳ NEXT | harness+scorer+resolve-CR built; T12 = 10 holdout diffs + one frozen eval + RESULTS.md |
+| T12 freeze + holdout + RESULTS.md | 🔶 SET BUILT | 10 holdout diffs / 43 bugs + t12.test + RESULTS scaffold + .gitignore fix DONE; awaiting USER's metered eval + fill + §23 verdict |
 
 ## Facts already decided (do not re-derive, do not re-litigate)
 

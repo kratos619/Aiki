@@ -6,4 +6,8 @@ dist/
 .aiki/
 .agent
 graphify-out/*
+# Ignore generated bench output (per-run results) but TRACK the pre-registered ground-truth task sets:
+# the frozen holdout must be committed before the eval run to prove it wasn't tuned post-hoc (§18).
 bench/*
+!bench/sets/
+!bench/sets/**

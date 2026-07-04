@@ -1,0 +1,8 @@
+{
+  "bugs": [
+    { "id": "B1", "file": "notification-service.js", "line_start": 7, "line_end": 12, "category": "CONCURRENCY", "class": "race (forEach with an async callback is fire-and-forget; returns before sends finish, errors lost)" },
+    { "id": "B2", "file": "notification-service.js", "line_start": 8, "line_end": 9, "category": "ERROR_HANDLING", "class": "unhandled-rejection (user may be null and mailer.send may reject; nothing catches it)" },
+    { "id": "B3", "file": "notification-service.js", "line_start": 19, "line_end": 19, "category": "CORRECTNESS", "class": "off-by-one (slice(0, size + 1) takes size+1 items off the queue instead of size)" },
+    { "id": "B4", "file": "notification-service.js", "line_start": 23, "line_end": 25, "category": "SECURITY", "class": "auth-gap (broadcast to every user has no authorization guard on an admin action)" }
+  ]
+}

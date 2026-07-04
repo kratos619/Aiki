@@ -1,0 +1,8 @@
+{
+  "bugs": [
+    { "id": "B1", "file": "profile-controller.js", "line_start": 6, "line_end": 7, "category": "SECURITY", "class": "auth-gap (IDOR + mass-assignment: no owner check on :id, whole req.body written so a user can set role:admin)" },
+    { "id": "B2", "file": "profile-controller.js", "line_start": 7, "line_end": 8, "category": "CORRECTNESS", "class": "no-null-check (findByIdAndUpdate returns null for a missing id; responds 200 with null instead of 404)" },
+    { "id": "B3", "file": "profile-controller.js", "line_start": 13, "line_end": 15, "category": "CONCURRENCY", "class": "race (TOCTOU on email uniqueness; concurrent registrations both pass the findOne check)" },
+    { "id": "B4", "file": "profile-controller.js", "line_start": 15, "line_end": 16, "category": "SECURITY", "class": "credential-exposure (password stored in plaintext and the created user incl. password is returned to the client)" }
+  ]
+}
