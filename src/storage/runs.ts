@@ -14,7 +14,7 @@
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { z } from 'zod';
-import { DisagreementMap, IntentContract, JudgeReport, RoleOutput, RunMeta, VerificationSet } from '../schemas/index.js';
+import { DisagreementMap, IntentContract, JudgeReport, ReviewMap, RoleOutput, RunMeta, VerificationSet } from '../schemas/index.js';
 
 export class OutOfOrderWriteError extends Error {
   constructor(slot: string, ord: number, maxOrd: number) {
@@ -45,6 +45,9 @@ const JSON_SLOTS = {
   'drift-report': { ord: 5, path: '05-drift-report.json', schema: null },
   claims: { ord: 6, path: '06-claims.json', schema: null },
   'disagreement-map': { ord: 7, path: '07-disagreement-map.json', schema: DisagreementMap },
+  // code-review's stage-7 artifact (ord 7, distinct path). A run writes one of {disagreement-map,
+  // review-map} depending on its workflow, so the shared ord never collides within a run.
+  'review-map': { ord: 7, path: '07-review-map.json', schema: ReviewMap },
   verifications: { ord: 8, path: '08-verifications.json', schema: VerificationSet },
   'judge-report': { ord: 9, path: '09-judge-report.json', schema: JudgeReport },
 } satisfies Record<string, SlotDef>;

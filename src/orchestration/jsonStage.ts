@@ -16,8 +16,9 @@ export async function jsonCall<T>(
   stage: string,
   prompt: string,
   schema: z.ZodType<T>,
+  opts: { cwd?: string } = {},
 ): Promise<T> {
-  const first = await ctx.call(handle, { prompt, expectJson: true }, stage);
+  const first = await ctx.call(handle, { prompt, expectJson: true, cwd: opts.cwd }, stage);
   if (!first.ok) {
     // AUTH/QUOTA/NOT_FOUND fail fast; TIMEOUT/CRASH/BAD_OUTPUT were already retried once by the adapter.
     throw new StageError(stage, first.error, `provider ${handle.id} call failed (${first.error})`);
@@ -30,7 +31,7 @@ export async function jsonCall<T>(
   const repairPrompt =
     `${prompt}\n\n---\nYour previous output failed validation:\n${zodMessage(parsed.error)}\n` +
     `Output ONLY the corrected JSON, nothing else.`;
-  const second = await ctx.call(handle, { prompt: repairPrompt, expectJson: true }, `${stage}-repair`);
+  const second = await ctx.call(handle, { prompt: repairPrompt, expectJson: true, cwd: opts.cwd }, `${stage}-repair`);
   if (!second.ok) {
     throw new StageError(stage, second.error, `repair retry failed (${second.error})`);
   }

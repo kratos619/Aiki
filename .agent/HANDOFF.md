@@ -5,36 +5,43 @@ keep it current, not cumulative (history lives in `git log`).
 
 ---
 
-**Status: CLEAN — T0–T8 all DONE, code + LIVE-verified. Nothing half-written. Next task is T9, and
-the USER WANTS TO GRILL IT FIRST (invoke the `grilling` skill before writing any T9 code).**
+**Status: CLEAN — start next task (T11). T0–T10 all DONE. Nothing half-written.**
 
-Session just finished: T8 (TUI) built + live-verified, then the S2 tuning debt fixed. 89 tests green.
+T10 (code-review workflow) grilled → design locked → built → tested this session. 136 tests green
+(124 + 12 new in `test/t10.test.ts`), typecheck + build clean.
 
 Resume steps for the new session:
-1. Read `.agent/STATE.md` (position, ledger, T6/T7/T8 + S2-fix decisions, traps). Do NOT re-scan the tree.
-2. Sanity check: `npm run typecheck && npm test` (expect **89 passing**) and
-   `node dist/cli/index.js doctor --no-smoke` (expect 3/3). Green → proceed.
-3. **Grill T9, then build it.** The user said "I'll grill T9" — so START by invoking the `grilling`
-   skill and interviewing them through the T9 design (see STATE "Next action" for the scope + the open
-   design questions already teed up: config schema/precedence, what `show` renders, resolve semantics,
-   smoke-cache location). Do NOT jump straight to code. After grilling → lock the design in STATE → build.
-   T9 = `aiki show <run>` + role/config overrides (`resolveRoles(overrides?)`/`RunOptions.roleOverrides`
-   seam already exists) + `.aiki/config.json` loading + the §8 6h smoke cache. No new pipeline stages.
+1. Read `.agent/STATE.md` (position, ledger, the T10 SHIPPED block + traps). Do NOT re-scan the tree.
+2. Sanity check: `npm run typecheck && npm test` (expect **136 passing**) and
+   `node dist/cli/index.js doctor --no-smoke` (expect 3/3). Green → proceed to T11.
+3. T11 = bench harness + build set (§17): arms A–D runners, seeded-bug matcher, `aiki bench code-review
+   --set build`, 5 seeded diffs. The matcher (same file + overlapping lines + same defect class) is
+   ALREADY built as `sameFinding` in `src/orchestration/stages/cr-map.ts` — reuse it. Also lands here:
+   resolve-CR (fixed/wontfix/false-positive) — needs FeedbackEntry to generalize (item_type
+   finding|adjudication, verdict union, ruling→string snapshot).
 
-Uncommitted diff (the whole build so far — T3…T8 + S2 fix; user commits, do not re-implement):
-- Full engine + S1–S10 pipeline (`src/orchestration/`, `src/workflows/idea-refinement.ts`, `src/schemas/`).
-- TUI (T8, NEW files): `src/tui/{timeline.ts,format.ts,app.tsx,index.ts}`; `cli/index.ts` bare-`aiki`
-  → `startTui`. Engine seam: `RunEvents`/`runStage`/`StageInfo` + `RunCtx.events`/`.aborted`; abort
-  `signal` threaded ctx→adapter→`spawnCapture` (child-kill); `s2-misread` clarify branch.
-- S2 fix (this session): `cluster.ts` clusterInterpretations Jaccard→**overlap-coefficient** (0.6);
-  `s2-misread.ts` prompt hardened (stops the meta-misread). Regression test in `cluster.test.ts`.
-- Tests (89): `test/{cluster,schemas,providers,runs,adapters,engine,disagreement,synthesis,tui}.test.ts`.
+T10 file map (uncommitted; user commits — do not re-implement):
+- NEW: `src/orchestration/git.ts` (repoToplevel/computeDiff three-dot/parseDiffFiles),
+  `src/orchestration/stages/cr-s4-review.ts` (`s4Review` + pure `filterValidFindings`/`countLines`),
+  `cr-s8-crossexam.ts` (`s8CrossExam` mutual, returns data — does NOT write 08),
+  `cr-map.ts` (pure `sameFinding` §487 matcher + `buildReviewMap`),
+  `cr-s9-judge.ts` (`s9ReviewJudge`, judge cwd=run-dir), `cr-report.ts` (pure `scoreFindings` +
+  `renderReviewReport`), `src/workflows/code-review.ts` (`runCodeReview` + `CR_STAGES`), `test/t10.test.ts`.
+- EDITED: `src/schemas/index.ts` (export `Finding`, add `CodeReviewRoleOutputModel`, `ReviewMap`/
+  `AnnotatedFinding`/`CrossVerdict`), `src/storage/runs.ts` (`review-map` slot, ord 7),
+  `src/orchestration/context.ts` (`resolveRoles` code-review branch: s4=[claude,codex], judge=agy),
+  `engine.ts` (WORKFLOWS['code-review']=runCodeReview, `RunOptions.cwd`), `jsonStage.ts` (`jsonCall`
+  optional cwd), `cli/run.ts` (diff plumbing + `RunFlags`), `cli/index.ts` (--base/--head/--diff).
 
-Gotchas / open items for T9+:
-- `app.tsx` rendering is NOT unit-tested (only its pure logic) — a render bug would show only in the
-  user's manual TUI run. Do NOT launch the TUI or any live run yourself — interactive + metered
-  (memory `no-live-paid-runs`); give the user steps + a cheap sample instead.
-- Cosmetic-only leftover: an aborted in-flight stage shows ✖ not ⊘ (harmless).
-- Remaining low-priority lexical debt: S7 blind-spot keyword matching over-reports. Do NOT touch the
-  S7 semantic-grouping model call (that's the working fix).
-- `.DS_Store` files are untracked macOS cruft — ignore.
+Gotchas / open items:
+- **Artifact ordering:** review-map (07) is written BEFORE verifications (08) though it's derived from
+  the cross-exam — the writer requires ascending ordinals, so `s8CrossExam` returns its data and
+  `runCodeReview`'s S7 stage writes 07 then 08. Don't move the 08 write back into S8.
+- **Ruling polarity (code-review S9):** UPHOLD = keep the finding (genuine defect), REJECT = drop it
+  (false positive). This is the OPPOSITE of idea S9 (where UPHOLD = the attack wins). Both are correct
+  for their workflow; the prompts spell it out.
+- **agy trap sidestepped:** judge (agy) runs cwd=run-dir, never repo. Do not give agy repo cwd anywhere
+  without first verifying its --sandbox.
+- Full live `aiki run code-review --base <ref> --head <ref>` is metered → user's manual §605 acceptance
+  (cheap sample was provided in chat). Do NOT run it yourself (no-live-paid-runs).
+- `.DS_Store` untracked macOS cruft — ignore. graphify-out/ is the knowledge graph (added this session).

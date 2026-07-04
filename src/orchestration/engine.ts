@@ -6,14 +6,13 @@
 import { BudgetExceeded, DeadlineExceeded, StageError, makeRunId, resolveRoles, setupProviders, RunCtx, type RoleMap, type RunEvents, type WorkflowId } from './context.js';
 import { RunWriter } from '../storage/runs.js';
 import { runIdeaRefinement } from '../workflows/idea-refinement.js';
+import { runCodeReview } from '../workflows/code-review.js';
 
 export type WorkflowFn = (ctx: RunCtx, input: string) => Promise<void>;
 
 const WORKFLOWS: Record<WorkflowId, WorkflowFn> = {
   'idea-refinement': runIdeaRefinement,
-  'code-review': async () => {
-    throw new StageError('setup', 'ABORT', 'code-review workflow not implemented until T10');
-  },
+  'code-review': runCodeReview,
 };
 
 export interface RunOutcome {
@@ -60,6 +59,7 @@ export interface RunOptions {
   signal?: AbortSignal;
   events?: RunEvents; // TUI seam (T8); absent = headless
   roleOverrides?: Partial<RoleMap>; // §10 override seam; config loading is T9
+  cwd?: string; // provider-call working dir; code-review sets the repo root (T10). Default = run dir.
 }
 
 /**
@@ -88,7 +88,7 @@ export async function run(workflow: WorkflowId, input: string, opts: RunOptions 
     handles,
     roles,
     writer,
-    cwd: writer.dir,
+    cwd: opts.cwd ?? writer.dir, // code-review passes the repo root so reviewers can read the tree
     budget: opts.budget,
     deadlineMs: opts.deadlineMs,
     signal: opts.signal,

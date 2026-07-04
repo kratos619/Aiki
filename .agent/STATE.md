@@ -5,31 +5,122 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
 
 ## Now
 
-- **Position:** T0–T8 COMPLETE + live-verified. The headless S1→S10 pipeline AND the interactive TUI
-  both run end-to-end on real providers. **89 tests** green, typecheck clean, `npm run build` clean,
-  `doctor --no-smoke` = 3/3. Nothing half-done.
+- **Position:** T0–T10 COMPLETE. T10 (code-review workflow) built + tested + CLI-verified (pre-provider
+  paths) this session. **136 tests** green (124 + 12 T10), typecheck clean, `npm run build` clean.
+  T0–T8 remain live-verified; T9/T10 verified by tests + free CLI paths (full live runs are metered →
+  user's manual acceptance). Nothing half-done.
+  - **T10 proof:** scripted-adapter e2e S4→S10 (5 calls; §487 merge → 1 consensus; file:line validator
+    dropped claude's hallucinated-line + not-in-diff findings PRE-model — §605; agy judge UPHELD the
+    disputed auth finding; report shows "Gemini"). Real-git integration test (three-dot `main...feature`).
+    Free CLI: `run code-review` no-flags → usage err; `--base HEAD --head HEAD` → "no changes" exit 0;
+    `--diff /missing` → read err. LIVE run on a real diff = user's manual §605 acceptance (cheap sample below).
+  - **T9 (still true):** config/show/resolve/config.json all built + CLI-verified; §604 met.
   - **T8 live proof:** bare `aiki` → full S1→S10 completed through the TUI (run `…-8c44`); **Ctrl+C
     mid-run → `exit_status:aborted`, `aborted:true`, partial artifacts kept** (run `…-2338-…-d09a`, §603
     met). Two UI bugs fixed (multi-line-paste input corruption; label/provider spacing). Cosmetic-only
     leftover: an aborted in-flight stage shows ✖ (killed → quorum-fail) not ⊘ — harmless, not fixed.
   - **T7 live proof (still valid):** run `…-af3d`, consensus=3 cross-provider, anti-blending 0 out-of-scope.
-- **First, sanity-check (30s):** `npm run typecheck && npm test` should be green (**89 tests**), and
+- **First, sanity-check (30s):** `npm run typecheck && npm test` should be green (**136 tests**), and
   `node dist/cli/index.js doctor --no-smoke` should list 3 providers. (Uncommitted tree = finished
-  T3–T8 work; user commits — do not re-implement.)
-- **Next action — START HERE: T9 (show / resolve / config). USER WANTS TO GRILL T9 FIRST — invoke the
-  `grilling` skill and interview them through the design before writing any code (they explicitly asked).**
-  §5 commands to design: `aiki show <run>` (render a past run's summary from artifacts — likely reuse
-  `src/tui/format.ts` + the S10 renderer), `aiki resolve` (role/config overrides — the seam is already
-  built: `resolveRoles(overrides?)` + `RunOptions.roleOverrides`), and **`.aiki/config.json` loading**
-  (pin roles, judge override per §CLAUDE.md, and the §8 6h smoke-test cache that doctor/T2 deferred).
-  No new pipeline stages. Open design Qs to grill: config schema + precedence (flag > config > default);
-  what `show` renders (full report vs summary; for a partial/aborted run?); does `resolve` mutate config
-  or just preview; where the smoke cache lives + its interaction with `doctor --fresh`.
+  T3–T10 work; user commits — do not re-implement.)
+- **Next action — START HERE: T11 (bench harness + build set, §17/§24).** Arms A–D runners, the
+  seeded-bug matcher (matching rule = same file + overlapping lines + same defect class — **already
+  built** as `sameFinding` in `stages/cr-map.ts`, reuse it), `aiki bench code-review --set build`, and
+  5 seeded diffs. Also lands here per T10 deferrals: **resolve-CR** (fixed/wontfix/false-positive +
+  FeedbackEntry generalization) for the FP/precision metric (§487); the zod→JSON-Schema skill loader if
+  it fits. See `.agent/HANDOFF.md` for the T10 file map.
+- **T10 SHIPPED 2026-07-04 (as-built, do not re-litigate). Bespoke lean composition — NOT the idea
+  S1–S10 stages** (findings have no assumption/attack structure; §12.2 only specs CR's S4/S8/S9/report).
+  ~5 model calls. Pipeline:
+  1. **Diff plumbing** (CLI/git util): `run code-review --base <ref>` (req) `--head <ref>` (default HEAD)
+     OR `--diff <file>`. `git diff --unified=3 <base>...<head>` (THREE-DOT merge-base = what HEAD added)
+     → write `inputs/diff.patch` (+ 00-original). Reviewer-call cwd = `git rev-parse --show-toplevel`.
+     Empty diff → clean exit "no changes"; not-a-git-repo & no --diff → error.
+  2. **S1 deterministic (NO call):** synth trivial IntentContract {task:"review the diff",
+     task_type:"code-review"} → 01. **S2 skipped.** **S3 deterministic (NO call):** fill reviewer
+     template {{DIFF_PATH}} → 03-prompts.
+  3. **S4 reviewers** claude+codex, blind/parallel, cwd=repo root, read-only (plan/sandbox, VERIFIED) →
+     CodeReviewRoleOutput (≤12 findings) → 04. Then **file:line validator** (deterministic, pre-S8):
+     DROP findings whose file ∉ diff / ∉ HEAD / lines out-of-bounds; keep valid; flag dropped count.
+  4. **S8 mutual cross-exam** (2 calls; skip a side if its target has 0 findings): each reviewer sees the
+     OTHER's findings ANONYMIZED → Verification CONFIRM/REFUTE/UNCERTAIN per finding → 08 (reuse
+     VerificationSet). Confirm-all-no-justification → `synthesis_suspect` flag (soft, no re-ask).
+  5. **ReviewMap builder** (deterministic, replaces idea S6/S7): merge findings BOTH reviewers
+     independently raised via the **§487 matcher** (same file + overlapping lines + same category) →
+     consensus; classify each by cross-exam verdict. NEW `ReviewMap` zod {consensus:Finding[],
+     disputed:{finding,refutation}[], single_reviewer:Finding[], per_reviewer_stats} → 07 (new writer slot).
+  6. **S9 judge=agy** (1 call, cwd = RUN-DIR not repo → sidesteps the agy --sandbox trap; judge only sees
+     findings text): adjudicate disputed (REFUTEd) findings → UPHOLD/REJECT/UNRESOLVED + verdict (reuse
+     JudgeReport) → 09.
+  7. **Confidence (deterministic):** both-independent OR CONFIRMed→HIGH; single/UNCERTAIN→MEDIUM;
+     REFUTEd+UPHOLD/UNRESOLVED→LOW; REFUTEd+REJECT→false-positive (excluded from P0/P1 table, separate
+     "rejected" section).
+  8. **S10 CR report** (pure): verdict → P0/P1 table → disagreement map (A-found/B-missed, contradictions,
+     adjudications) → per-reviewer stats → raw links → final-report.md.
+  - **Roles:** resolveRoles branches on workflow — code-review → s4=[claude,codex], judge=agy, verifier
+     unused; config/flag overridable (hardcode per-workflow defaults per §271, NOT a general priority algo).
+     Degradation <3 providers → judge falls back to a reviewer + `synthesis_suspect` (edge, low-pri).
+  - **Engine tweaks:** `RunOptions.cwd` override (CLI passes repo root); RunWriter gets a `review-map`
+     slot (07); `ctx.call` per-call cwd already exists (judge uses it).
+  - **Tests (scripted, NO paid calls):** pure units (git-range, file:line validator drop-invalid, §487
+     matcher/ReviewMap builder, confidence, S10 render, resolveRoles CR) + **scripted-adapter e2e** CR run
+     (fake providers → S4→S10 wiring + budget, like engine.test.ts) + real temp-git diff-plumbing test incl.
+     the §605 file:line-rejection. Live run on a real small diff = USER's manual §605 acceptance (give steps
+     + cheap sample; no-live-paid-runs).
+  - **Deferred:** resolve-CR vocab (fixed/wontfix/false-positive) + FeedbackEntry generalization
+     (item_type finding|adjudication, verdict union, ruling→string) → **T11** (bench FP labeling, §487).
+     agy --sandbox live verification still deferred (CR doesn't depend on it). Skill/validate.ts registry
+     stays inline (idea precedent). Acceptance §605: real diff → adjudicated findings; unresolvable
+     file:line rejected pre-model (tested).
+- **T9 SHIPPED 2026-07-04 (as-built, do not re-litigate). No new pipeline stages.** Correction now fixed:
+  `aiki resolve` = interactive **feedback annotation** → `.aiki/feedback.jsonl` (plan §127/§604/§444), NOT
+  role overrides (`resolveRoles()` is an unrelated same-named internal fn; role pinning is a config concern).
+  T9 = four pieces (all built + unit-tested in `test/t9.test.ts`, 35 tests):
+  1. **`aiki show <run-id>` [`--raw`]** — complete run → cat `final-report.md`; `--raw` → list artifact
+     files; partial/aborted (no final-report.md) → short summary from meta.json (exit_status, stages,
+     flags) + "use --raw". Uses the shared run-id resolver (below).
+  2. **`aiki resolve <run-id>`** — walks the run's **adjudicated contradictions** (artifacts 07
+     DisagreementMap + 09 JudgeReport); user labels each ruling `correct/incorrect/unsure` (+optional
+     note) → append to global **`.aiki/feedback.jsonl`** (append-only). Pure core
+     (`buildFeedbackEntries`+`appendFeedback`, unit-tested) under a thin readline loop; non-interactive
+     hook = repeatable `--verdict <id>=<c|i|u>` (drives §604 test headlessly — no TTY, no paid calls).
+     JSONL line `{run_id, workflow, item_type:"adjudication", item_id, verdict, ruling(snapshot), at,
+     note?}`, zod-validated. Verdict vocab workflow-aware (code-review fixed/wontfix/false-positive later).
+  3. **`aiki config` [`--edit`]** — bare → print EFFECTIVE config (built-in defaults merged with
+     `.aiki/config.json`) as JSON. `--edit` → open `.aiki/config.json` in $EDITOR/$VISUAL, create `{}` if
+     missing; no $EDITOR → print path.
+  4. **`.aiki/config.json` loading** — project-local (cwd), zod `{roles?:Partial<RoleMap>, budget?:number,
+     deadlineMs?:number}`. `roles` = FLAT GLOBAL → feeds existing `resolveRoles(wf,avail,overrides)` for
+     every workflow. Precedence **flag > config > default**. Missing = defaults; present-but-invalid =
+     HARD-FAIL naming file+zod error (never silently ignore). Threaded into BOTH headless `run()` AND the
+     TUI (app.tsx `resolveRoles` call + RunCtx budget — 2 additive edits). NO CLI role flags (config-only;
+     `--budget` stays).
+  - **Smoke cache** (§242, 6h): SEPARATE tool-owned **`.aiki/smoke-cache.json`** (`{provider:{pass,at,
+     version}}`), NOT inside config.json — logged deviation from plan's literal "in config.json" (avoids
+     clobbering the human-edited `config --edit` file). Consumed by `doctor`; add **`doctor --fresh`** to
+     bypass. Entry stale if >6h OR detected version ≠ cached version. NO smoke on TUI launch (defer the §5
+     "detect→smoke→panel" gap — would be a paid call every launch). Retires the T2/doctor smoke-cache debt.
+  - **Shared run-id resolver** (show+resolve): exact dir name OR unique suffix/substring (so `8c44`
+     works); ambiguous → list candidates; no-arg → most recent run.
+  - **Files (go straight here):** `src/config/config.ts` (AikiConfig zod + `loadConfig`/`effectiveConfig`/
+     `ConfigError`), `src/config/smoke-cache.ts` (`isFresh`/`toEntry`/`entryToSmoke`/read/write, pure core),
+     `src/storage/runs-read.ts` (`matchRunId` pure + `listRuns`/`resolveRunId`/`readFinalReport`/
+     `listArtifacts`), `src/storage/feedback.ts` (`FeedbackEntry` zod + `buildFeedbackEntries`/
+     `parseVerdictFlags`/`appendFeedback`, pure core), `src/cli/{show,resolve,config}.ts`. Edits: `doctor.ts`
+     (+`--fresh`, cache read/write), `run.ts` (config precedence), `cli/index.ts` (3 commands + config→TUI),
+     `tui/{index,app}.tsx` (`AppProps` roleOverrides+budget), `context.ts` (exported DEFAULT_BUDGET/DEADLINE).
+  - **DEVIATION (logged):** smoke cache is a separate `.aiki/smoke-cache.json`, NOT inside config.json as
+     the plan's literal §242 text says — to avoid `doctor` clobbering the human-edited `config --edit` file.
+     Corrupt/missing cache = silently empty (disposable); corrupt/missing *config* = hard-fail (user intent).
+  - **Deferred (not a bug):** §5 "TUI detect→smoke→panel" — TUI still detect-only (no smoke on launch, would
+     be a paid call each launch). `resolve` interactive readline path is NOT unit-tested (the `--verdict`
+     non-interactive path is; readline shell is thin, like app.tsx). Verdict vocab is idea-only
+     (correct/incorrect/unsure); code-review's fixed/wontfix/false-positive lands with T10.
 - **Tuning debt:** S2 clustering + S2 prompt = **FIXED 2026-07-03** (overlap-coefficient + prompt
   hardening; see traps). Remaining low-priority: S7 blind-spot keyword matching is coarse → over-reports
   (e.g. flags "feasibility" as uncovered though discussed). Not blocking. **Do NOT touch the S7
   semantic-grouping model call — that's the working fix, not the coarse part.**
-- **In-flight?** No. T8 finished cleanly (code + tests + live interactive + abort verified). See HANDOFF.
+- **In-flight?** No. T10 finished cleanly (code + 12 tests + scripted e2e + free CLI paths). See HANDOFF.
 
 ## Task ledger (§24)
 
@@ -44,9 +135,9 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
 | T6 S4–S7 | ✅ | fan-out+drift+dedupe+map; 71 tests+typecheck+build green; LIVE-verified 00–07 (run …-fe2e) |
 | T7 S8–S10 | ✅ | S7 grouping + S8 verify + S9 adjudicate + S10 render; budget→12; 80 tests+build green; LIVE-verified 00–10 (run …-af3d) |
 | T8 TUI (ink) | ✅ | event seam + child-kill + 6 screens; 89 tests. LIVE-verified: full S1→S10 run + Ctrl+C→aborted:true (run …-d09a) |
-| T9 show / resolve / config | ⏳ NEXT | show <run>, resolve (role/config overrides), .aiki/config.json load (roles, smoke cache) |
-| T10 code-review workflow | ⬜ | |
-| T11 bench harness + build set | ⬜ | |
+| T9 show / resolve / config | ✅ | show <run>, resolve (feedback→JSONL), config cmd, .aiki/config.json load + separate smoke-cache; 35 tests, CLI-verified |
+| T10 code-review workflow | ✅ | bespoke S4→S10; §487 matcher (`sameFinding`); file:line validator; agy judge; 12 tests + scripted e2e |
+| T11 bench harness + build set | ⏳ NEXT | seeded-bug matcher = reuse `sameFinding`; resolve-CR vocab lands here |
 | T12 freeze + holdout + RESULTS.md | ⬜ | |
 
 ## Facts already decided (do not re-derive, do not re-litigate)
@@ -151,10 +242,12 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
 - **claude 8KB pipe truncation** — capture claude output via fd redirect, not a pipe.
   `spawn.ts::captureFull` (probe) and `spawn.ts::spawnCapture` (adapter run) both do this.
   Full note in `docs/PROVIDER_NOTES.md`.
-- **agy `--sandbox` write-blocking UNVERIFIED** — confirm it blocks file writes at T10; if not,
-  temp-copy cwd fallback + record enforcement level in meta.json.
-- **doctor runs live smoke = paid model calls.** Use `aiki doctor --no-smoke` during dev. The
-  §8 6h smoke cache is not built yet (belongs to the config store, T9).
+- **agy `--sandbox` write-blocking UNVERIFIED** — but **code-review SIDESTEPS it** (T10): the judge
+  (agy) runs with cwd=RUN-DIR, never the repo, and only sees findings text, so it has no repo write path.
+  Reviewers (claude/codex) are the ones at repo cwd and their read-only is verified. Still confirm agy's
+  sandbox before any workflow gives agy repo cwd; record enforcement level in meta.json.
+- **doctor runs live smoke = paid model calls.** Use `aiki doctor --no-smoke` during dev. The §8 6h
+  smoke cache IS built now (T9): `.aiki/smoke-cache.json`, `doctor --fresh` bypasses, version-change busts it.
 - **S2 clustering FIXED (2026-07-03), was over-triggering the clarification:** `cluster.ts`
   `clusterInterpretations` now uses **overlap-coefficient** (|A∩B|/min), not Jaccard, at the same
   §9 threshold 0.6. Calibrated on the live T8 case: two same-meaning readings scored Jaccard ~0.60

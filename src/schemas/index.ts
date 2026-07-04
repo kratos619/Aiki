@@ -78,7 +78,7 @@ export const IdeaRoleOutput = z
   })
   .strict();
 
-const Finding = z
+export const Finding = z
   .object({
     id: z.string().min(1), // "F1", ...
     file: z.string().min(1),
@@ -102,6 +102,11 @@ export const CodeReviewRoleOutput = z
   .strict();
 
 export const RoleOutput = z.discriminatedUnion('workflow', [IdeaRoleOutput, CodeReviewRoleOutput]);
+
+/** The exact JSON a code-review S4 reviewer returns: `CodeReviewRoleOutput` WITHOUT the `workflow`
+ *  discriminator (§13 — model output carries no `workflow`). Mirrors `IdeaRoleOutputModel` (T6); S4
+ *  validates the raw call against this, injects `workflow`, then persists as `RoleOutput` (T10). */
+export const CodeReviewRoleOutputModel = CodeReviewRoleOutput.omit({ workflow: true });
 
 /** The exact JSON the model returns for an idea-refinement S4 seat: `IdeaRoleOutput` WITHOUT the
  *  `workflow` discriminator (§13 — model output carries no `workflow`). S4 validates the raw call
@@ -199,6 +204,37 @@ export const DisagreementMap = z.object({
   blind_spots: z.array(z.string()), // rubric checklist items no provider addressed
 });
 
+// ── code-review: ReviewMap (§12.2, T10) ─────────────────────────────────────
+//
+// The code-review analog of DisagreementMap. Findings are line-anchored, so unlike idea's prose
+// claims we CAN deterministically detect when both reviewers independently flagged the same bug
+// (the §487 matcher: same file + overlapping lines + same category). Built pre-S9 from {reviewer
+// findings, mutual cross-exam}; the judge then adjudicates only `disputed`. Final HIGH/MED/LOW
+// confidence + false-positive exclusion are DERIVED at S10 (not stored here) — one source of truth.
+// Internal (engine-built) → not strict.
+
+/** The other reviewer's cross-exam verdict on a finding. `NONE` = both reviewers raised it
+ *  independently (§487-matched), so no cross-exam was needed to confirm it. */
+export const CrossVerdict = z.enum(['CONFIRM', 'REFUTE', 'UNCERTAIN', 'NONE']);
+
+/** A finding tagged with who raised it, the other reviewer's cross-exam verdict, and (if disputed)
+ *  the refuting argument. `reviewers` has 2 entries only when both independently found the same bug. */
+export const AnnotatedFinding = z.object({
+  finding: Finding,
+  reviewers: z.array(ProviderIdSchema).min(1),
+  cross_verdict: CrossVerdict,
+  refutation: z.string().optional(),
+});
+
+export const ReviewMap = z.object({
+  consensus: z.array(AnnotatedFinding), // both-independent or CONFIRMed → HIGH
+  disputed: z.array(AnnotatedFinding), // REFUTEd → adjudicated by S9
+  single_reviewer: z.array(AnnotatedFinding), // one reviewer, UNCERTAIN/unexamined → MEDIUM
+  per_reviewer: z.array(
+    z.object({ provider: ProviderIdSchema, raised: z.number().int().nonnegative(), kept: z.number().int().nonnegative(), dropped: z.number().int().nonnegative() }),
+  ),
+});
+
 // ── S9: JudgeReport (§13) ───────────────────────────────────────────────────
 
 const Adjudication = z
@@ -273,6 +309,11 @@ export type RoleOutput = z.infer<typeof RoleOutput>;
 export type IdeaRoleOutput = z.infer<typeof IdeaRoleOutput>;
 export type IdeaRoleOutputModel = z.infer<typeof IdeaRoleOutputModel>;
 export type CodeReviewRoleOutput = z.infer<typeof CodeReviewRoleOutput>;
+export type CodeReviewRoleOutputModel = z.infer<typeof CodeReviewRoleOutputModel>;
+export type Finding = z.infer<typeof Finding>;
+export type CrossVerdict = z.infer<typeof CrossVerdict>;
+export type AnnotatedFinding = z.infer<typeof AnnotatedFinding>;
+export type ReviewMap = z.infer<typeof ReviewMap>;
 export type ClaimGroups = z.infer<typeof ClaimGroups>;
 export type Verification = z.infer<typeof Verification>;
 export type VerificationSet = z.infer<typeof VerificationSet>;
