@@ -10,9 +10,9 @@ import { executeRun } from '../orchestration/engine.js';
 import { RunWriter } from '../storage/runs.js';
 import type { Finding } from '../schemas/index.js';
 import type { ProviderId } from '../providers/types.js';
-import { ARMS, type ArmId } from './arms.js';
+import { ARMS, ARM_IDS, type ArmId } from './arms.js';
 import { BugManifest, scoreRun, type SeededBug } from './scoring/seeded-bugs.js';
-import { summarize, type ArmScore, type BenchResult, type CaseResult } from './results.js';
+import { BenchResult, summarize, type ArmScore, type CaseResult } from './results.js';
 
 interface BenchCase {
   name: string;
@@ -76,6 +76,17 @@ async function runArmOnCase(arm: ArmId, c: BenchCase, handles: ProviderHandle[],
   if (!outcome.ok) {
     return { arm, status: 'error', runId, reason: `${outcome.error?.code}: ${outcome.error?.message}`, calls: ctx.calls.length, wallMs };
   }
+  // A scored outcome can still hide a mid-run provider failure: fault-tolerant arms (D) finish on the
+  // surviving providers when a reviewer crashes (e.g. Opus quota mid-run), so the result is NOT the
+  // registered pipeline. Don't score it as clean — mark it error so a `--resume` run retries it.
+  const failed = ctx.calls.filter((call) => call.error);
+  if (failed.length > 0) {
+    const detail = failed.map((call) => `${call.provider}@${call.stage}=${call.error}`).join(', ');
+    return { arm, status: 'error', runId, reason: `DEGRADED: provider call failed mid-run (${detail})`, calls: ctx.calls.length, wallMs };
+  }
+  // Persist the exact findings the scorer saw — single-call arms (A/B) have no review-map artifact,
+  // so this is what `aiki resolve` annotates for FP labels (precision's denominator = this list).
+  await ctx.writer.writeRaw('bench-findings.json', JSON.stringify(findings, null, 2));
   const s = scoreRun(findings, c.bugs);
   return {
     arm,
@@ -97,13 +108,111 @@ export interface BenchOptions {
   set?: string; // 'build' | 'holdout'
   arms?: ArmId[];
   root?: string;
+  resume?: boolean; // continue the latest matching results file: keep scored case×arm pairs, retry the rest
   handles?: ProviderHandle[]; // injectable (tests); default = setupProviders()
+}
+
+/** Approx claude/Opus calls each arm makes per case — for the pre-run quota estimate (§19). Not exact:
+ *  §14 JSON repairs can add a few, and D's cross-exam/judge vary; deliberately a round upper-ish figure. */
+export const CLAUDE_CALLS_PER_CASE: Record<ArmId, number> = { A: 1, B: 1, C: 4, D: 2 };
+
+/** ≈ claude/Opus calls for a list of case×arm pairs (the quota-sensitive cost the user cares about). */
+export function estimateClaudeCalls(pairs: { arm: ArmId }[]): number {
+  return pairs.reduce((n, p) => n + (CLAUDE_CALLS_PER_CASE[p.arm] ?? 0), 0);
+}
+
+/** Resume target: continue the most-recent results file for this suite/set (so a run can be spread across
+ *  Opus windows, even across midnight); otherwise a fresh dated file. */
+async function resolveCampaign(resultsDir: string, suite: string, set: string, resume: boolean): Promise<{ path: string; prior?: BenchResult }> {
+  const dated = join(resultsDir, `${suite}-${new Date().toISOString().slice(0, 10)}.json`);
+  if (!resume) return { path: dated };
+  // Only real `<suite>-YYYY-MM-DD.json` campaign files — so an archived/renamed run (e.g.
+  // `<suite>-2026-07-04.void.json`) is ignored and won't be resumed by accident.
+  const campaign = new RegExp(`^${suite}-\\d{4}-\\d{2}-\\d{2}\\.json$`);
+  let names: string[] = [];
+  try {
+    names = (await readdir(resultsDir)).filter((f) => campaign.test(f));
+  } catch {
+    return { path: dated };
+  }
+  names.sort(); // ISO date in the name → lexical order is chronological
+  for (const name of names.reverse()) {
+    try {
+      const parsed = BenchResult.safeParse(JSON.parse(await readFile(join(resultsDir, name), 'utf8')));
+      if (parsed.success && parsed.data.suite === suite && parsed.data.set === set) {
+        return { path: join(resultsDir, name), prior: parsed.data };
+      }
+    } catch {
+      /* skip an unparseable/partial file, try the next-most-recent */
+    }
+  }
+  return { path: dated };
+}
+
+/** Map of `case::arm` → the prior ArmScore for pairs already `scored` (resume reuses these; error/skipped are retried). */
+function priorScored(prior: BenchResult | undefined): Map<string, ArmScore> {
+  const done = new Map<string, ArmScore>();
+  for (const pc of prior?.cases ?? []) {
+    for (const a of pc.arms) if (a.status === 'scored') done.set(`${pc.case}::${a.arm}`, a);
+  }
+  return done;
+}
+
+export interface BenchPlan {
+  suite: string;
+  set: string;
+  arms: ArmId[];
+  cases: string[]; // every case name in the set
+  toRun: { case: string; arm: ArmId }[]; // pairs that will actually execute (drives the estimate)
+  skipCompleted: number; // pairs kept from a prior run (resume)
+  skipUnavailable: number; // pairs skipped because required provider(s) are absent
+  estClaudeCalls: number; // ≈ Opus calls for toRun
+  resultsPath: string;
+  resumedFrom?: string; // set when a prior matching results file was found and will be continued
+}
+
+/** Dry-run: resolve what a `runBench` with these options would execute + its ≈Opus cost. No model calls. */
+export async function planBench(opts: BenchOptions = {}): Promise<BenchPlan> {
+  const suite = opts.suite ?? 'code-review';
+  const set = opts.set ?? 'build';
+  const arms = opts.arms ?? [...ARM_IDS];
+  const root = opts.root ?? process.cwd();
+  const handles = opts.handles ?? (await setupProviders());
+  const available = handles.map((h) => h.id);
+
+  const cases = await loadCases(suite, set, root);
+  const resultsDir = join(root, 'bench', 'results');
+  const { path, prior } = await resolveCampaign(resultsDir, suite, set, !!opts.resume);
+  const done = priorScored(prior);
+
+  const toRun: { case: string; arm: ArmId }[] = [];
+  let skipCompleted = 0;
+  let skipUnavailable = 0;
+  for (const c of cases) {
+    for (const arm of arms) {
+      if (opts.resume && done.has(`${c.name}::${arm}`)) skipCompleted++;
+      else if (!armAvailable(arm, available)) skipUnavailable++;
+      else toRun.push({ case: c.name, arm });
+    }
+  }
+  return {
+    suite,
+    set,
+    arms,
+    cases: cases.map((c) => c.name),
+    toRun,
+    skipCompleted,
+    skipUnavailable,
+    estClaudeCalls: estimateClaudeCalls(toRun),
+    resultsPath: path,
+    resumedFrom: prior ? path : undefined,
+  };
 }
 
 export async function runBench(opts: BenchOptions = {}): Promise<BenchResult> {
   const suite = opts.suite ?? 'code-review';
   const set = opts.set ?? 'build';
-  const arms = opts.arms ?? (['A', 'B', 'C', 'D'] as ArmId[]);
+  const arms = opts.arms ?? [...ARM_IDS];
   const root = opts.root ?? process.cwd();
   const handles = opts.handles ?? (await setupProviders());
   const available = handles.map((h) => h.id);
@@ -111,21 +220,37 @@ export async function runBench(opts: BenchOptions = {}): Promise<BenchResult> {
   const cases = await loadCases(suite, set, root);
   const resultsDir = join(root, 'bench', 'results');
   await mkdir(resultsDir, { recursive: true });
-  const path = join(resultsDir, `${suite}-${new Date().toISOString().slice(0, 10)}.json`);
+  const { path, prior } = await resolveCampaign(resultsDir, suite, set, !!opts.resume);
+  const done = opts.resume ? priorScored(prior) : new Map<string, ArmScore>();
 
   const result: BenchResult = { suite, set, at: new Date().toISOString(), arms, cases: [], summary: [] };
   for (const c of cases) {
     const caseResult: CaseResult = { case: c.name, seeded: c.bugs.length, arms: [] };
     for (const arm of arms) {
+      const kept = done.get(`${c.name}::${arm}`);
+      if (kept) {
+        caseResult.arms.push(kept); // resume: keep already-scored work across quota windows
+        continue;
+      }
       if (!armAvailable(arm, available)) {
         caseResult.arms.push({ arm, status: 'skipped', reason: `required provider(s) unavailable` });
         continue;
       }
       caseResult.arms.push(await runArmOnCase(arm, c, handles, available, root));
     }
+    // Carry forward prior scored pairs for arms NOT requested this run — else a narrower `--arms`
+    // re-run (e.g. C-only after B,D) would rewrite the campaign file without the paid-for B/D data.
+    const priorCase = prior?.cases.find((pc) => pc.case === c.name);
+    for (const a of priorCase?.arms ?? []) {
+      if (a.status === 'scored' && !arms.includes(a.arm)) caseResult.arms.push(a);
+    }
     result.cases.push(caseResult);
     result.summary = summarize(result.cases, arms);
-    await writeIncremental(path, result); // survive a mid-run quota stop
+    // Survive a mid-run stop: write processed cases + the prior file's not-yet-reprocessed cases
+    // (a kill mid-loop must not drop prior scored data for later cases from the campaign file).
+    const processed = new Set(result.cases.map((x) => x.case));
+    const pending = (prior?.cases ?? []).filter((pc) => !processed.has(pc.case));
+    await writeIncremental(path, { ...result, cases: [...result.cases, ...pending] });
   }
   return result;
 }

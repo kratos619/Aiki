@@ -199,4 +199,21 @@ describe('resolve on a code-review run (cwd-based)', () => {
     const line = JSON.parse((await readFile(join(aiki, 'feedback.jsonl'), 'utf8')).trim());
     expect(line).toMatchObject({ run_id: 'cr1', workflow: 'code-review', item_type: 'finding', item_id: 'G1', verdict: 'false-positive' });
   });
+
+  it('falls back to raw/bench-findings.json when a run has no review-map (single-call bench arms)', async () => {
+    await mkRun(aiki, 'cr2', {
+      'meta.json': JSON.stringify({ workflow: 'code-review' }),
+      'raw/bench-findings.json': JSON.stringify([F({ id: 'F1' }), F({ id: 'F2', claim: 'phantom bug' })]),
+    });
+
+    const so = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    try {
+      const code = await resolveCmd('cr2', { verdict: ['F2=false-positive'] });
+      expect(code).toBe(0);
+    } finally {
+      so.mockRestore();
+    }
+    const line = JSON.parse((await readFile(join(aiki, 'feedback.jsonl'), 'utf8')).trim());
+    expect(line).toMatchObject({ run_id: 'cr2', item_type: 'finding', item_id: 'F2', verdict: 'false-positive' });
+  });
 });

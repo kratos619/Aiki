@@ -71,3 +71,4 @@ Antigravity binary. Command/binary references in fixes (e.g. "run `agy`") keep t
 | 2026-07-02 | ~~gemini~~ → agy | 1.0.15 | gemini CLI discontinued | replaced by Antigravity `agy` (Gemini 3.1 Pro) | new adapter agy.ts | see migration note above |
 | 2026-07-02 | agy | 1.0.15 | (was gemini `-o json`) | no JSON flag; `-p` returns raw text | `jsonOutput:false`, §14 extraction | — |
 | 2026-07-02 | agy | 1.0.15 | (was gemini `--approval-mode plan`) | `--sandbox` (boolean, terminal restrictions) | `readOnlyFlag:'sandbox'` | ⚠ write-blocking UNVERIFIED, pin at T10 |
+| 2026-07-04 | codex | 0.135.0→**0.142.5** | (user upgrade after install break) | `--help` probe: `exec` + `-s/--sandbox read-only` + `--cd` unchanged | none needed | ✔ smoke PASSED on 0.142.5 (`doctor` 2026-07-04, 9.1s) — stdout/stderr split works. NOTE: the 2026-07-04 22:16 codex CRASH was NOT quota/flags — install was broken (`Missing optional dependency @openai/codex-darwin-arm64`), fixed by reinstall |

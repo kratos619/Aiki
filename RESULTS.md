@@ -38,6 +38,35 @@ mis-categorized find does not count.
 | C | claude sampled 3× (sample-keyed self-consistency, merge ≥2/3, judge singletons) | claude | null hypothesis (cheapest lift) |
 | D | cross-provider: claude + codex reviewers, Gemini judge | claude, codex, agy | the multi-provider thesis |
 
+### Amendment A1 (2026-07-04, pre-declared BEFORE the clean pass — quota-failure recovery)
+
+Two eval attempts died of provider-quota exhaustion, not of any measured outcome; both are VOID and
+archived (`*.void.json`, ignored by `--resume`). No result-driven tuning occurred; arms, matcher,
+`bugs.json`, and thresholds are untouched.
+
+1. **Attempt 1** (`…attempt1.void.json`): Opus died during case 02 arm D. A/B/C crashed from case 03 on;
+   arm D silently completed cases 02–10 on codex+agy only (claude reviewer CRASH in meta) — not the
+   registered pipeline. Its summary compares arms over unequal case counts; unusable for §7.
+2. **Attempt 2** (`…attempt2-partial.void.json`): re-run same evening; codex crashed in case-01 D; killed
+   during case 02 before its incremental write (case-02 calls burned, unrecorded, unsalvageable).
+3. **Harness robustness added between attempts** (non-result-affecting): `--resume` (keeps scored
+   case×arm pairs across quota windows), pre-run Opus-call estimate + `--yes` gate, and a degradation
+   guard (any errored provider call ⇒ pair = `error`, never scored). Tested scripted-only.
+4. **Salvage rule (mechanical, no selection freedom):** a scored case×arm pair from a void attempt is
+   reused iff its run `meta.json` shows ZERO errored calls; where duplicates exist across attempts, the
+   EARLIEST clean measurement wins. Result: **6 pairs kept** (01 A/B/C/D, 02 A/B); attempt-1's 02 D
+   dropped (hidden claude CRASH in meta); attempt-2's duplicate 01 A/B/C not used (later measurements).
+5. **Observed measurement noise (honest caveat):** case 01 recall flipped between identical attempts
+   (A 0.75→1.0, B 1.0→0.75, C 1.0→0.75) — per-case recall on 4-bug cases is ±1 bug across runs.
+   Single-case deltas are noise; only the full-set micro recall feeds §7.
+6. **Arm A runs no further metered cases** — it appears in no §23 gate; its salvaged pairs are reported
+   as partial context only. Execution is staged: `--arms B,D` first (KC#1, KC#4), then `--arms B,C,D`
+   (KC#2). The §7 verdict is written only after B, C, D are scored on all 10 cases.
+7. **Provider version drift (recorded, not correctable):** codex broke and was reinstalled between
+   attempts (0.135.0 → 0.142.5; the 22:16 crash was a broken install — missing `darwin-arm64` binary —
+   not quota). Salvaged pair 01-D ran codex 0.135.0; remaining D cases run 0.142.5 (smoke-verified).
+   Every run's `meta.json` records exact `provider_versions`; prompts and pipeline are identical.
+
 ---
 
 ## 2. The holdout set (frozen — 10 diffs, 43 seeded bugs)
@@ -68,10 +97,15 @@ appear multiple times).
 ## 3. How to run the one metered pass (user runs this — it is metered)
 
 ```sh
-# ~120 model calls across 10 cases × 4 arms (A/B = 1, C ≈ 3–4, D ≈ 5 each). Sequential; results
-# written incrementally after each case, so a mid-run quota stop keeps completed work.
-node dist/cli/index.js bench code-review --arms A,B,C,D --set holdout
-#   → writes bench/results/code-review-<today>.json  +  prints the per-arm table
+# Staged per Amendment A1. Without --yes each command prints its ≈Opus-call estimate and exits (free).
+# --resume keeps scored pairs, so re-running the SAME command each quota window fills the gaps.
+
+# Stage 1 — KC#1 + KC#4 (≈26 Opus + ≈18 GPT calls; needs codex healthy):
+node dist/cli/index.js bench code-review --arms B,D --set holdout --resume --yes
+
+# Stage 2 — adds KC#2 (≈36 more Opus calls; B/D pairs already scored cost nothing):
+node dist/cli/index.js bench code-review --arms B,C,D --set holdout --resume --yes
+#   → writes bench/results/code-review-<date>.json  +  prints the per-arm table
 
 # Precision needs false-positive labels. For each run id in the results JSON, walk its findings and
 # tag the ones that are NOT real bugs; the harness reads these back from .aiki/feedback.jsonl:
