@@ -1,0 +1,8 @@
+{
+  "bugs": [
+    { "id": "B1", "file": "PostList.jsx", "line_start": 14, "line_end": 14, "category": "CORRECTNESS", "class": "off-by-one (loop uses <= posts.length; posts[length].seen throws)" },
+    { "id": "B2", "file": "PostList.jsx", "line_start": 11, "line_end": 11, "category": "CORRECTNESS", "class": "missing-hook-dep (userId absent from deps; won't refetch on change)" },
+    { "id": "B3", "file": "PostList.jsx", "line_start": 25, "line_end": 25, "category": "MAINTAINABILITY", "class": "missing-key (list items rendered without a key prop)" },
+    { "id": "B4", "file": "PostList.jsx", "line_start": 8, "line_end": 10, "category": "ERROR_HANDLING", "class": "unhandled-rejection (fetch chain has no .catch; network error is unhandled)" }
+  ]
+}

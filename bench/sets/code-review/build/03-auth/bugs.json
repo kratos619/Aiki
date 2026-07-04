@@ -1,0 +1,8 @@
+{
+  "bugs": [
+    { "id": "B1", "file": "auth-middleware.js", "line_start": 7, "line_end": 7, "category": "CORRECTNESS", "class": "fragile-parse (replace is case-sensitive/partial; malformed headers not rejected)" },
+    { "id": "B2", "file": "auth-middleware.js", "line_start": 8, "line_end": 8, "category": "SECURITY", "class": "auth-gap (jwt.decode does NOT verify the signature; forged tokens accepted)" },
+    { "id": "B3", "file": "auth-middleware.js", "line_start": 15, "line_end": 15, "category": "SECURITY", "class": "auth-bypass (assignment = instead of ===; every caller becomes admin)" },
+    { "id": "B4", "file": "auth-middleware.js", "line_start": 23, "line_end": 24, "category": "SECURITY", "class": "timing (=== on the key is not constant-time; leaks via timing)" }
+  ]
+}

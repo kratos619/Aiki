@@ -1,0 +1,8 @@
+{
+  "bugs": [
+    { "id": "B1", "file": "payment-controller.js", "line_start": 11, "line_end": 12, "category": "CORRECTNESS", "class": "off-by-one (i <= items.length reads items[length] → undefined.price throws)" },
+    { "id": "B2", "file": "payment-controller.js", "line_start": 15, "line_end": 16, "category": "ERROR_HANDLING", "class": "unhandled-rejection (findOne can return null for a bad code; coupon.discount then throws)" },
+    { "id": "B3", "file": "payment-controller.js", "line_start": 24, "line_end": 26, "category": "SECURITY", "class": "auth-gap (refund route has no authenticate and no ownership check; any caller refunds any order)" },
+    { "id": "B4", "file": "payment-controller.js", "line_start": 25, "line_end": 26, "category": "ERROR_HANDLING", "class": "null-deref (findById can return null; order.chargeId then throws)" }
+  ]
+}
