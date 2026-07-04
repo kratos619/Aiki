@@ -41,17 +41,48 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
   - **T7 live proof (still valid):** run `…-af3d`, consensus=3 cross-provider, anti-blending 0 out-of-scope.
 - **First, sanity-check (30s):** `npm run typecheck && npm test` should be green (**148 tests**), and
   `node dist/cli/index.js doctor --no-smoke` should list 3 providers.
-- **Next action — FINISH T12 (the USER's metered pass + write-up).** The set + scaffold are built; what
-  remains is metered → the user runs it (no-live-paid-runs). Steps (also in `RESULTS.md` §3):
-  1. `node dist/cli/index.js bench code-review --arms A,B,C,D --set holdout` (~120 calls; sequential;
-     results written incrementally → `bench/results/code-review-<today>.json`). **This is the ONE
-     evaluation pass — BENCHMARK.md forbids any pipeline edit after it.**
-  2. For each run id in the results JSON, label non-real findings:
-     `node dist/cli/index.js resolve <run-id> --verdict <findingId>=false-positive` (→ precision).
-  3. Fill `RESULTS.md` §4–§6 from the JSON, compute the §7 gate lines, write the §23 verdict.
-  Do NOT edit the pipeline (src/), the arms, the matcher, or `bugs.json` after step 1. NOTE: `aiki bench`
-  does NOT yet print a pre-run call estimate / require `--yes` (§19 gap, pre-existing from T11, unfixed
-  under freeze) — the user knows it's ~120 metered calls.
+- **The 2026-07-04 holdout run is VOID (Opus exhaustion mid-sweep) — do NOT fill RESULTS.md from it.**
+  Opus quota died after case 02: A/B/C (claude-only) crashed with `provider claude call failed (CRASH)`
+  from case 03 on (2/2/1 scored cases resp.); Arm D tolerated the dead claude reviewer and silently
+  finished cases 03–10 on **codex+agy only** (proof: run `…-8773` meta `S4-claude:CRASH`, `exit ok`) — NOT
+  the registered 3-provider D. Summary compares arms over different case counts (A=2,B=2,C=1,D=10) → the §23
+  gates on that JSON are meaningless. The raw JSON stays as forensic evidence. **Decision (user, 2026-07-04):
+  a crash on infrastructure (quota) is NOT "the one frozen eval pass" — the pre-registration freeze guards
+  against outcome-driven tuning, and there is no valid comparative outcome here. So non-result-affecting
+  harness robustness fixes are allowed; arms/matcher/`bugs.json`/thresholds stay frozen and were NOT touched.**
+- **T12 HARNESS HARDENED (2026-07-04, uncommitted) — three fixes, none touch what's measured:**
+  1. **`--resume`** (`runBench`/`planBench` + `resolveCampaign`/`priorScored` in `src/bench/harness.ts`):
+     continues the latest `code-review-YYYY-MM-DD.json`, KEEPS `status:'scored'` case×arm pairs, retries
+     error/skipped ones → re-run the same command each Opus window until complete. Matcher is date-strict so
+     an archived `.void.json` is ignored.
+  2. **Pre-run Opus estimate + `--yes` gate** (`planBench`/`estimateClaudeCalls`/`CLAUDE_CALLS_PER_CASE` +
+     `src/cli/bench.ts renderPlan`): no `--yes` → prints "≈N claude/Opus calls" and EXITS without running.
+     Full sweep ≈ **80 Opus calls** (C≈4/case is ~40 of them). Closes the §19 gap.
+  3. **Degradation guard** (`runArmOnCase`): a `scored` outcome with ANY errored `ctx.calls` entry →
+     downgraded to `status:'error'` (`DEGRADED: …`), so D can't silently score a claude-less run and
+     `--resume` retries it. (Safe: a recovered §14 repair pushes no errored record — see jsonStage.)
+  Tests: `test/bench-resume.test.ts` (10, scripted adapters, NO paid calls). 158 tests green; build clean.
+- **STAGE 0 DONE (2026-07-04 late session) — Amendment A1 pre-declared in RESULTS.md §1; read it first.**
+  What happened after the first void run: the user re-ran bench same evening (attempt 2) → **codex crashed**
+  in case-01 D, killed during case 02 (runs 2229/2242 have no meta = hard kill; its case-02 A/B/C Opus calls
+  burned unrecorded). Both attempts VOID, archived as `bench/results/code-review-2026-07-04.attempt{1,2*}.void.json`
+  (attempt 1 restored verbatim from session memory after the dated file got overwritten). **Salvage
+  (mechanical rule: scored pair kept iff run meta has ZERO errored calls; earliest clean wins):** 6 pairs →
+  cleaned campaign `code-review-2026-07-04.json` (01 A/B/C/D + 02 A/B). Attempt-1's 02 D dropped — meta shows
+  claude CRASHED mid-case-02-D (results JSON hid it; Opus died earlier than first diagnosed). Noise caveat
+  logged: case-01 recall flipped ±1 bug between identical attempts (A1 §5). Harness also gained (tested,
+  160 green): carry-forward of non-requested arms on narrower `--arms` resume + prior-case preservation on
+  mid-run kill (both prevent campaign-file data loss). Arm A = no further metered runs (in no §23 gate).
+- **Next action — the USER's staged metered pass (no-live-paid-runs). Commands also in RESULTS.md §3:**
+  1. Check codex health first (attempt 2 died on codex): `node dist/cli/index.js doctor --no-smoke`, and
+     dry-run `bench code-review --arms B,D --set holdout --resume` (free, prints ≈26 Opus / pairs left).
+  2. **Stage 1:** same command + `--yes` (≈26 Opus + ≈18 GPT) → KC#1 + KC#4. Re-run same command each
+     quota window; `--resume` fills gaps.
+  3. **Stage 2:** `--arms B,C,D --set holdout --resume --yes` (≈36 more Opus) → KC#2.
+  4. FP-label (`resolve <run-id> --verdict <id>=false-positive`), fill RESULTS §4–§6, §7 verdict — only
+     after B,C,D × all 10 cases scored.
+  Frozen still frozen: arms/matcher/`bugs.json`/thresholds/pipeline. Post-eval fix list (do NOT touch now):
+  S8 never-refutes (agy judge dormant in bench — 0 calls ever), agy sandbox verify, S7 coarse keywords.
 - **T11 SHIPPED 2026-07-04 (as-built, do not re-litigate).** BENCHMARK.md is FROZEN pre-registration —
   arms/metrics/matching/thresholds NOT editable. `aiki bench code-review --arms A,B,C,D --set build`
   (code-review only). Pieces:
@@ -201,7 +232,7 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
 | T9 show / resolve / config | ✅ | show <run>, resolve (feedback→JSONL), config cmd, .aiki/config.json load + separate smoke-cache; 35 tests, CLI-verified |
 | T10 code-review workflow | ✅ | bespoke S4→S10; §487 matcher (`sameFinding`); file:line validator; agy judge; 12 tests + scripted e2e |
 | T11 bench harness + build set | ✅ | arms A–D, `sameFinding` scorer, resolve-CR, 5 cases/20 bugs, incremental results; 9 tests + scripted bench e2e |
-| T12 freeze + holdout + RESULTS.md | 🔶 SET BUILT | 10 holdout diffs / 43 bugs + t12.test + RESULTS scaffold + .gitignore fix DONE; awaiting USER's metered eval + fill + §23 verdict |
+| T12 freeze + holdout + RESULTS.md | 🔶 STAGE 0 DONE | 2 void attempts archived; Amendment A1 pre-declared; 6 pairs salvaged; harness: resume+estimate+`--yes`+guard+carry-forward+bench-findings persist; resolve falls back to bench-findings (A/B FP-labelable, 4 runs backfilled) — 161 tests. Awaiting USER: FP labels (free) + staged pass B,D (≈26 Opus) then B,C,D (+≈36) → fill + §23 verdict |
 
 ## Facts already decided (do not re-derive, do not re-litigate)
 

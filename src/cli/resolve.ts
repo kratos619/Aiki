@@ -7,7 +7,7 @@
 // (repeatable, used by tests/automation). Both funnel through the pure core in storage/feedback.ts.
 
 import { createInterface, type Interface } from 'node:readline';
-import type { DisagreementMap, JudgeReport, ReviewMap, RunMeta } from '../schemas/index.js';
+import type { DisagreementMap, Finding, JudgeReport, ReviewMap, RunMeta } from '../schemas/index.js';
 import type { WorkflowId } from '../orchestration/context.js';
 import { scoreFindings } from '../orchestration/stages/cr-report.js';
 import { readJsonArtifact, resolveRunId, runDir } from '../storage/runs-read.js';
@@ -103,11 +103,22 @@ export async function resolve(runArg: string | undefined, opts: ResolveOptions =
   let itemType: FeedbackEntry['item_type'];
   if (workflow === 'code-review') {
     const map = await readJsonArtifact<ReviewMap>(dir, '07-review-map.json');
-    if (!map || !judge) {
-      process.stdout.write(`  run ${match.runId} has no findings to annotate.\n`);
-      return 0;
+    if (map && judge) {
+      items = reviewItems(map, judge);
+    } else {
+      // Single-call bench arms (A/B) write no review-map — annotate the harness-persisted
+      // scored findings instead (raw/bench-findings.json, the precision denominator).
+      const bench = await readJsonArtifact<Finding[]>(dir, 'raw/bench-findings.json');
+      if (!bench || bench.length === 0) {
+        process.stdout.write(`  run ${match.runId} has no findings to annotate.\n`);
+        return 0;
+      }
+      items = bench.map((f) => ({
+        id: f.id,
+        ruling: `${f.severity}/${f.category}/BENCH`,
+        label: `[${f.severity}] ${f.file}:${f.line_start}-${f.line_end} — ${f.claim}`,
+      }));
     }
-    items = reviewItems(map, judge);
     itemType = 'finding';
   } else {
     if (!judge || judge.adjudications.length === 0) {
