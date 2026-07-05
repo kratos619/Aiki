@@ -5,10 +5,13 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
 
 ## Now
 
-- **Position:** T0–T11 COMPLETE. **T12 buildable half DONE this session** (frozen 10-diff holdout set +
-  locate-check test + RESULTS.md scaffold + .gitignore fix). Remaining T12 = the USER's metered holdout
-  eval + RESULTS fill + §23 verdict (no-live-paid-runs). **148 tests** green (145 + 3 T12), typecheck +
-  `npm run build` clean. T0–T8 live-verified; T9/T10/T11 verified by tests + free CLI paths.
+- **Position (2026-07-05): v1 COMPLETE — thesis PROVEN, committed through `6ace559`.** T0–T12 done.
+  KC#1 PASS (D 100% vs B 77% recall = 1.30×, precision tied 1.00), KC#4 PASS, KC#2 deferred (see RESULTS.md).
+  `--cheap` mode shipped (Arm E role swap). agy `--sandbox` VERIFIED write-safe. **Now working the v2 product
+  round → `plan/AIKI-v2-plan.md` (V1→V5). Current task: V1 (S8-teeth) — CODE DONE + tests green
+  (uncommitted), awaiting USER metered validation.** 167 tests green, build clean.
+  _Everything below this bullet until "## Task ledger" is DATED HISTORY (the T12 benchmark saga) — read only
+  if you need detail; the live status is this bullet + the Next-action bullet + the v2 plan._
   - **T12 built (2026-07-04):** `bench/sets/code-review/holdout/{01-payments…10-analytics}/` = **10 cases /
     43 seeded bugs** (4–5 each, MERN-style, all 5 canonical classes + 6 categories). Each = src file +
     `diff.patch` (whole-file add via `git diff --no-index`, `+++ b/<file>`) + `bugs.json`. Ground truth
@@ -94,17 +97,23 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
   run.ts+index.ts, experimental label). **Confound now confirmed twice (B on holdout, E on build): the
   category-STRICT matcher measures "labels bugs like the seed author" as much as "finds them"** — log as a
   known limitation; a category-relaxed secondary recall is the fair metric for any future E-vs-D holdout.
-- **Next action — user COMMIT, then pick the next thread (all optional — the thesis is already proven):**
-  see the "What's next" options below. Recommended: **S8-teeth** (cross-exam never refutes → judge dormant;
-  free to write, cheap to validate; unblocks the ladder). Then escalation ladder, or a clean E holdout
-  re-bench (strict + relaxed recall) if deciding E-as-default. Desktop app / new workflows = forbidden (§3/§22).
-- **What's next (roadmap, none required):**
-  1. **S8-teeth fix** — cr-s8 cross-exam is CONFIRM-only (0 disputes every run → judge barely fires). Force
-     skepticism (each verifier must rank weakest findings / attempt a refutation). Free code + build-set validate.
-  2. **Escalation ladder** — deterministic cascade (cheap hunt → Opus only on dispute/coverage-hole). Needs
-     S8-teeth first (runs on the disagreement signal). New pre-registration.
-  3. **Clean E holdout re-bench** — only if choosing E as default: 10 cases, report strict AND category-relaxed recall.
-  4. **Consolidate/ship** — thesis proven; a README with the verdict + `--cheap` doc is a legitimate stopping point.
+- **V2 PLAN WRITTEN (2026-07-05): `plan/AIKI-v2-plan.md` — execute V1→V5 in order, same discipline as §24.**
+  V1 S8-teeth (council actually debates; blocks ladder) → V2 smart entry (repo detect, default-base,
+  deterministic input router — NO chat) → V3 Council View TUI + `show --html` static export (the
+  "professional/visual" answer INSTEAD of a desktop app) → V4 escalation ladder (needs V1; new
+  pre-registration L1, strict+relaxed recall) → V5 consolidate/ship (README with the exact qualified
+  verdict, run-cost preview). **Decided + logged in the plan: desktop app NO (terminal users, Electron
+  tax; HTML export covers it — revisit only on external-user signal); general Q&A/chat NEVER (§3/§22 +
+  council adds cost not accuracy on single-answer questions — router explains, doesn't answer).**
+- **Next action:** V1 (S8-teeth) CODE SHIPPED (uncommitted) — `cr-s8-crossexam.ts` prompt rework
+  (adversarial: rank peer findings weakest-first, actively refute the weakest with file:line evidence,
+  REFUTE only with evidence else UNCERTAIN) + rubber-stamp ONE-re-ask (mirrors S9 retry; still-stamped →
+  `synthesis_suspect`) + 4 unit tests (`test/v1-s8-teeth.test.ts`). "Ranked-weakest section" = the
+  existing `all_confirmed_justification` field (schema UNCHANGED per plan). 167 tests green, typecheck +
+  build clean; t10 e2e callCount=5 held. **AWAITING USER metered validation:**
+  `node dist/cli/index.js bench code-review --arms D --set build --yes` (~10 Opus) → expect disputes>0 on
+  ≥2/5 cases + S9 judge calls in metas, recall MUST stay 20/20 (drops → teeth cutting real findings →
+  revert cr-s8 prompt, iterate on build set NOT holdout). Passes → start V2 (smart entry).
 - **Scratch/probe files:** all deleted. Working tree = only intended edits.
   Frozen still frozen: arms/matcher/`bugs.json`/thresholds/pipeline. Post-eval fix list (do NOT touch now):
   S8 never-refutes (agy judge dormant in bench — 0 calls ever), agy sandbox verify, S7 coarse keywords.
@@ -260,8 +269,9 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
   hardening; see traps). Remaining low-priority: S7 blind-spot keyword matching is coarse → over-reports
   (e.g. flags "feasibility" as uncovered though discussed). Not blocking. **Do NOT touch the S7
   semantic-grouping model call — that's the working fix, not the coarse part.**
-- **In-flight?** No half-written code. T12's buildable half is complete + green; the only remaining T12
-  work is the USER's metered holdout eval + RESULTS fill (see "Next action"). See HANDOFF.
+- **In-flight?** V1 (S8-teeth) is CODE-COMPLETE + tests green but NOT yet user-validated (the metered
+  bench is the user's, per no-live-paid-runs). No half-written code. Read `.agent/HANDOFF.md` for the exact
+  validation command + the pass/fail rule + where the code lives.
 
 ## Task ledger (§24)
 
@@ -279,7 +289,9 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
 | T9 show / resolve / config | ✅ | show <run>, resolve (feedback→JSONL), config cmd, .aiki/config.json load + separate smoke-cache; 35 tests, CLI-verified |
 | T10 code-review workflow | ✅ | bespoke S4→S10; §487 matcher (`sameFinding`); file:line validator; agy judge; 12 tests + scripted e2e |
 | T11 bench harness + build set | ✅ | arms A–D, `sameFinding` scorer, resolve-CR, 5 cases/20 bugs, incremental results; 9 tests + scripted bench e2e |
-| T12 freeze + holdout + RESULTS.md | 🔶 STAGE 1 COMPLETE (2026-07-05) | **B,D × all 10 cases scored: D 43/43 (100%) vs B 33/43 (77%) — KC#1 recall condition MET at 1.30×** (needs ≥1.20). KC#4 PASS (D median 5.4min; quota est. 13%). Gemini judge fired on D 04/05/07 (real disputes — S8 not toothless on hard cases). RESULTS §4–§7 filled. Remaining: USER FP-labels (59 unmatched across B+D, → KC#1 precision half) + stage 2 `--arms B,C,D --resume --yes` (9 C cases ≈36 Opus, → KC#2) + final verdict line |
+| T12 freeze + holdout + RESULTS.md | ✅ DONE (2026-07-05) | Verdict written: KC#1 PASS (D 43/43=100% vs B 33/43=77%, 1.30×; precision 1.00/1.00, 59 FP-adjudicated → 0 FP), KC#4 PASS, KC#2 deferred (A2). Full writeup in RESULTS.md §1/§4–§7. Freeze LIFTED. |
+| **v1 shipped extras** | ✅ | agy sandbox VERIFIED; Arm E built + build-set-evaluated (E ~94% true recall at ~⅓ Opus); `aiki run code-review --cheap` shipped. |
+| **v2 round → `plan/AIKI-v2-plan.md`** | 🔶 IN PROGRESS | V1 S8-teeth code done + 167 tests green (awaiting USER bench validation) → V2 smart-entry → V3 Council View + `show --html` → V4 escalation ladder → V5 ship. Desktop app + chat = rejected (logged in plan). |
 
 ## Facts already decided (do not re-derive, do not re-litigate)
 
