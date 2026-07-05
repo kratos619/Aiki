@@ -83,6 +83,21 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
      after B,C,D × all 10 cases scored.
   Frozen still frozen: arms/matcher/`bugs.json`/thresholds/pipeline. Post-eval fix list (do NOT touch now):
   S8 never-refutes (agy judge dormant in bench — 0 calls ever), agy sandbox verify, S7 coarse keywords.
+- **Post-verdict experiment "Arm E" (user proposal 2026-07-05, logged not built):** Opus-thrift role swap —
+  `s4:[agy,codex]` (Gemini+GPT hunt), `judge:claude` (thin adjudication call only; NO claude "guide" stage —
+  guide = fat Opus call, rejected). Zero code: pure `.aiki/config.json` roles override. Evaluate on the BUILD
+  set first (tuning allowed there). Supporting evidence so far: codex-only degraded D hit 32/35=91% recall
+  (void attempt-1 cases 03–10); claude raised 9 vs codex 4 on case-01 (busier hunter, FP-status unknown).
+  Gate to adopt: E recall ≈ D recall at a fraction of Opus. NOTE agy-sandbox trap: E's reviewers include agy
+  at repo cwd — verify agy `--sandbox` write-blocking BEFORE running E (currently unverified).
+- **Post-verdict experiment "escalation ladder" (v2 design, logged 2026-07-05, needs code + NEW pre-registration):**
+  deterministic cascade (NOT learned routing — §22-safe): T1 = agy+codex hunt cheap; T2 = Opus only on
+  triggers: (a) disputed finding → thin claude judge, (b) coverage hole (diff touches async/auth/payment
+  hunks but that category has 0 findings — glob+keyword heuristic) → TARGETED thin claude hunt on those
+  hunks only. Plus: adaptive C-sampling (2 samples, 3rd only on disagreement), context-diet prompts (pin
+  "no exploration"), offline data-designed seat rules (claude analyzes bench FP/recall per class ONCE,
+  rules frozen by hand). HARD PREREQUISITE: S8 teeth fix — all triggers run on the disagreement signal,
+  which currently never fires (confirm-all). Evaluate on build set, new BENCHMARK round, E vs ladder vs B.
 - **T11 SHIPPED 2026-07-04 (as-built, do not re-litigate).** BENCHMARK.md is FROZEN pre-registration —
   arms/metrics/matching/thresholds NOT editable. `aiki bench code-review --arms A,B,C,D --set build`
   (code-review only). Pieces:
