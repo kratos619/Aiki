@@ -5,7 +5,7 @@
 
 import { mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { makeRunId, resolveRoles, RunCtx, setupProviders, type ProviderHandle } from '../orchestration/context.js';
+import { makeRunId, resolveRoles, RunCtx, setupProviders, type ProviderHandle, type RoleMap } from '../orchestration/context.js';
 import { executeRun } from '../orchestration/engine.js';
 import { RunWriter } from '../storage/runs.js';
 import type { Finding } from '../schemas/index.js';
@@ -40,9 +40,11 @@ export async function loadCases(suite: string, set: string, root = process.cwd()
   return cases;
 }
 
-/** A/B/C need claude (the fixed single model); D needs the two reviewers. */
+/** A/B/C need claude (the fixed single model); D needs claude+codex reviewers; E needs agy+codex
+ *  reviewers + claude judge (the Opus-thrift variant). */
 function armAvailable(arm: ArmId, available: string[]): boolean {
   if (arm === 'D') return available.includes('claude') && available.includes('codex');
+  if (arm === 'E') return available.includes('agy') && available.includes('codex') && available.includes('claude');
   return available.includes('claude');
 }
 
@@ -62,7 +64,12 @@ async function readPrecision(runId: string, reported: number, root = process.cwd
 
 async function runArmOnCase(arm: ArmId, c: BenchCase, handles: ProviderHandle[], available: ProviderId[], root: string): Promise<ArmScore> {
   const runId = makeRunId('code-review');
-  const overrides = arm === 'C' ? ({ judge: 'claude' } as const) : undefined; // Arm C's synthesis judge stays same-model
+  // Arm C's synthesis judge stays same-model; Arm E swaps the product pipeline's roles to the
+  // Opus-thrift config (agy+codex hunt, claude judge). D uses code-review defaults.
+  const overrides: Partial<RoleMap> | undefined =
+    arm === 'C' ? { judge: 'claude' }
+    : arm === 'E' ? { s4: ['agy', 'codex'], judge: 'claude' }
+    : undefined;
   const roles = resolveRoles('code-review', available, overrides);
   const ctx = new RunCtx({ runId, workflow: 'code-review', handles, roles, writer: new RunWriter(runId, join(root, '.aiki')), cwd: c.dir });
 
@@ -114,7 +121,7 @@ export interface BenchOptions {
 
 /** Approx claude/Opus calls each arm makes per case — for the pre-run quota estimate (§19). Not exact:
  *  §14 JSON repairs can add a few, and D's cross-exam/judge vary; deliberately a round upper-ish figure. */
-export const CLAUDE_CALLS_PER_CASE: Record<ArmId, number> = { A: 1, B: 1, C: 4, D: 2 };
+export const CLAUDE_CALLS_PER_CASE: Record<ArmId, number> = { A: 1, B: 1, C: 4, D: 2, E: 1 };
 
 /** ≈ claude/Opus calls for a list of case×arm pairs (the quota-sensitive cost the user cares about). */
 export function estimateClaudeCalls(pairs: { arm: ArmId }[]): number {

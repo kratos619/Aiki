@@ -16,8 +16,8 @@ import { s9ReviewJudge } from '../orchestration/stages/cr-s9-judge.js';
 import { scoreFindings } from '../orchestration/stages/cr-report.js';
 import { runCodeReview } from '../workflows/code-review.js';
 
-export type ArmId = 'A' | 'B' | 'C' | 'D';
-export const ARM_IDS: ArmId[] = ['A', 'B', 'C', 'D'];
+export type ArmId = 'A' | 'B' | 'C' | 'D' | 'E';
+export const ARM_IDS: ArmId[] = ['A', 'B', 'C', 'D', 'E'];
 export type ArmFn = (ctx: RunCtx, diff: string) => Promise<Finding[]>;
 
 const SCHEMA_LINE =
@@ -102,8 +102,10 @@ export const armC: ArmFn = async (ctx, diff) => {
   return scoreFindings(map, judge).filter((s) => s.disposition === 'kept').map((s) => s.finding);
 };
 
-/** Arm D — the full product pipeline. Read back its kept findings for scoring. */
-export const armD: ArmFn = async (ctx, diff) => {
+/** Arms D and E — the full product pipeline (`runCodeReview`) → read back its kept findings for scoring.
+ *  SAME pipeline; the harness injects their differing roles: D = claude+codex reviewers + agy judge;
+ *  E = agy+codex reviewers + claude judge (the Opus-thrift variant — claude fires only on disputes). */
+const productPipeline: ArmFn = async (ctx, diff) => {
   await runCodeReview(ctx, diff);
   const [map, judge] = await Promise.all([
     readFile(resolve(ctx.writer.dir, '07-review-map.json'), 'utf8').then(JSON.parse),
@@ -112,4 +114,7 @@ export const armD: ArmFn = async (ctx, diff) => {
   return scoreFindings(map, judge).filter((s) => s.disposition === 'kept').map((s) => s.finding);
 };
 
-export const ARMS: Record<ArmId, ArmFn> = { A: armA, B: armB, C: armC, D: armD };
+export const armD: ArmFn = productPipeline;
+export const armE: ArmFn = productPipeline;
+
+export const ARMS: Record<ArmId, ArmFn> = { A: armA, B: armB, C: armC, D: armD, E: armE };

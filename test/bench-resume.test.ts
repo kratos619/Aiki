@@ -112,6 +112,23 @@ describe('bench hardening (scripted adapters)', () => {
     expect(a!.reason).not.toContain('DEGRADED');
   });
 
+  // ── Arm E (Opus-thrift role swap) ───────────────────────────────────────────
+
+  it('Arm E runs the product pipeline with swapped roles: agy+codex reviewers, claude judge', async () => {
+    const result = await runBench({ suite: 'code-review', set: 'holdout', arms: ['E'], root, handles: handles() });
+    const e = armScore(result.cases[0], 'E');
+    expect(e!.status).toBe('scored');
+    expect(e!.recall).toBe(1);
+    const meta = JSON.parse(await readFile(join(root, '.aiki', 'runs', e!.runId!, 'meta.json'), 'utf8'));
+    expect(meta.roles.judge).toBe('claude'); // claude is the thin judge, NOT a hunter
+    expect([meta.roles.s4_1, meta.roles.s4_2].sort()).toEqual(['agy', 'codex']); // hunters = agy + codex
+  });
+
+  it('Arm E is skipped when its required providers are absent (needs agy + codex + claude)', async () => {
+    const result = await runBench({ suite: 'code-review', set: 'holdout', arms: ['E'], root, handles: [handle('claude'), handle('codex')] });
+    expect(armScore(result.cases[0], 'E')!.status).toBe('skipped'); // no agy
+  });
+
   // ── resume ──────────────────────────────────────────────────────────────────
 
   it('resume keeps already-scored pairs (never re-spends Opus on completed work)', async () => {

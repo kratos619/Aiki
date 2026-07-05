@@ -54,8 +54,9 @@ program
   .option('--base <ref>', 'code-review: base git ref to diff from')
   .option('--head <ref>', 'code-review: head git ref to diff to (default HEAD)')
   .option('--diff <file>', 'code-review: review a patch file instead of computing a git diff')
-  .action(async (workflow: string, input: string | undefined, opts: { budget?: number; base?: string; head?: string; diff?: string }) => {
-    process.exit(await runCommand(workflow, input, { budget: opts.budget, base: opts.base, head: opts.head, diff: opts.diff }));
+  .option('--cheap', 'code-review: Gemini+Codex review, Claude judges only disputes (~⅓ the Opus; experimental)')
+  .action(async (workflow: string, input: string | undefined, opts: { budget?: number; base?: string; head?: string; diff?: string; cheap?: boolean }) => {
+    process.exit(await runCommand(workflow, input, { budget: opts.budget, base: opts.base, head: opts.head, diff: opts.diff, cheap: opts.cheap }));
   });
 
 program

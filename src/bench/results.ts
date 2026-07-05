@@ -5,7 +5,7 @@
 import { z } from 'zod';
 
 export const ArmScore = z.object({
-  arm: z.enum(['A', 'B', 'C', 'D']),
+  arm: z.enum(['A', 'B', 'C', 'D', 'E']),
   status: z.enum(['scored', 'skipped', 'error']),
   reason: z.string().optional(), // why skipped / the error message
   runId: z.string().optional(),
@@ -29,7 +29,7 @@ export type CaseResult = z.infer<typeof CaseResult>;
 
 /** Per-arm rollup across all cases. `recall` = micro (total matched / total seeded); `recallMacro` = mean of per-case. */
 export const SummaryRow = z.object({
-  arm: z.enum(['A', 'B', 'C', 'D']),
+  arm: z.enum(['A', 'B', 'C', 'D', 'E']),
   cases: z.number().int().nonnegative(), // scored cases
   seeded: z.number().int().nonnegative(),
   matched: z.number().int().nonnegative(),
@@ -47,7 +47,7 @@ export const BenchResult = z.object({
   suite: z.string(),
   set: z.string(),
   at: z.string(),
-  arms: z.array(z.enum(['A', 'B', 'C', 'D'])),
+  arms: z.array(z.enum(['A', 'B', 'C', 'D', 'E'])),
   cases: z.array(CaseResult),
   summary: z.array(SummaryRow),
 });

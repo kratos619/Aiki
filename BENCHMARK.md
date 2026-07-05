@@ -23,6 +23,24 @@ Four fixed arms are run on every task set:
 | **C** | Same model sampled 3× + aiki's own synthesis stages (S6–S9). Isolates synthesis value from vendor diversity. |
 | **D** | Full cross-provider pipeline (the product). |
 
+### Pre-registration amendment E1 (2026-07-05, append-only — original §1 text above is unchanged)
+
+**Arm E is added** AFTER the D-vs-B holdout verdict (KC#1 passed):
+
+| Arm | Description |
+|-----|-------------|
+| **E** | Same product pipeline as D, roles swapped for Opus thrift: **agy + codex reviewers, claude judge** (claude fires only on disputes). Tests whether the cross-provider win survives without Opus doing the hunting. (For the record, D's registered roles: claude + codex reviewers, agy judge.) |
+
+Arm E is NOT part of the original frozen holdout claim and its holdout numbers, if ever run, carry no
+retroactive weight. **Arm E is evaluated on the BUILD set only** (tuning-permitted), under question E1
+below; the frozen holdout and its verdict are untouched. Rationale: D proved the thesis but D's reviewers
+include claude (Opus-costly); E asks whether agy+codex hunting with a claude *judge* keeps the recall at a
+fraction of the Opus cost. This is exploratory engineering, explicitly not a holdout claim.
+
+**Question E1 (build set, exploratory):** does Arm E recall ≥ 0.90 × Arm D recall while using ≤ ~1 claude
+call/case (vs D's ~2)? If yes → ship E as the default and re-benchmark E on a fresh holdout under its own
+pre-registration. If no → keep D; the Opus hunting is load-bearing.
+
 ## 2. Metrics per workflow (§17)
 
 Every reported number is labelled **objective / semi-objective / subjective**. Subjective
