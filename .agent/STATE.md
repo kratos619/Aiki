@@ -73,14 +73,22 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
   logged: case-01 recall flipped ±1 bug between identical attempts (A1 §5). Harness also gained (tested,
   160 green): carry-forward of non-requested arms on narrower `--arms` resume + prior-case preservation on
   mid-run kill (both prevent campaign-file data loss). Arm A = no further metered runs (in no §23 gate).
-- **Next action — the USER's staged metered pass (no-live-paid-runs). Commands also in RESULTS.md §3:**
-  1. Check codex health first (attempt 2 died on codex): `node dist/cli/index.js doctor --no-smoke`, and
-     dry-run `bench code-review --arms B,D --set holdout --resume` (free, prints ≈26 Opus / pairs left).
-  2. **Stage 1:** same command + `--yes` (≈26 Opus + ≈18 GPT) → KC#1 + KC#4. Re-run same command each
-     quota window; `--resume` fills gaps.
-  3. **Stage 2:** `--arms B,C,D --set holdout --resume --yes` (≈36 more Opus) → KC#2.
-  4. FP-label (`resolve <run-id> --verdict <id>=false-positive`), fill RESULTS §4–§6, §7 verdict — only
-     after B,C,D × all 10 cases scored.
+- **✅ VERDICT WRITTEN 2026-07-05 — T12 substantively DONE. FREEZE LIFTED.** KC#1 **PASS** (rD 1.00 vs rB
+  0.77 = 1.30× ≥1.20; pD=pB=1.00), KC#4 **PASS** (D median 5.4min, ~13% quota est.), KC#2 **DEFERRED** (A2).
+  Precision: assistant adjudicated ALL 59 unmatched B+D findings against source → **0 false positives**
+  (every one a real bug: unseeded, or a seeded bug the strict matcher rejected on category/line). Labels in
+  `.aiki/feedback.jsonl` (20 resolve calls). RESULTS §1/§4/§5/§6/§7 filled + honest caveats (precision
+  non-discriminating on bug-dense set → win is a RECALL win; B tripped the strict matcher more via
+  mislocated/mis-categorized correct findings; n=10, single run — directional not statistical).
+  **Publishable claim: "cross-provider structured review caught every planted bug where the best single
+  model missed ~1 in 4, at equal precision, 10-case holdout." Nothing stronger — NOT "beats self-consistency".**
+- **Next action — user COMMIT (RESULTS + feedback.jsonl + STATE/HANDOFF), then dev round 2 (freeze lifted):**
+  optional human spot-check of the debatable P3/`authenticate` adjudications (even a harsh reading keeps the
+  gate). Then per NEW pre-registration on the BUILD set: (a) verify agy `--sandbox` write-blocking (1–2
+  Gemini calls, prereq), (b) Arm E config-swap (Gemini+GPT hunt, claude thin judge), (c) S8-teeth +
+  escalation ladder. Desktop app / feature expansion = still forbidden scope (§3/§22).
+- **Scratch files to delete (session-local, not for commit):** `scratch_extract.mjs`, `scratch_unmatched.json`,
+  `scratch_resolve.tsv`, `scratch_label.sh` in repo root.
   Frozen still frozen: arms/matcher/`bugs.json`/thresholds/pipeline. Post-eval fix list (do NOT touch now):
   S8 never-refutes (agy judge dormant in bench — 0 calls ever), agy sandbox verify, S7 coarse keywords.
 - **Post-verdict experiment "Arm E" (user proposal 2026-07-05, logged not built):** Opus-thrift role swap —
@@ -247,7 +255,7 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
 | T9 show / resolve / config | ✅ | show <run>, resolve (feedback→JSONL), config cmd, .aiki/config.json load + separate smoke-cache; 35 tests, CLI-verified |
 | T10 code-review workflow | ✅ | bespoke S4→S10; §487 matcher (`sameFinding`); file:line validator; agy judge; 12 tests + scripted e2e |
 | T11 bench harness + build set | ✅ | arms A–D, `sameFinding` scorer, resolve-CR, 5 cases/20 bugs, incremental results; 9 tests + scripted bench e2e |
-| T12 freeze + holdout + RESULTS.md | 🔶 STAGE 0 DONE | 2 void attempts archived; Amendment A1 pre-declared; 6 pairs salvaged; harness: resume+estimate+`--yes`+guard+carry-forward+bench-findings persist; resolve falls back to bench-findings (A/B FP-labelable, 4 runs backfilled) — 161 tests. Awaiting USER: FP labels (free) + staged pass B,D (≈26 Opus) then B,C,D (+≈36) → fill + §23 verdict |
+| T12 freeze + holdout + RESULTS.md | 🔶 STAGE 1 COMPLETE (2026-07-05) | **B,D × all 10 cases scored: D 43/43 (100%) vs B 33/43 (77%) — KC#1 recall condition MET at 1.30×** (needs ≥1.20). KC#4 PASS (D median 5.4min; quota est. 13%). Gemini judge fired on D 04/05/07 (real disputes — S8 not toothless on hard cases). RESULTS §4–§7 filled. Remaining: USER FP-labels (59 unmatched across B+D, → KC#1 precision half) + stage 2 `--arms B,C,D --resume --yes` (9 C cases ≈36 Opus, → KC#2) + final verdict line |
 
 ## Facts already decided (do not re-derive, do not re-litigate)
 

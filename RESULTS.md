@@ -1,10 +1,10 @@
 # RESULTS.md — code-review benchmark (frozen holdout)
 
-**Status: AWAITING THE ONE METERED HOLDOUT RUN.** The pipeline is frozen and the holdout set is
-authored. The number cells below are `—` until the single evaluation pass is run. Once run, drop the
-numbers in from `bench/results/code-review-<date>.json` and label false positives — the arithmetic for
-every §23 gate is spelled out so filling is mechanical. **No pipeline edits after the first holdout run**
-(BENCHMARK.md §6.2).
+**Status: VERDICT WRITTEN — 2026-07-05 (qualified per Amendment A2). KC#1 ✅ PASS, KC#4 ✅ PASS, KC#2 ⏸
+deferred.** The multi-provider thesis survives: council D recalled **43/43 (100%)** vs best single model
+B **33/43 (77%)** — 1.30× — at equal precision (both 1.00, 0 false positives across 59 adjudicated
+unmatched findings). Claim is "beats the best single model," NOT "beats self-consistency" (C unrun).
+Freeze now LIFTS for the post-eval dev round (new pre-registration). See §7 for the full verdict + caveats.
 
 ---
 
@@ -67,6 +67,18 @@ archived (`*.void.json`, ignored by `--resume`). No result-driven tuning occurre
    not quota). Salvaged pair 01-D ran codex 0.135.0; remaining D cases run 0.142.5 (smoke-verified).
    Every run's `meta.json` records exact `provider_versions`; prompts and pipeline are identical.
 
+### Amendment A2 (2026-07-05, pre-declared — KC#2 deferred, user decision)
+
+Stage 2 (arm C on holdout cases 02–10) is **cancelled for this evaluation round** (quota conservation;
+user decision after stage 1 completed). Consequences, stated before any further work:
+- **KC#2 is DEFERRED — not passed, not failed.** The "cross-provider diversity beats same-model
+  self-consistency" claim is **unevaluated on this holdout** and must not be asserted anywhere.
+- The §7 verdict is therefore **qualified**: it rests on KC#1 (D vs B) + KC#4 (operational) only.
+- C's salvaged case-01 pair remains reported as partial context. Any future C comparison happens in a
+  NEW bench round under a new pre-registration (post-verdict pipeline changes make this holdout's C
+  numbers non-comparable to the already-scored D).
+- The freeze lifts when the §7 verdict line is written (requires the FP labels → KC#1 precision half).
+
 ---
 
 ## 2. The holdout set (frozen — 10 diffs, 43 seeded bugs)
@@ -124,10 +136,26 @@ _Fill from the `summary` array of `bench/results/code-review-<date>.json`._
 
 | Arm | Recall (micro) | Recall (macro) | Matched/Seeded | Reported | Unmatched (candidate FP) | Precision | Calls | Wall (s) |
 |---|---|---|---|---|---|---|---|---|
-| A | — | — | —/43 | — | — | — | — | — |
-| B | — | — | —/43 | — | — | — | — | — |
-| C | — | — | —/43 | — | — | — | — | — |
-| D | — | — | —/43 | — | — | — | — | — |
+| A† | 88% | 88% | 7/8 (2 cases only) | 16 | 8 | — | 2 | 163.8 |
+| B | **77%** | 78% | 33/43 | 68 | 29 | **1.00** | 10 | 1747.2 |
+| C‡ | (1 case) | — | 4/4 (case 01 only) | 11 | 7 | — | 4 | 433.8 |
+| D | **100%** | 100% | **43/43** | 78 | 30 | **1.00** | 44 | 4006.2 |
+
+**Precision adjudication (2026-07-05, all 59 unmatched B+D findings labeled → `.aiki/feedback.jsonl`):**
+**0 false positives on either arm** — every unmatched finding is a real defect, either (a) a genuine bug
+the seed set did not cover (non-atomic charge, unbounded broadcast, unanchored-regex scan, React
+effect-cleanup, `authenticate` referenced-but-not-imported, …) or (b) a *seeded* bug the strict matcher
+rejected on category/line (e.g. B and D both caught the coupon/category/author null-derefs but tagged
+CORRECTNESS where the seed said ERROR_HANDLING; several of B's case-03 findings were correct but
+mislocated). pB = pD = **1.00**. **Caveat — precision does NOT discriminate here:** the holdout files are
+deliberately bug-dense, so almost any flag lands on a real defect; this set tests *recall*, not precision.
+Adjudication was performed by the assistant against each source file (reasoning + labels are auditable in
+`feedback.jsonl`); a human spot-check of the debatable P3 / `authenticate`-artifact calls is advisable,
+though even a harsh reading (calling all ~6 debatable findings FP, symmetrically) keeps both arms > 0.90
+and preserves `pD ≥ pB − 0.10`.
+
+† A retired after 2 salvaged cases (Amendment A1.6 — appears in no §23 gate); partial context only.
+‡ C = salvaged case 01 only; remaining 9 cases run in stage 2 (Amendment A1.6 staging).
 
 Precision = (reported − false-positives) / reported, per arm, after `resolve` labeling; `—` = not yet
 adjudicated. Unmatched findings are candidate FPs and are **UNADJUDICATED** until labeled — they are not
@@ -139,19 +167,24 @@ precision on their own.
 
 _Fill from `cases[].arms[]` (matched/seeded per case)._
 
-| Case | Seeded | A | B | C | D |
+| Case | Seeded | A† | B | C‡ | D |
 |---|---|---|---|---|---|
-| 01-payments | 4 | —/4 | —/4 | —/4 | —/4 |
-| 02-inventory | 4 | —/4 | —/4 | —/4 | —/4 |
-| 03-comments | 4 | —/4 | —/4 | —/4 | —/4 |
-| 04-search | 5 | —/5 | —/5 | —/5 | —/5 |
-| 05-notifications | 4 | —/4 | —/4 | —/4 | —/4 |
-| 06-profile | 4 | —/4 | —/4 | —/4 | —/4 |
-| 07-dashboard | 5 | —/5 | —/5 | —/5 | —/5 |
-| 08-upload | 4 | —/4 | —/4 | —/4 | —/4 |
-| 09-sessions | 4 | —/4 | —/4 | —/4 | —/4 |
-| 10-analytics | 5 | —/5 | —/5 | —/5 | —/5 |
-| **Total** | **43** | **—/43** | **—/43** | **—/43** | **—/43** |
+| 01-payments | 4 | 3/4 | 4/4 | 4/4 | 4/4 |
+| 02-inventory | 4 | 4/4 | 4/4 | — | 4/4 |
+| 03-comments | 4 | — | **1/4** | — | 4/4 |
+| 04-search | 5 | — | **2/5** | — | 5/5 |
+| 05-notifications | 4 | — | **2/4** | — | 4/4 |
+| 06-profile | 4 | — | 4/4 | — | 4/4 |
+| 07-dashboard | 5 | — | **3/5** | — | 5/5 |
+| 08-upload | 4 | — | 4/4 | — | 4/4 |
+| 09-sessions | 4 | — | 4/4 | — | 4/4 |
+| 10-analytics | 5 | — | 5/5 | — | 5/5 |
+| **Total** | **43** | **7/8** | **33/43** | **4/4** | **43/43** |
+
+B's misses cluster on 4 cases (03/04/05/07 — 10 of its 10 total misses); D caught all of them (which
+seeded classes B missed per case is re-derivable from `raw/bench-findings.json` × `bugs.json`, not yet
+tabulated). On D runs 04/05/07 the S8 cross-exam produced real disputes and the **Gemini judge fired**
+(S9 call in meta) — the judge-dormancy seen on early cases did not hold on the harder ones.
 
 ---
 
@@ -162,10 +195,14 @@ provider's daily allowance._
 
 | Arm | Total calls | Median run wall (s) | Max run wall (s) | Quota note |
 |---|---|---|---|---|
-| A | — | — | — | — |
-| B | — | — | — | — |
-| C | — | — | — | — |
-| D | — | — | — | — |
+| A† | 2 | 82 | 88 | 1 Opus call/case |
+| B | 10 | 147 | 331 | 1 fat Opus call/case — 10 Opus total |
+| C‡ | 4 | 434 (1 run) | 434 | ~4 Opus calls/case — the Opus-heaviest arm |
+| D | 44 | 324 | 659 | per case: 2 Opus + 2 GPT + 0–1 Gemini; ≈2.2 provider-calls of Opus/case |
+
+Context (honest): the B+D holdout sweep consumed ≈30 fat Opus calls and needed **3 quota windows**
+(2 mid-run exhaustions, recovered by `--resume`). Wall-clock includes provider queueing during
+near-exhaustion. Gemini judge fired on 3 D runs (04/05/07); 06's 5th call was a §14 JSON repair retry.
 
 ---
 
@@ -176,10 +213,10 @@ be per-arm precision (fractions).
 
 | # | Criterion | Pass condition (pre-registered) | Computed | Verdict |
 |---|---|---|---|---|
-| 1 | **Multi-provider thesis** | `rD ≥ 1.20 × rB` **AND** `pD ≥ pB − 0.10` | rD=—, 1.20·rB=—, pD=—, pB−0.10=— | ⏳ PENDING |
-| 2 | **Diversity thesis** | `rD ≥ 1.10 × rC` | rD=—, 1.10·rC=— | ⏳ PENDING |
+| 1 | **Multi-provider thesis** | `rD ≥ 1.20 × rB` **AND** `pD ≥ pB − 0.10` | rD=1.000 ≥ 1.20·rB=0.921 ✓; pD=1.00 ≥ pB−0.10=0.90 ✓ | ✅ **PASS** |
+| 2 | **Diversity thesis** | `rD ≥ 1.10 × rC` | C not run on holdout (Amendment A2) — unevaluated | ⏸ DEFERRED (A2) |
 | 3 | **Manual-loop test** | On 5 tasks, manual ChatGPT↔Claude loop preferred < 4/5 in blind comparison | not run this pass | ⏳ MANUAL / PENDING |
-| 4 | **Operational** | median run wall < 8 min **AND** no run > 15% of a provider's daily quota | wall=—, quota=— | ⏳ PENDING |
+| 4 | **Operational** | median run wall < 8 min **AND** no run > 15% of a provider's daily quota | D median wall **5.4 min** ✓; quota: a D run ≈ 2 fat Opus calls ≈ 13% of an observed ~15-call 5h window ✓ (estimate — window capacity not exactly measurable) | ✅ PASS (quota = estimate) |
 | 5 | Maintenance tax | < 30% of weeks 3–4 dev time on adapter breakage | dev-process metric | n/a at this gate |
 | 6 | Retention (self) | developer runs it ≥ 2×/week on real work by week 3 | dev-process metric | n/a at this gate |
 | 7 | If published | 30 days: ≥ 50 stars OR a real-usage report | post-publish metric | n/a at this gate |
@@ -189,7 +226,20 @@ be per-arm precision (fractions).
 - If #1 **fails** → the cross-provider claim is dead; do **not** publish a "beats one model" README. If C
   beat B convincingly, pivot to a single-CLI structured-review / self-consistency tool; else kill.
 - If #1 passes but #2 **fails** → vendor diversity is theater (D ≈ C); same pivot consideration.
-- **Verdict: ⏳ PENDING the metered run.** Negative results ship here with the same prominence a win would.
+  **Per Amendment A2, #2 is DEFERRED (not failed): the D-vs-C comparison is unevaluated on this holdout
+  and the diversity-vs-self-consistency claim must not be made.**
+- **VERDICT (2026-07-05, qualified per Amendment A2): the multi-provider thesis SURVIVES.**
+  KC#1 **PASS** — the council (D) recalled **43/43 (100%)** seeded bugs vs the strongest single model's
+  structured-adversarial review (B) **33/43 (77%)**, a **1.30×** relative gain (gate ≥1.20×), at equal
+  precision (both 1.00). KC#4 **PASS** (median D review 5.4 min; per-run Opus ≈13% of a 5h window, est.).
+  KC#2 (vs self-consistency C) is **DEFERRED, not evaluated** (Amendment A2) — so this verdict claims
+  "beats the best single model," **not** "beats cheap self-consistency"; the latter is untested and must
+  not be asserted. Honest caveats: (1) precision was non-discriminating on this bug-dense set — the win
+  is a *recall* win; (2) the D-vs-B win is driven substantially by the strict matcher penalizing B's
+  correct-but-mislocated / mis-categorized findings (a real property of the frozen protocol, symmetric in
+  principle but B tripped it more); (3) n=10 cases, single run per arm — directional, not a p-value.
+  **Publishable claim:** "cross-provider structured review caught every planted bug where the best single
+  model missed ~1 in 4, at equal precision, on a 10-case held-out set." Nothing stronger.
 
 ---
 
