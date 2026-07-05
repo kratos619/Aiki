@@ -5,8 +5,25 @@ keep it current, not cumulative (history lives in `git log`).
 
 ---
 
-**Status: CLEAN — no half-written code.** Stage 0 (quota-failure recovery prep) is DONE. 160 tests green,
-typecheck + build clean. **Working tree NOT committed — the user commits.**
+**Status: CLEAN — VERDICT WRITTEN (2026-07-05). T12 substantively DONE, freeze LIFTED.**
+KC#1 ✅ PASS (D 43/43=100% vs B 33/43=77% = 1.30×; precision both 1.00), KC#4 ✅ PASS, KC#2 ⏸ deferred (A2).
+Assistant adjudicated all 59 unmatched B+D findings against source → 0 false positives (labels in
+`.aiki/feedback.jsonl`, 59 wontfix). RESULTS §1/§4/§5/§6/§7 filled with the verdict + caveats. 161 tests
+green, build clean. **Working tree NOT committed — the user commits NOW (RESULTS.md, .aiki/feedback.jsonl,
+STATE.md, HANDOFF.md; scratch_* already deleted).**
+
+## Next (freeze lifted — dev round 2, needs NEW pre-registration)
+1. Optional: human spot-check the debatable adjudications (P3 minors + `authenticate`-not-imported artifact
+   in cases 03/06/08). Even calling all ~6 debatable ones FP keeps both arms >0.90 and KC#1 passing.
+2. Verify agy `--sandbox` write-blocking (1–2 Gemini calls) — prereq before any arm puts agy at repo cwd.
+3. Post-eval experiments on the BUILD set under new pre-registration: Arm E (config swap: agy+codex hunt,
+   claude thin judge), S8-teeth fix (cross-exam never refutes today), escalation ladder. All in STATE.
+
+## Verdict caveats to carry forward (do not overstate the result)
+- Precision was NON-discriminating (bug-dense files → every flag hits something): the win is a RECALL win.
+- D-vs-B gap partly from the strict matcher penalizing B's correct-but-mislocated/mis-categorized findings.
+- n=10, one run per arm → directional, not statistical. Claim only "beats best single model," not "beats
+  self-consistency" (C never run on holdout).
 
 ## Stage 0 did (this session, 2026-07-04 late)
 
