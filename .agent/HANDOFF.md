@@ -12,12 +12,26 @@ Assistant adjudicated all 59 unmatched B+D findings against source → 0 false p
 green, build clean. **Working tree NOT committed — the user commits NOW (RESULTS.md, .aiki/feedback.jsonl,
 STATE.md, HANDOFF.md; scratch_* already deleted).**
 
-## Next (freeze lifted — dev round 2, needs NEW pre-registration)
-1. Optional: human spot-check the debatable adjudications (P3 minors + `authenticate`-not-imported artifact
-   in cases 03/06/08). Even calling all ~6 debatable ones FP keeps both arms >0.90 and KC#1 passing.
-2. Verify agy `--sandbox` write-blocking (1–2 Gemini calls) — prereq before any arm puts agy at repo cwd.
-3. Post-eval experiments on the BUILD set under new pre-registration: Arm E (config swap: agy+codex hunt,
-   claude thin judge), S8-teeth fix (cross-exam never refutes today), escalation ladder. All in STATE.
+## Dev round 2 progress (freeze lifted)
+1. ✅ **agy `--sandbox` VERIFIED write-safe** (adapter probe 2026-07-05) — PROVIDER_NOTES + STATE updated.
+2. ✅ **Arm E BUILT + EVALUATED (build set) + `--cheap` SHIPPED.** D 20/20 vs E 13/16 (81% strict; 01 case
+   crashed on codex infra). E's thrift PROVEN: 0.75 claude/case vs D ~2. But 2 of E's 3 misses = category
+   artifacts (found the bug, tagged the opposite category) → E true find-rate ~94%, 1 real minor miss.
+   Verdict: E fails the strict 90% gate, passes adjusted. Decision: keep D default, ship E as opt-in
+   `aiki run code-review --cheap` (run.ts+index.ts, experimental). Full detail + roadmap in STATE.
+3. Not started (all optional — thesis proven): S8-teeth fix (cross-exam CONFIRM-only → judge dormant),
+   escalation ladder, clean E holdout re-bench, or consolidate/ship (README + verdict). See STATE "What's next".
+
+## Known limitation surfaced (log, don't fix silently)
+Category-STRICT matching penalizes defensible category divergence — hit B (holdout) AND E (build), both
+times flattering D. It measures "labels bugs like the seed author" as much as "finds them." Any future
+E-vs-D holdout should report BOTH strict and category-relaxed (file+line-overlap) recall.
+
+## Uncommitted this round (for the commit)
+`src/bench/arms.ts`, `src/bench/results.ts`, `src/bench/harness.ts`, `src/cli/bench.ts`, `src/cli/run.ts`,
+`src/cli/index.ts`, `BENCHMARK.md`, `docs/PROVIDER_NOTES.md`, `test/bench-resume.test.ts`,
+`.agent/STATE.md`, `.agent/HANDOFF.md`. (RESULTS.md already committed at c926dd4. CLAUDE.md: user-edited,
+has a duplicated karpathy block + a stale agy-sandbox line — see chat, cleanup offered not applied.)
 
 ## Verdict caveats to carry forward (do not overstate the result)
 - Precision was NON-discriminating (bug-dense files → every flag hits something): the win is a RECALL win.

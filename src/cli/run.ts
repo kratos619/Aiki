@@ -3,7 +3,7 @@
 
 import { readFile } from 'node:fs/promises';
 import { run as runEngine } from '../orchestration/engine.js';
-import type { WorkflowId } from '../orchestration/context.js';
+import type { RoleMap, WorkflowId } from '../orchestration/context.js';
 import { ConfigError, loadConfig } from '../config/config.js';
 import { computeDiff, GitError, repoToplevel } from '../orchestration/git.js';
 
@@ -14,6 +14,7 @@ export interface RunFlags {
   base?: string;
   head?: string;
   diff?: string; // path to a patch file (alternative to --base/--head)
+  cheap?: boolean; // code-review: agy+codex reviewers, claude judge (Opus-thrift; experimental — bench Arm E)
 }
 
 /** Resolve an idea-refinement input: an existing file path → its contents, else the arg as inline text. */
@@ -94,10 +95,18 @@ export async function runCommand(workflow: string, input: string | undefined, op
     throw e;
   }
 
+  // --cheap = bench Arm E's Opus-thrift role swap (agy+codex reviewers, claude judge). code-review only;
+  // takes precedence over config roles for those two seats. Experimental — see BENCHMARK.md amendment E1.
+  let roleOverrides: Partial<RoleMap> | undefined = cfg.roles;
+  if (opts.cheap) {
+    if (workflow === 'code-review') roleOverrides = { ...cfg.roles, s4: ['agy', 'codex'], judge: 'claude' };
+    else process.stderr.write('--cheap only applies to code-review; ignoring for this workflow.\n');
+  }
+
   const outcome = await runEngine(workflow as WorkflowId, text, {
     budget: opts.budget ?? cfg.budget,
     deadlineMs: cfg.deadlineMs,
-    roleOverrides: cfg.roles,
+    roleOverrides,
     cwd, // code-review: repo root; idea-refinement: undefined → run dir
   });
 

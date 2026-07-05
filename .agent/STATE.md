@@ -82,13 +82,30 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
   mislocated/mis-categorized correct findings; n=10, single run — directional not statistical).
   **Publishable claim: "cross-provider structured review caught every planted bug where the best single
   model missed ~1 in 4, at equal precision, 10-case holdout." Nothing stronger — NOT "beats self-consistency".**
-- **Next action — user COMMIT (RESULTS + feedback.jsonl + STATE/HANDOFF), then dev round 2 (freeze lifted):**
-  optional human spot-check of the debatable P3/`authenticate` adjudications (even a harsh reading keeps the
-  gate). Then per NEW pre-registration on the BUILD set: (a) verify agy `--sandbox` write-blocking (1–2
-  Gemini calls, prereq), (b) Arm E config-swap (Gemini+GPT hunt, claude thin judge), (c) S8-teeth +
-  escalation ladder. Desktop app / feature expansion = still forbidden scope (§3/§22).
-- **Scratch files to delete (session-local, not for commit):** `scratch_extract.mjs`, `scratch_unmatched.json`,
-  `scratch_resolve.tsv`, `scratch_label.sh` in repo root.
+- **✅ DEV ROUND 2 (freeze lifted) — agy sandbox VERIFIED, Arm E BUILT + EVALUATED, `--cheap` SHIPPED.**
+  Arm E build-set run (2026-07-05, `bench/results/code-review-2026-07-05.json`): D 20/20 (100%), E 13/16
+  (81% matcher) — but E's 01-user-api CRASHED (codex infra, not scored) so it's a 4-case compare, and
+  **2 of E's 3 "misses" are category artifacts** (E found divide-by-zero + null-deref at the right lines but
+  tagged ERROR_HANDLING↔CORRECTNESS opposite the seed → strict matcher rejected). **E true find-rate ≈15/16
+  (94%); 1 genuine minor miss** (fragile Bearer-parse, 03-auth). **Thrift PROVEN: E used 3 claude calls over
+  4 cases = 0.75/case vs D's ~2/case (~⅔ less Opus; claude judge idle on 2 of 4 cases).** E1 verdict: FAILS
+  the strict 90%-recall gate as measured, PASSES adjusted for the category confound. Decision: **keep D
+  default, ship E as opt-in `--cheap`** (`aiki run code-review --cheap` → roles s4:[agy,codex], judge:claude;
+  run.ts+index.ts, experimental label). **Confound now confirmed twice (B on holdout, E on build): the
+  category-STRICT matcher measures "labels bugs like the seed author" as much as "finds them"** — log as a
+  known limitation; a category-relaxed secondary recall is the fair metric for any future E-vs-D holdout.
+- **Next action — user COMMIT, then pick the next thread (all optional — the thesis is already proven):**
+  see the "What's next" options below. Recommended: **S8-teeth** (cross-exam never refutes → judge dormant;
+  free to write, cheap to validate; unblocks the ladder). Then escalation ladder, or a clean E holdout
+  re-bench (strict + relaxed recall) if deciding E-as-default. Desktop app / new workflows = forbidden (§3/§22).
+- **What's next (roadmap, none required):**
+  1. **S8-teeth fix** — cr-s8 cross-exam is CONFIRM-only (0 disputes every run → judge barely fires). Force
+     skepticism (each verifier must rank weakest findings / attempt a refutation). Free code + build-set validate.
+  2. **Escalation ladder** — deterministic cascade (cheap hunt → Opus only on dispute/coverage-hole). Needs
+     S8-teeth first (runs on the disagreement signal). New pre-registration.
+  3. **Clean E holdout re-bench** — only if choosing E as default: 10 cases, report strict AND category-relaxed recall.
+  4. **Consolidate/ship** — thesis proven; a README with the verdict + `--cheap` doc is a legitimate stopping point.
+- **Scratch/probe files:** all deleted. Working tree = only intended edits.
   Frozen still frozen: arms/matcher/`bugs.json`/thresholds/pipeline. Post-eval fix list (do NOT touch now):
   S8 never-refutes (agy judge dormant in bench — 0 calls ever), agy sandbox verify, S7 coarse keywords.
 - **Post-verdict experiment "Arm E" (user proposal 2026-07-05, logged not built):** Opus-thrift role swap —
@@ -96,8 +113,15 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
   guide = fat Opus call, rejected). Zero code: pure `.aiki/config.json` roles override. Evaluate on the BUILD
   set first (tuning allowed there). Supporting evidence so far: codex-only degraded D hit 32/35=91% recall
   (void attempt-1 cases 03–10); claude raised 9 vs codex 4 on case-01 (busier hunter, FP-status unknown).
-  Gate to adopt: E recall ≈ D recall at a fraction of Opus. NOTE agy-sandbox trap: E's reviewers include agy
-  at repo cwd — verify agy `--sandbox` write-blocking BEFORE running E (currently unverified).
+  Gate to adopt: E recall ≈ D recall at a fraction of Opus. agy-sandbox prereq CLEARED (verified).
+  **ARM E BUILT 2026-07-05 (163 tests green, uncommitted):** `armE` = same `productPipeline` as D, harness
+  injects `{s4:['agy','codex'], judge:'claude'}` via resolveRoles override (reviewers read ctx.roles.s4,
+  judge reads ctx.roles.judge — no hardcoding, fully swaps). Files: `arms.ts` (ArmId+ARM_IDS+armE+ARMS),
+  `results.ts` (3 enums +E), `harness.ts` (armAvailable E=agy+codex+claude, override, CLAUDE_CALLS/case E:1),
+  `cli/bench.ts` (VALID_ARMS +E), BENCHMARK.md (amendment E1 — E is BUILD-SET-only, exploratory, NOT a
+  holdout claim; question E1: E recall ≥0.90×D at ≤~1 claude/case?), `test/bench-resume.test.ts` (+2: role
+  swap + skip-when-no-agy). **Next: USER runs `bench code-review --arms D,E --set build --yes` (≈15 Opus
+  upper-bound; E's claude judge fires only on disputes so real Opus much lower). Compare E vs D recall.**
 - **Post-verdict experiment "escalation ladder" (v2 design, logged 2026-07-05, needs code + NEW pre-registration):**
   deterministic cascade (NOT learned routing — §22-safe): T1 = agy+codex hunt cheap; T2 = Opus only on
   triggers: (a) disputed finding → thin claude judge, (b) coverage hole (diff touches async/auth/payment
@@ -359,10 +383,12 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
 - **claude 8KB pipe truncation** — capture claude output via fd redirect, not a pipe.
   `spawn.ts::captureFull` (probe) and `spawn.ts::spawnCapture` (adapter run) both do this.
   Full note in `docs/PROVIDER_NOTES.md`.
-- **agy `--sandbox` write-blocking UNVERIFIED** — but **code-review SIDESTEPS it** (T10): the judge
-  (agy) runs with cwd=RUN-DIR, never the repo, and only sees findings text, so it has no repo write path.
-  Reviewers (claude/codex) are the ones at repo cwd and their read-only is verified. Still confirm agy's
-  sandbox before any workflow gives agy repo cwd; record enforcement level in meta.json.
+- **agy `--sandbox` write-blocking VERIFIED 2026-07-05 (was the long-standing trap).** Adapter probe:
+  `--sandbox` blocks disk writes (no-sandbox control writes → test valid). So agy is now SAFE at repo cwd
+  as a reviewer *via the adapter* — this UNBLOCKS Arm E (agy hunting at repo root). CAVEATS: (1) agy
+  self-reports "created the file" even when blocked — don't trust its file-op claims (aiki only reads its
+  findings text, fine); (2) bare terminal `agy -p` hangs interactive and does NOT reliably sandbox — only
+  the adapter path (spawnCapture, stdin redirected) is trustworthy. Detail in docs/PROVIDER_NOTES.md.
 - **doctor runs live smoke = paid model calls.** Use `aiki doctor --no-smoke` during dev. The §8 6h
   smoke cache IS built now (T9): `.aiki/smoke-cache.json`, `doctor --fresh` bypasses, version-change busts it.
 - **S2 clustering FIXED (2026-07-03), was over-triggering the clarification:** `cluster.ts`

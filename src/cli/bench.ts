@@ -7,7 +7,7 @@ import { planBench, renderTable, runBench, type BenchPlan } from '../bench/harne
 import type { ArmId } from '../bench/arms.js';
 import { setupProviders } from '../orchestration/context.js';
 
-const VALID_ARMS: ArmId[] = ['A', 'B', 'C', 'D'];
+const VALID_ARMS: ArmId[] = ['A', 'B', 'C', 'D', 'E'];
 
 /** One-block pre-run summary: what will run + the ≈Opus cost, so the user commits knowingly (§19). */
 function renderPlan(plan: BenchPlan): string {
