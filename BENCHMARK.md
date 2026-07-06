@@ -41,6 +41,44 @@ fraction of the Opus cost. This is exploratory engineering, explicitly not a hol
 call/case (vs D's ~2)? If yes → ship E as the default and re-benchmark E on a fresh holdout under its own
 pre-registration. If no → keep D; the Opus hunting is load-bearing.
 
+### Pre-registration amendment L1 (2026-07-06, append-only — original §1 + E1 unchanged)
+
+**Arm L (escalation ladder) is added** as an exploratory BUILD-SET arm (like E). It is NOT part of the
+frozen holdout claim and carries no retroactive weight.
+
+| Arm | Description |
+|-----|-------------|
+| **L** | Deterministic escalation ladder. **Tier 1 (cheap hunt):** agy + codex review + mutual cross-examination (= Arm E's tier 1; no claude in the hunt). **Tier 2 (claude), fired ONLY on:** (a) a DISPUTED finding → claude adjudicates (the S9 judge, = Arm E); (b) a COVERAGE HOLE → exactly one targeted claude review scoped to the risky hunks. Tier-2 (b) findings are validated (file:line) and merged into the kept set before scoring. |
+
+**Coverage hole (FROZEN).** For each risk class in RISK_DEFS below, the risk is *triggered* iff a HEAD file
+path matches its file-glob **OR** an added diff line (`+…`) matches its keyword regex; it is a *hole* iff
+triggered **AND** tier-1 reported ZERO findings of that risk's covering category located in the triggering
+files (glob files if any, else the whole diff). Each hole escalates exactly one targeted claude review over
+those files. RISK_DEFS are frozen in `src/orchestration/stages/cr-ladder.ts` (unit-tested,
+`test/cr-ladder.test.ts`):
+
+| Risk | Covering category | File glob (substring, case-insensitive) | Added-line keywords |
+|------|-------------------|-----------------------------------------|---------------------|
+| auth | SECURITY | auth login session token permission acl oauth jwt guard middleware | authenticate authoriz(e) password jwt bcrypt session cookie csrf isadmin req.user .role permission |
+| crypto | SECURITY | crypto encrypt cipher hash sign | encrypt decrypt createHash randomBytes createCipher hmac nonce iv math.random |
+| payment | CORRECTNESS or SECURITY | payment billing charge invoice checkout stripe order price | charge refund amount currency price subtotal total discount tax balance |
+| async | CONCURRENCY | worker queue scheduler job concurrent | async await Promise.all Promise.race setTimeout setInterval mutex lock concurrent parallel |
+
+**HARD PREREQUISITE.** Trigger (a) fires only if the S8 cross-exam actually produces disputes (the V1
+S8-teeth signal). If disputes ≡ 0 on the build set, the ladder degenerates to "tier-1 + coverage holes" and
+this L1 evaluation is INVALID. **Confirm disputes > 0 on the build set (the V1 paid bench) BEFORE running
+L1.**
+
+**Question L1 (build set, exploratory):** does Arm L recall ≥ 0.90 × Arm D recall while spending ≤ 0.5
+claude calls/case (vs D's ~2)? Report **strict** recall (§3 matcher) AND **category-relaxed** recall (file +
+overlapping lines, category ignored — the known matcher limitation) side by side. If yes → ship the ladder
+as a run mode and re-benchmark it on a fresh holdout under its own pre-registration. If no → the
+coverage-hole escalation isn't earning its Opus; keep D (or E).
+
+**Acceptance (scripted, no paid calls):** a scripted-adapter e2e where (1) a diff with an auth hole + no
+SECURITY finding triggers exactly one targeted claude call and merges its finding; (2) a diff fully covered
+by tier-1 triggers ZERO targeted-hunt calls (the judge fires only if a finding is disputed).
+
 ## 2. Metrics per workflow (§17)
 
 Every reported number is labelled **objective / semi-objective / subjective**. Subjective

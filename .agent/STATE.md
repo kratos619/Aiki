@@ -1,523 +1,124 @@
 # STATE.md — read this first, then stop reading
 
 Single source of truth for project position. Small on purpose. Update at each task end.
-For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-plan.md`.
+For history: `git log --oneline`. Specs: `plan/AIKI-build-plan.md` (v1 §-refs), `plan/AIKI-v2-plan.md` (v2/v2.1).
+Verdict + benchmark: `RESULTS.md`, `BENCHMARK.md` (frozen pre-registration).
 
-## Now
+## Now (2026-07-06)
 
-- **Position (2026-07-06): v1 COMPLETE — thesis PROVEN, committed through `aa173bc`.** T0–T12 done.
-  KC#1 PASS (D 100% vs B 77% recall = 1.30×, precision tied 1.00), KC#4 PASS, KC#2 deferred (see RESULTS.md).
-  `--cheap` mode shipped (Arm E role swap). agy `--sandbox` VERIFIED write-safe. **Now working the v2 product
-  round → `plan/AIKI-v2-plan.md` (V1→V5 + v2.1 hardening V6→V9). Current: **v2 product round basically DONE
-  (2026-07-06)** — V1 S8-teeth (committed `aa173bc`) + V2 smart-entry + V3 council view/readability + v2.1
-  V6–V9 (hybrid storage, timeouts, sessions/resume, intent-clarify, model config, slash-command home) +
-  **V5 ship (README, CHANGELOG, 0.2.0, run-cost preview)**. 200 tests green, build clean. **ONLY V4
-  (escalation ladder) unstarted — BLOCKED on the V1 paid bench.** Everything except V1's committed teeth is
-  UNCOMMITTED. Prior: V3 CODE DONE + free
-  checks green (uncommitted), but USER validation found the HTML hard to understand; V1 paid validation
-  explicitly deferred by user.** 173 tests green, build clean.
-  _Everything below this bullet until "## Task ledger" is DATED HISTORY (the T12 benchmark saga) — read only
-  if you need detail; the live status is this bullet + the Next-action bullet + the v2 plan._
-  - **T12 built (2026-07-04):** `bench/sets/code-review/holdout/{01-payments…10-analytics}/` = **10 cases /
-    43 seeded bugs** (4–5 each, MERN-style, all 5 canonical classes + 6 categories). Each = src file +
-    `diff.patch` (whole-file add via `git diff --no-index`, `+++ b/<file>`) + `bugs.json`. Ground truth
-    verified by `test/t12.test.ts` (loadCases=10, per-bug file-exists + line-in-bounds + valid category +
-    class-coverage). `RESULTS.md` = full scaffold: protocol/freeze table, holdout table, run commands,
-    per-arm summary + per-case×per-arm recall tables (placeholders `—`), cost/latency, and **an explicit
-    pass/fail line per §23 criterion with the gate arithmetic pre-wired** (KC#1 `rD≥1.20·rB ∧ pD≥pB−0.10`,
-    KC#2 `rD≥1.10·rC`, KC#4 wall<8min ∧ ≤15% quota). Fill from `bench/results/*.json` + resolve FP labels.
-  - **Cheap sample verified (2026-07-04, 1 metered call):** Arm A on a throwaway copy of `01-payments` →
-    **4/4 recall**, 10 reported / 5 unmatched, scorer resolved file:line correctly, ~93s/call. Confirms
-    wiring + ground-truth matchability end-to-end. (Temp `_sample` set + its results JSON deleted after.)
-    Implication: full 120-call sequential bench ≈ 2.5–3h wall; incremental writes survive a mid-run stop.
-  - **.gitignore FIX (2026-07-04, user-approved):** `bench/*` had been ignoring ALL bench content — the
-    T11 build set was NEVER committed (only `.gitkeep` was tracked; STATE's "committed through 63b9fd8"
-    was true for src/ but NOT the seeded diffs). Added `!bench/sets/` + `!bench/sets/**` so ground-truth
-    task sets are committable (freeze integrity, §18) while `bench/results/*` stays ignored. 45 set files
-    (15 build + 30 holdout) now show as `??` — user commits them.
-  - **T11 proof:** scripted-adapter bench e2e — all 4 arms A/B/C/D scored, recall computed, result JSON
-    written incrementally, table rendered; provider-absent arms skipped. Units: scorer (category-strict
-    match), micro-aggregation, Arm-C `mergeSamples` (≥2/3 consensus), resolve-CR (finding verdicts). Real
-    build set = 5 cases / 20 seeded bugs, each diff→bug-file→exists verified. Free CLI: `bench idea-refinement`
-    rejected, bad `--arms` rejected, empty `--set` → "no cases". LIVE 4-arm bench = user's §606 acceptance.
-  - **T10 proof:** scripted e2e S4→S10 + LIVE run `…-aa6d` (4 calls, §487 merged 3 dup pairs → 5 consensus,
-    0 disputes → judge-skip, file:line validator ran, "Gemini" judge). §605 met.
-  - **T9 (still true):** config/show/resolve/config.json all built + CLI-verified; §604 met.
-  - **T8 live proof:** bare `aiki` → full S1→S10 completed through the TUI (run `…-8c44`); **Ctrl+C
-    mid-run → `exit_status:aborted`, `aborted:true`, partial artifacts kept** (run `…-2338-…-d09a`, §603
-    met). Two UI bugs fixed (multi-line-paste input corruption; label/provider spacing). Cosmetic-only
-    leftover: an aborted in-flight stage shows ✖ (killed → quorum-fail) not ⊘ — harmless, not fixed.
-  - **T7 live proof (still valid):** run `…-af3d`, consensus=3 cross-provider, anti-blending 0 out-of-scope.
-- **Sanity-check (2026-07-05):** `npm run typecheck`, `npm run build`, and `npm test` are green
-  (**173 tests**); `git diff --check` clean; `node dist/cli/index.js doctor --no-smoke` listed 3/3 providers
-  ready before V2 edits.
-- **The 2026-07-04 holdout run is VOID (Opus exhaustion mid-sweep) — do NOT fill RESULTS.md from it.**
-  Opus quota died after case 02: A/B/C (claude-only) crashed with `provider claude call failed (CRASH)`
-  from case 03 on (2/2/1 scored cases resp.); Arm D tolerated the dead claude reviewer and silently
-  finished cases 03–10 on **codex+agy only** (proof: run `…-8773` meta `S4-claude:CRASH`, `exit ok`) — NOT
-  the registered 3-provider D. Summary compares arms over different case counts (A=2,B=2,C=1,D=10) → the §23
-  gates on that JSON are meaningless. The raw JSON stays as forensic evidence. **Decision (user, 2026-07-04):
-  a crash on infrastructure (quota) is NOT "the one frozen eval pass" — the pre-registration freeze guards
-  against outcome-driven tuning, and there is no valid comparative outcome here. So non-result-affecting
-  harness robustness fixes are allowed; arms/matcher/`bugs.json`/thresholds stay frozen and were NOT touched.**
-- **T12 HARNESS HARDENED (2026-07-04, uncommitted) — three fixes, none touch what's measured:**
-  1. **`--resume`** (`runBench`/`planBench` + `resolveCampaign`/`priorScored` in `src/bench/harness.ts`):
-     continues the latest `code-review-YYYY-MM-DD.json`, KEEPS `status:'scored'` case×arm pairs, retries
-     error/skipped ones → re-run the same command each Opus window until complete. Matcher is date-strict so
-     an archived `.void.json` is ignored.
-  2. **Pre-run Opus estimate + `--yes` gate** (`planBench`/`estimateClaudeCalls`/`CLAUDE_CALLS_PER_CASE` +
-     `src/cli/bench.ts renderPlan`): no `--yes` → prints "≈N claude/Opus calls" and EXITS without running.
-     Full sweep ≈ **80 Opus calls** (C≈4/case is ~40 of them). Closes the §19 gap.
-  3. **Degradation guard** (`runArmOnCase`): a `scored` outcome with ANY errored `ctx.calls` entry →
-     downgraded to `status:'error'` (`DEGRADED: …`), so D can't silently score a claude-less run and
-     `--resume` retries it. (Safe: a recovered §14 repair pushes no errored record — see jsonStage.)
-  Tests: `test/bench-resume.test.ts` (10, scripted adapters, NO paid calls). 158 tests green; build clean.
-- **STAGE 0 DONE (2026-07-04 late session) — Amendment A1 pre-declared in RESULTS.md §1; read it first.**
-  What happened after the first void run: the user re-ran bench same evening (attempt 2) → **codex crashed**
-  in case-01 D, killed during case 02 (runs 2229/2242 have no meta = hard kill; its case-02 A/B/C Opus calls
-  burned unrecorded). Both attempts VOID, archived as `bench/results/code-review-2026-07-04.attempt{1,2*}.void.json`
-  (attempt 1 restored verbatim from session memory after the dated file got overwritten). **Salvage
-  (mechanical rule: scored pair kept iff run meta has ZERO errored calls; earliest clean wins):** 6 pairs →
-  cleaned campaign `code-review-2026-07-04.json` (01 A/B/C/D + 02 A/B). Attempt-1's 02 D dropped — meta shows
-  claude CRASHED mid-case-02-D (results JSON hid it; Opus died earlier than first diagnosed). Noise caveat
-  logged: case-01 recall flipped ±1 bug between identical attempts (A1 §5). Harness also gained (tested,
-  160 green): carry-forward of non-requested arms on narrower `--arms` resume + prior-case preservation on
-  mid-run kill (both prevent campaign-file data loss). Arm A = no further metered runs (in no §23 gate).
-- **✅ VERDICT WRITTEN 2026-07-05 — T12 substantively DONE. FREEZE LIFTED.** KC#1 **PASS** (rD 1.00 vs rB
-  0.77 = 1.30× ≥1.20; pD=pB=1.00), KC#4 **PASS** (D median 5.4min, ~13% quota est.), KC#2 **DEFERRED** (A2).
-  Precision: assistant adjudicated ALL 59 unmatched B+D findings against source → **0 false positives**
-  (every one a real bug: unseeded, or a seeded bug the strict matcher rejected on category/line). Labels in
-  `.aiki/feedback.jsonl` (20 resolve calls). RESULTS §1/§4/§5/§6/§7 filled + honest caveats (precision
-  non-discriminating on bug-dense set → win is a RECALL win; B tripped the strict matcher more via
-  mislocated/mis-categorized correct findings; n=10, single run — directional not statistical).
-  **Publishable claim: "cross-provider structured review caught every planted bug where the best single
-  model missed ~1 in 4, at equal precision, 10-case holdout." Nothing stronger — NOT "beats self-consistency".**
-- **✅ DEV ROUND 2 (freeze lifted) — agy sandbox VERIFIED, Arm E BUILT + EVALUATED, `--cheap` SHIPPED.**
-  Arm E build-set run (2026-07-05, `bench/results/code-review-2026-07-05.json`): D 20/20 (100%), E 13/16
-  (81% matcher) — but E's 01-user-api CRASHED (codex infra, not scored) so it's a 4-case compare, and
-  **2 of E's 3 "misses" are category artifacts** (E found divide-by-zero + null-deref at the right lines but
-  tagged ERROR_HANDLING↔CORRECTNESS opposite the seed → strict matcher rejected). **E true find-rate ≈15/16
-  (94%); 1 genuine minor miss** (fragile Bearer-parse, 03-auth). **Thrift PROVEN: E used 3 claude calls over
-  4 cases = 0.75/case vs D's ~2/case (~⅔ less Opus; claude judge idle on 2 of 4 cases).** E1 verdict: FAILS
-  the strict 90%-recall gate as measured, PASSES adjusted for the category confound. Decision: **keep D
-  default, ship E as opt-in `--cheap`** (`aiki run code-review --cheap` → roles s4:[agy,codex], judge:claude;
-  run.ts+index.ts, experimental label). **Confound now confirmed twice (B on holdout, E on build): the
-  category-STRICT matcher measures "labels bugs like the seed author" as much as "finds them"** — log as a
-  known limitation; a category-relaxed secondary recall is the fair metric for any future E-vs-D holdout.
-- **V2 PLAN WRITTEN (2026-07-05): `plan/AIKI-v2-plan.md` — execute V1→V5 in order, same discipline as §24.**
-  V1 S8-teeth (council actually debates; blocks ladder) → V2 smart entry (repo detect, default-base,
-  deterministic input router — NO chat) → V3 Council View TUI + `show --html` static export (the
-  "professional/visual" answer INSTEAD of a desktop app) → V4 escalation ladder (needs V1; new
-  pre-registration L1, strict+relaxed recall) → V5 consolidate/ship (README with the exact qualified
-  verdict, run-cost preview). **Decided + logged in the plan: desktop app NO (terminal users, Electron
-  tax; HTML export covers it — revisit only on external-user signal); general Q&A/chat NEVER (§3/§22 +
-  council adds cost not accuracy on single-answer questions — router explains, doesn't answer).**
-- **V3 READABILITY PASS DONE (2026-07-06, uncommitted) — renderer-only, schemas/artifacts UNCHANGED.**
-  Rewrote `src/council/view.ts`: the idea HTML is now a decision brief — verdict hero + plain status label
-  (Feasible-with-caveats / Proceed-with-caution, derived from upheld-dispute count), honest at-a-glance
-  (agreed / risks-that-stand / not-examined instead of the meaningless "9 disputes"), biggest-risk +
-  start-here callout, "Risks that held up" cards that RESOLVE `claim_ids`→the assumption and translate
-  UPHOLD/REJECT away, **blind spots promoted to a first-class section** (were counted but never rendered —
-  real bug), numbered "Recommended next steps" (derived), and collapsed `<details>` for dismissed
-  objections + full technical (per-model raw output, dissent, confidence). Two code-review-of-V3 gaps
-  fixed: blind_spots never shown; disputes never showed the assumption under attack. All new `CouncilView`
-  fields are ADDITIVE (topic/signal/agreements/risks/defended/blindSpots/nextSteps/biggestRisk/
-  bestNextStep/moderator) so `src/tui/app.tsx` is untouched. `show --html` now prints an ABSOLUTE
-  (clickable) path and gained `--open` (auto-launch via open/xdg-open/start) — fixes the manual two-step.
-  Aesthetic: editorial "decision memo", warm-ivory paper, native serif/sans/mono (no web-font fetch → stays
-  truly offline), staggered load reveal, prefers-reduced-motion honored. Regenerated the sample HTML.
-  Screenshot-verified in a browser. `test/t9.test.ts` +1 idea-path html regression (blind spots rendered,
-  assumption resolved, raw ids kept out of the main body). typecheck + build clean, **174 tests green**.
-- **V2/V3 code review verdict (2026-07-06):** V2 smart-entry router + `show`/default-branch wiring are
-  correct (the earlier "unknown option --html" was a stray `aiki` token in the user's command, not a bug).
-  Minor NON-blocking note (not fixed, out of scope): `routeInput` CODE_MARKER regex in `src/tui/smart-entry.ts`
-  can misroute idea prose containing `export`/`class`/`;` to code-review — low-risk, flag only.
-- **v2.1 HARDENING ROUND (added 2026-07-06 from real-use feedback; decisions locked with user):** hybrid
-  storage + config+free-model-override. Plan items V6–V9 in `plan/AIKI-v2-plan.md`. Progress:
-  - **V6.1 hybrid runs root DONE (uncommitted):** `src/storage/paths.ts` (`homeAikiRoot`, `resolveRunsRoot`
-    = repo `.aiki` when in a git repo, else `~/.aiki`). Wired into engine `run()` (`RunOptions.runsRoot`),
-    the TUI (`AppProps.runsRoot`, `startRun`), and `cli/run.ts` + `show`/`resolve` (CLI entry injects the
-    resolved root; **library defaults stay `.aiki` so all tests are untouched**). `test/paths.test.ts` (3).
-    Verified: `show` from repo → repo `.aiki`; from `/tmp` → `~/.aiki`.
-  - **V6.2 timeouts raised DONE (uncommitted):** `context.ts` per-call 180→300s, wall-clock 10→20min
-    (user-authorized §7.1/§19 deviation; a real Opus judge hit the old 180×2=360s ceiling + the 10-min cap).
-  - **V6.3 sessions + resume DONE (uncommitted):** global registry `~/.aiki/sessions.jsonl` (via
-    `src/storage/sessions.ts`; `$AIKI_HOME` overrides `~/.aiki`), `aiki sessions` (list, newest-first),
-    `aiki resume <id>` (`src/cli/resume.ts`). **Resume = CALL REPLAY** (`src/storage/replay.ts`): re-runs the
-    pipeline into a fresh run; `RunCtx.call` replays any completed `(provider,prompt)` from the old run's
-    `raw/` outputs (run-dir path normalized so a new run-id still matches), so only the failed stage onward
-    hits a model. Replayed calls don't spend budget and aren't counted as new calls (moved `calls.push`
-    into the real-call branch). Sessions recorded in engine `run()` (headless) + `app.tsx` (TUI); tests use
-    `executeRun` directly so they never touch the registry. `test/resume.test.ts` (5). Smoke-verified:
-    `sessions`/`resume` error paths + help.
-  - **Masthead cleaned:** `cleanTopic()` strips the "The user is asking about…" preamble → plain question.
-  - **V7 intent-clarify UX DONE (uncommitted):** clarify now offers pick-one / `N+1`=both (combine all) /
-    `N+2`=other (type your own). `RunEvents.clarify` → `ClarifyChoice` (pick|both|text) in `context.ts`;
-    `s2Misread` maps to `chosen.how` = user-selected|user-combined|user-typed; TUI `app.tsx` renders the
-    options + a text-entry sub-mode (`clarifyTyping`/`clarifyText`). Near-identical readings: STOPWORD +
-    framing-word strip in `cluster.ts tokenize` (content-word overlap; 0.6 threshold UNCHANGED — loosening
-    = false merges, documented trap). `test/{s2-clarify,cluster}.test.ts`. Residual: bag-of-words can't
-    merge inflected paraphrases; `both` is the reliable merge (human-in-loop by design, §19).
-  - **V8 model config DONE (uncommitted):** verified flags (PROVIDER_NOTES): claude `--model`, codex
-    `-m/--model` (before prompt), agy `--model` + `agy models` lists (only agy enumerates). Per-PROVIDER
-    model (`models:{claude?,codex?,agy?}` in AikiConfig). Config LAYERING: `loadLayeredConfig` = global
-    `~/.aiki/config.json` base + project `.aiki` override (`mergeConfig` merges roles/models keys); wired
-    into run/resume/TUI/`config`. Threading: config.models → `RunOptions.providerModels`/`AppProps` →
-    `setupProviders(models)` → `FlagProfile.model` → adapter `buildArgs` `--model`. `aiki models` command
-    (`cli/models.ts`; agy list via execFile with stdin CLOSED — agy blocks without a TTY). `$AIKI_HOME`
-    overrides `~/.aiki`. `test/v8-models.test.ts` (6). Live-verified models/config with pins.
-  - **V9 slash-command home DONE (uncommitted):** TUI entry is now a home screen — banner + version + text
-    box with `/idea <text>`, `/review [--branch]`, `/resume <id>`, `/sessions`, `/models`, `/config`,
-    `/help` (single-key r/b/i removed). `parseCommand` + `COMMANDS` (pure) in `smart-entry.ts`; non-slash
-    text still → `routeInput`. Info commands render an in-screen panel; `/resume` builds the replay cache +
-    `startRun(...,replay)`. `formatModels()` extracted for the panel. Removed vestigial `routedIdea`.
-    `test/tui.test.ts` +3. Render = manual acceptance; module-load verified.
-  - **V5 ship DONE (uncommitted):** `README.md` (what aiki is + EXACT RESULTS §7 verdict + quickstart +
-    slash-command table + models + sessions/resume + safety), `CHANGELOG.md`, version 0.1.0→**0.2.0**
-    (`package.json` + `cli/index.ts VERSION`), run-cost preview on `aiki run` (`estimateRun` pure + tested,
-    `--yes`/non-TTY-gated confirm). `test/run-cost.test.ts`. 200 tests green.
-- **Next action:** **V4 — escalation ladder** is the ONLY unstarted item, and it is BLOCKED on the V1 paid
-  bench (needs the disagreement signal + a NEW BENCHMARK.md pre-registration L1). So the actionable path is:
-  (1) USER commits the v2 round (draft message ready — see below/HANDOFF), (2) USER runs the pending
-  validations, (3) then V4 once the V1 bench passes. If not doing V4, the v2 product round is COMPLETE.
-- **Still pending USER (metered/manual, unchanged):** (1) V1 paid bench `node dist/cli/index.js bench
-  code-review --arms D --set build --yes` (~10 Opus) → unblocks V4; (2) V2 manual TUI (banner + `r`);
-  (3) V3 — `show <run> --html --open` reads clearly. V4 escalation ladder BLOCKED on (1).
-- **Scratch/probe files:** all deleted. Working tree note: `AGENTS.md` is untracked from outside this
-  session; current session only refreshed `.agent` handoff/ledger.
-  Frozen still frozen: arms/matcher/`bugs.json`/thresholds/pipeline. Post-eval fix list (do NOT touch now):
-  S8 never-refutes (agy judge dormant in bench — 0 calls ever), agy sandbox verify, S7 coarse keywords.
-- **Post-verdict experiment "Arm E" (user proposal 2026-07-05, logged not built):** Opus-thrift role swap —
-  `s4:[agy,codex]` (Gemini+GPT hunt), `judge:claude` (thin adjudication call only; NO claude "guide" stage —
-  guide = fat Opus call, rejected). Zero code: pure `.aiki/config.json` roles override. Evaluate on the BUILD
-  set first (tuning allowed there). Supporting evidence so far: codex-only degraded D hit 32/35=91% recall
-  (void attempt-1 cases 03–10); claude raised 9 vs codex 4 on case-01 (busier hunter, FP-status unknown).
-  Gate to adopt: E recall ≈ D recall at a fraction of Opus. agy-sandbox prereq CLEARED (verified).
-  **ARM E BUILT 2026-07-05 (163 tests green, uncommitted):** `armE` = same `productPipeline` as D, harness
-  injects `{s4:['agy','codex'], judge:'claude'}` via resolveRoles override (reviewers read ctx.roles.s4,
-  judge reads ctx.roles.judge — no hardcoding, fully swaps). Files: `arms.ts` (ArmId+ARM_IDS+armE+ARMS),
-  `results.ts` (3 enums +E), `harness.ts` (armAvailable E=agy+codex+claude, override, CLAUDE_CALLS/case E:1),
-  `cli/bench.ts` (VALID_ARMS +E), BENCHMARK.md (amendment E1 — E is BUILD-SET-only, exploratory, NOT a
-  holdout claim; question E1: E recall ≥0.90×D at ≤~1 claude/case?), `test/bench-resume.test.ts` (+2: role
-  swap + skip-when-no-agy). **Next: USER runs `bench code-review --arms D,E --set build --yes` (≈15 Opus
-  upper-bound; E's claude judge fires only on disputes so real Opus much lower). Compare E vs D recall.**
-- **Post-verdict experiment "escalation ladder" (v2 design, logged 2026-07-05, needs code + NEW pre-registration):**
-  deterministic cascade (NOT learned routing — §22-safe): T1 = agy+codex hunt cheap; T2 = Opus only on
-  triggers: (a) disputed finding → thin claude judge, (b) coverage hole (diff touches async/auth/payment
-  hunks but that category has 0 findings — glob+keyword heuristic) → TARGETED thin claude hunt on those
-  hunks only. Plus: adaptive C-sampling (2 samples, 3rd only on disagreement), context-diet prompts (pin
-  "no exploration"), offline data-designed seat rules (claude analyzes bench FP/recall per class ONCE,
-  rules frozen by hand). HARD PREREQUISITE: S8 teeth fix — all triggers run on the disagreement signal,
-  which currently never fires (confirm-all). Evaluate on build set, new BENCHMARK round, E vs ladder vs B.
-- **T11 SHIPPED 2026-07-04 (as-built, do not re-litigate).** BENCHMARK.md is FROZEN pre-registration —
-  arms/metrics/matching/thresholds NOT editable. `aiki bench code-review --arms A,B,C,D --set build`
-  (code-review only). Pieces:
-  1. **Arms = engine compositions** (each run via `executeRun` → a full `.aiki/runs` record per
-     BENCHMARK.md §5, and returns its `Finding[]` to the harness for in-memory scoring). Each case runs
-     with **cwd = the case dir** so the reviewer file:line validator resolves. Arms:
-     - **A** = 1 claude call, plain "review this diff" → findings (validate file:line). No synthesis.
-     - **B** = 1 claude call, structured adversarial (analyze → self-attack → re-answer, schema-forced).
-       **B is the real opponent** — draft a strong single prompt.
-     - **C** = **bespoke sample-keyed** self-consistency: sample claude 3× (keyed by sample idx, NOT
-       provider — 3 claude samples all have provider=claude, which would break the provider-keyed D
-       pipeline), file:line-validate each, merge via `sameFinding` (found in ≥2/3 → consensus), reuse
-       `s9ReviewJudge` on singletons/disputes. Leaves the live-verified D pipeline untouched.
-     - **D** = existing `runCodeReview` (claude+codex reviewers, agy judge).
-  2. **Ground truth:** each build case = dir `bench/sets/code-review/build/<name>/` holding the buggy
-     source file + `diff.patch` (whole-file add via `git diff --no-index`, so every bug line is a
-     reviewable change) + `bugs.json` = `[{id, file, line_start, line_end, category (6-enum), class}]`.
-     **Matcher = loosen `sameFinding`** to compare file + overlap + category enum (reuse for scoring).
-     Enum map: off-by-one→CORRECTNESS, race→CONCURRENCY, unhandled-rejection→ERROR_HANDLING,
-     auth-gap→SECURITY, N+1→PERF. Category-enum equality IS the frozen "same defect class" (a
-     mis-categorized find won't count — pre-registered rule, not changeable).
-  3. **Metrics:** recall (PRIMARY, **micro** = total matched / total seeded across cases; macro shown as
-     secondary), precision (**nullable** — needs FP adjudication), F1, calls, wall-clock. Also report
-     reported/matched/**unmatched** counts (unmatched = candidate FPs, labeled UNADJUDICATED, not precision).
-  4. **resolve-CR (build now — the deferred T10 piece):** generalize `FeedbackEntry` (item_type
-     `finding|adjudication`; verdict = union of idea `correct/incorrect/unsure` + CR
-     `fixed/wontfix/false-positive`; `ruling`→string snapshot). `resolve` reads `meta.workflow` → picks
-     item source (idea: adjudications; CR: review-map kept findings) + vocab. True precision fills from
-     `feedback.jsonl` when FP labels exist, else null.
-  5. **CLI + results:** `aiki bench` command; writes `bench/results/<suite>-<date>.json` (per-case
-     per-arm {recall, matched, reported, unmatched, calls, wallMs, runId} + summary) — zod schema. Run
-     cases/arms SEQUENTIALLY, write results INCREMENTALLY after each case (a ~20-run metered bench must
-     survive a mid-run quota stop). Detect providers; skip/mark arms whose providers are absent (D needs 3).
-  6. **Build set:** author all **5** cases now, each a SINGLE small file + 4-6 precisely-located seeded
-     bugs (off-by-one, race, unhandled-rejection, auth-gap, N+1 across the set) + bugs.json.
-  - **Verify (NO paid calls):** scripted-adapter e2e (fake providers → canned per-arm findings → assert
-     recall/result-JSON/table + resolve-CR JSONL) + pure-unit the matcher/scorer. Real 4-arm bench run is
-     metered → user's manual §606 acceptance. Acceptance §606: `bench code-review --set build` outputs
-     per-arm scores table + result JSON.
-- **T10 SHIPPED 2026-07-04 (as-built, do not re-litigate). Bespoke lean composition — NOT the idea
-  S1–S10 stages** (findings have no assumption/attack structure; §12.2 only specs CR's S4/S8/S9/report).
-  ~5 model calls. Pipeline:
-  1. **Diff plumbing** (CLI/git util): `run code-review --base <ref>` (req) `--head <ref>` (default HEAD)
-     OR `--diff <file>`. `git diff --unified=3 <base>...<head>` (THREE-DOT merge-base = what HEAD added)
-     → write `inputs/diff.patch` (+ 00-original). Reviewer-call cwd = `git rev-parse --show-toplevel`.
-     Empty diff → clean exit "no changes"; not-a-git-repo & no --diff → error.
-  2. **S1 deterministic (NO call):** synth trivial IntentContract {task:"review the diff",
-     task_type:"code-review"} → 01. **S2 skipped.** **S3 deterministic (NO call):** fill reviewer
-     template {{DIFF_PATH}} → 03-prompts.
-  3. **S4 reviewers** claude+codex, blind/parallel, cwd=repo root, read-only (plan/sandbox, VERIFIED) →
-     CodeReviewRoleOutput (≤12 findings) → 04. Then **file:line validator** (deterministic, pre-S8):
-     DROP findings whose file ∉ diff / ∉ HEAD / lines out-of-bounds; keep valid; flag dropped count.
-  4. **S8 mutual cross-exam** (2 calls; skip a side if its target has 0 findings): each reviewer sees the
-     OTHER's findings ANONYMIZED → Verification CONFIRM/REFUTE/UNCERTAIN per finding → 08 (reuse
-     VerificationSet). Confirm-all-no-justification → `synthesis_suspect` flag (soft, no re-ask).
-  5. **ReviewMap builder** (deterministic, replaces idea S6/S7): merge findings BOTH reviewers
-     independently raised via the **§487 matcher** (same file + overlapping lines + same category) →
-     consensus; classify each by cross-exam verdict. NEW `ReviewMap` zod {consensus:Finding[],
-     disputed:{finding,refutation}[], single_reviewer:Finding[], per_reviewer_stats} → 07 (new writer slot).
-  6. **S9 judge=agy** (1 call, cwd = RUN-DIR not repo → sidesteps the agy --sandbox trap; judge only sees
-     findings text): adjudicate disputed (REFUTEd) findings → UPHOLD/REJECT/UNRESOLVED + verdict (reuse
-     JudgeReport) → 09.
-  7. **Confidence (deterministic):** both-independent OR CONFIRMed→HIGH; single/UNCERTAIN→MEDIUM;
-     REFUTEd+UPHOLD/UNRESOLVED→LOW; REFUTEd+REJECT→false-positive (excluded from P0/P1 table, separate
-     "rejected" section).
-  8. **S10 CR report** (pure): verdict → P0/P1 table → disagreement map (A-found/B-missed, contradictions,
-     adjudications) → per-reviewer stats → raw links → final-report.md.
-  - **Roles:** resolveRoles branches on workflow — code-review → s4=[claude,codex], judge=agy, verifier
-     unused; config/flag overridable (hardcode per-workflow defaults per §271, NOT a general priority algo).
-     Degradation <3 providers → judge falls back to a reviewer + `synthesis_suspect` (edge, low-pri).
-  - **Engine tweaks:** `RunOptions.cwd` override (CLI passes repo root); RunWriter gets a `review-map`
-     slot (07); `ctx.call` per-call cwd already exists (judge uses it).
-  - **Tests (scripted, NO paid calls):** pure units (git-range, file:line validator drop-invalid, §487
-     matcher/ReviewMap builder, confidence, S10 render, resolveRoles CR) + **scripted-adapter e2e** CR run
-     (fake providers → S4→S10 wiring + budget, like engine.test.ts) + real temp-git diff-plumbing test incl.
-     the §605 file:line-rejection. Live run on a real small diff = USER's manual §605 acceptance (give steps
-     + cheap sample; no-live-paid-runs).
-  - **Deferred:** resolve-CR vocab (fixed/wontfix/false-positive) + FeedbackEntry generalization
-     (item_type finding|adjudication, verdict union, ruling→string) → **T11** (bench FP labeling, §487).
-     agy --sandbox live verification still deferred (CR doesn't depend on it). Skill/validate.ts registry
-     stays inline (idea precedent). Acceptance §605: real diff → adjudicated findings; unresolvable
-     file:line rejected pre-model (tested).
-- **T9 SHIPPED 2026-07-04 (as-built, do not re-litigate). No new pipeline stages.** Correction now fixed:
-  `aiki resolve` = interactive **feedback annotation** → `.aiki/feedback.jsonl` (plan §127/§604/§444), NOT
-  role overrides (`resolveRoles()` is an unrelated same-named internal fn; role pinning is a config concern).
-  T9 = four pieces (all built + unit-tested in `test/t9.test.ts`, 35 tests):
-  1. **`aiki show <run-id>` [`--raw`]** — complete run → cat `final-report.md`; `--raw` → list artifact
-     files; partial/aborted (no final-report.md) → short summary from meta.json (exit_status, stages,
-     flags) + "use --raw". Uses the shared run-id resolver (below).
-  2. **`aiki resolve <run-id>`** — walks the run's **adjudicated contradictions** (artifacts 07
-     DisagreementMap + 09 JudgeReport); user labels each ruling `correct/incorrect/unsure` (+optional
-     note) → append to global **`.aiki/feedback.jsonl`** (append-only). Pure core
-     (`buildFeedbackEntries`+`appendFeedback`, unit-tested) under a thin readline loop; non-interactive
-     hook = repeatable `--verdict <id>=<c|i|u>` (drives §604 test headlessly — no TTY, no paid calls).
-     JSONL line `{run_id, workflow, item_type:"adjudication", item_id, verdict, ruling(snapshot), at,
-     note?}`, zod-validated. Verdict vocab workflow-aware (code-review fixed/wontfix/false-positive later).
-  3. **`aiki config` [`--edit`]** — bare → print EFFECTIVE config (built-in defaults merged with
-     `.aiki/config.json`) as JSON. `--edit` → open `.aiki/config.json` in $EDITOR/$VISUAL, create `{}` if
-     missing; no $EDITOR → print path.
-  4. **`.aiki/config.json` loading** — project-local (cwd), zod `{roles?:Partial<RoleMap>, budget?:number,
-     deadlineMs?:number}`. `roles` = FLAT GLOBAL → feeds existing `resolveRoles(wf,avail,overrides)` for
-     every workflow. Precedence **flag > config > default**. Missing = defaults; present-but-invalid =
-     HARD-FAIL naming file+zod error (never silently ignore). Threaded into BOTH headless `run()` AND the
-     TUI (app.tsx `resolveRoles` call + RunCtx budget — 2 additive edits). NO CLI role flags (config-only;
-     `--budget` stays).
-  - **Smoke cache** (§242, 6h): SEPARATE tool-owned **`.aiki/smoke-cache.json`** (`{provider:{pass,at,
-     version}}`), NOT inside config.json — logged deviation from plan's literal "in config.json" (avoids
-     clobbering the human-edited `config --edit` file). Consumed by `doctor`; add **`doctor --fresh`** to
-     bypass. Entry stale if >6h OR detected version ≠ cached version. NO smoke on TUI launch (defer the §5
-     "detect→smoke→panel" gap — would be a paid call every launch). Retires the T2/doctor smoke-cache debt.
-  - **Shared run-id resolver** (show+resolve): exact dir name OR unique suffix/substring (so `8c44`
-     works); ambiguous → list candidates; no-arg → most recent run.
-  - **Files (go straight here):** `src/config/config.ts` (AikiConfig zod + `loadConfig`/`effectiveConfig`/
-     `ConfigError`), `src/config/smoke-cache.ts` (`isFresh`/`toEntry`/`entryToSmoke`/read/write, pure core),
-     `src/storage/runs-read.ts` (`matchRunId` pure + `listRuns`/`resolveRunId`/`readFinalReport`/
-     `listArtifacts`), `src/storage/feedback.ts` (`FeedbackEntry` zod + `buildFeedbackEntries`/
-     `parseVerdictFlags`/`appendFeedback`, pure core), `src/cli/{show,resolve,config}.ts`. Edits: `doctor.ts`
-     (+`--fresh`, cache read/write), `run.ts` (config precedence), `cli/index.ts` (3 commands + config→TUI),
-     `tui/{index,app}.tsx` (`AppProps` roleOverrides+budget), `context.ts` (exported DEFAULT_BUDGET/DEADLINE).
-  - **DEVIATION (logged):** smoke cache is a separate `.aiki/smoke-cache.json`, NOT inside config.json as
-     the plan's literal §242 text says — to avoid `doctor` clobbering the human-edited `config --edit` file.
-     Corrupt/missing cache = silently empty (disposable); corrupt/missing *config* = hard-fail (user intent).
-  - **Deferred (not a bug):** §5 "TUI detect→smoke→panel" — TUI still detect-only (no smoke on launch, would
-     be a paid call each launch). `resolve` interactive readline path is NOT unit-tested (the `--verdict`
-     non-interactive path is; readline shell is thin, like app.tsx). Verdict vocab is idea-only
-     (correct/incorrect/unsure); code-review's fixed/wontfix/false-positive lands with T10.
-- **Tuning debt:** S2 clustering + S2 prompt = **FIXED 2026-07-03** (overlap-coefficient + prompt
-  hardening; see traps). Remaining low-priority: S7 blind-spot keyword matching is coarse → over-reports
-  (e.g. flags "feasibility" as uncovered though discussed). Not blocking. **Do NOT touch the S7
-  semantic-grouping model call — that's the working fix, not the coarse part.**
-- **In-flight?** No half-written code. **The entire v2 product round (V1–V3, V6–V9, V5 ship) is
-  CODE-COMPLETE + free checks green (200 tests, build clean).** Only V4 (escalation ladder) is unstarted and
-  it's BLOCKED on the V1 paid bench. Everything except V1's committed teeth (`aa173bc`) is UNCOMMITTED — a
-  commit-message draft is in `.agent/HANDOFF.md`; the user commits. Manual/metered validations still the
-  user's. Read `.agent/HANDOFF.md` for the commit draft + validation list + the V4 spec.
+- **v1 SHIPPED + thesis PROVEN, committed through `aa173bc`.** T0–T12 done. KC#1 PASS (D 100% vs B 77%
+  recall = 1.30×, precision tied 1.00), KC#4 PASS, KC#2 deferred. `--cheap` (Arm E) shipped. agy `--sandbox`
+  verified write-safe. Publishable claim (RESULTS §7, never stronger): *"cross-provider structured review
+  caught every planted bug where the best single model missed ~1 in 4, at equal precision, on a 10-case
+  held-out set."*
+- **v2 product round CODE-COMPLETE (uncommitted) — `plan/AIKI-v2-plan.md`.** 207 tests green, build clean.
+  - **V1 S8-teeth** (committed `aa173bc`) — code-review cross-exam is adversarial; rubber-stamp → one re-ask.
+  - **V2 smart entry** — repo detect, default-base, deterministic input router (`src/tui/smart-entry.ts`).
+  - **V3 Council View + `show --html`** — the council HTML is now a plain-language decision brief
+    (`src/council/view.ts`); `--html` prints an absolute path + `--open`.
+  - **V6 run-anywhere + resilience** — hybrid storage (repo `.aiki` vs `~/.aiki`, `$AIKI_HOME` override,
+    `src/storage/paths.ts`); timeouts raised (per-call 180→300s, wall-clock 10→20min); **sessions + resume**
+    (`~/.aiki/sessions.jsonl`, `aiki sessions`, `aiki resume <id>` = CALL REPLAY via `src/storage/replay.ts`).
+  - **V7 intent clarify** — pick / combine-all / type-your-own; stopword-stripped merge of same-meaning
+    readings (`cr-s2`/`cluster.ts`; 0.6 threshold UNCHANGED).
+  - **V8 model config** — per-provider `--model` (flags verified via `--help`, PROVIDER_NOTES); layered
+    config (global `~/.aiki` + project); `aiki models` (`src/cli/models.ts`).
+  - **V9 slash-command home** — TUI opens on `/idea /review /resume /sessions /models /config /help`
+    (`parseCommand` in smart-entry.ts); plain text still routes to the idea flow.
+  - **V5 ship** — `README.md`, `CHANGELOG.md`, version **0.2.0**, run-cost preview on `aiki run` (`--yes`/
+    non-TTY gated).
+  - **V4 escalation ladder — STARTED (design + pre-registration + testable core):** Arm L = Arm E (agy+codex
+    hunt + claude judge on disputes) **+ a coverage-hole targeted claude hunt**. Pre-registered as
+    BENCHMARK.md **amendment L1** (build-set-only, frozen). Pure detector `detectCoverageHoles`/`RISK_DEFS`
+    BUILT + tested (`src/orchestration/stages/cr-ladder.ts`, `test/cr-ladder.test.ts`, 7).
+- **Next action:** **finish V4 Arm L wiring** (see `.agent/HANDOFF.md` for the exact spec) — the targeted-hunt
+  escalation stage + register Arm L (`ArmId`/`ARM_IDS`/results enums/`VALID_ARMS`/harness) + scripted e2e
+  (auth-hole → exactly 1 targeted claude call + merged; covered → 0 hunt calls). Metered comparison run is
+  the USER's and is BLOCKED until the V1 bench confirms disputes>0. **If not doing V4, the v2 round is DONE.**
+- **Commit:** everything except V1's committed teeth (`aa173bc`) is UNCOMMITTED. A ready-to-run commit-message
+  draft is in `.agent/HANDOFF.md`. **The user commits — never `git commit`/`git push`.**
+- **Pending USER (metered/manual — none block committing):** (1) V1 paid bench
+  `node dist/cli/index.js bench code-review --arms D --set build --yes` (~10 Opus) → **unblocks V4's metered
+  run**; (2) TUI home + `/resume` + clarify screens read well; (3) live `aiki resume`; (4) a run with a pinned
+  model (meta.flag_profiles shows it); (5) `show <run> --html --open`; (6) fresh-clone quickstart (V5).
+- **In-flight?** No half-written code. Working tree = intended edits only (+ untracked `AGENTS.md` from
+  outside these sessions; `.aiki/`, `bench/results/*`, `graphify-out/` are gitignored).
 
-## Task ledger (§24)
+## Task ledger
 
 | Task | Status | Note |
 |------|--------|------|
-| T0 Scaffold + pre-registration | ✅ | BENCHMARK.md, POLICY.md, TS skeleton, npm |
-| T1 Detection + probe + doctor | ✅ | 3/3 providers live; PROVIDER_NOTES filled |
-| T2 claude + agy adapters + smoke | ✅ | run()+retry+taxonomy+§14; 30 tests; doctor smoke live (claude+agy pass) |
-| T3 codex adapter | ✅ | plain `codex exec`; stdout=final msg, stderr=transcript; 3/3 smoke live |
-| T4 schemas + artifact writer + meta.json | ✅ | 7 core zod schemas; RunWriter (ordered+atomic); `aiki providers --json`; 56 tests |
-| T5 engine + S1–S3 | ✅ | RunCtx+budget/deadline/quorum, S1–S3, `aiki run`, roles decided; live 00–03; 65 tests |
-| T6 S4–S7 | ✅ | fan-out+drift+dedupe+map; 71 tests+typecheck+build green; LIVE-verified 00–07 (run …-fe2e) |
-| T7 S8–S10 | ✅ | S7 grouping + S8 verify + S9 adjudicate + S10 render; budget→12; 80 tests+build green; LIVE-verified 00–10 (run …-af3d) |
-| T8 TUI (ink) | ✅ | event seam + child-kill + 6 screens; 89 tests. LIVE-verified: full S1→S10 run + Ctrl+C→aborted:true (run …-d09a) |
-| T9 show / resolve / config | ✅ | show <run>, resolve (feedback→JSONL), config cmd, .aiki/config.json load + separate smoke-cache; 35 tests, CLI-verified |
-| T10 code-review workflow | ✅ | bespoke S4→S10; §487 matcher (`sameFinding`); file:line validator; agy judge; 12 tests + scripted e2e |
-| T11 bench harness + build set | ✅ | arms A–D, `sameFinding` scorer, resolve-CR, 5 cases/20 bugs, incremental results; 9 tests + scripted bench e2e |
-| T12 freeze + holdout + RESULTS.md | ✅ DONE (2026-07-05) | Verdict written: KC#1 PASS (D 43/43=100% vs B 33/43=77%, 1.30×; precision 1.00/1.00, 59 FP-adjudicated → 0 FP), KC#4 PASS, KC#2 deferred (A2). Full writeup in RESULTS.md §1/§4–§7. Freeze LIFTED. |
-| **v1 shipped extras** | ✅ | agy sandbox VERIFIED; Arm E built + build-set-evaluated (E ~94% true recall at ~⅓ Opus); `aiki run code-review --cheap` shipped. |
-| **v2 round → `plan/AIKI-v2-plan.md`** | 🔶 IN PROGRESS | V1 S8-teeth code done in `aa173bc` (paid bench deferred by user); V2 smart-entry + V3 Council View/`show --html` code done; V3 readability pass DONE 2026-07-06 (plain decision brief). V4 ladder blocked on V1 paid bench → V5 ship. Desktop app + chat = rejected. |
-| **v2.1 hardening → plan V6–V9** | ✅ COMPLETE 2026-07-06 | V6 hybrid storage + timeouts + sessions/resume · V7 intent-clarify (both/type-your-own + stopword merge) · V8 per-provider model config + `aiki models` · V9 slash-command TUI home. 198 tests green. All uncommitted. |
-| **V5 ship** | ✅ DONE 2026-07-06 | README + CHANGELOG + version 0.2.0 + run-cost preview on `aiki run`. 200 tests green. |
-| **V4 escalation ladder** | ⛔ BLOCKED | needs the V1 paid bench (disagreement signal) + a NEW BENCHMARK.md pre-registration. Only unstarted v2 item. |
+| T0–T12 (v1) | ✅ | Full pipeline + TUI + bench + RESULTS verdict; committed through `aa173bc`. See `git log`. |
+| v1 shipped extras | ✅ | agy sandbox verified; Arm E built + build-set-evaluated; `aiki run code-review --cheap`. |
+| **V1 S8-teeth** | ✅ | Committed `aa173bc`. Paid-bench validation deferred by user. |
+| **V2 smart entry** | ✅ | uncommitted |
+| **V3 Council View + `show --html`** (+ readability pass) | ✅ | uncommitted; plain decision-brief HTML |
+| **V6 run-anywhere + sessions/resume** | ✅ | uncommitted |
+| **V7 intent clarify** | ✅ | uncommitted |
+| **V8 per-provider model config** | ✅ | uncommitted |
+| **V9 slash-command TUI home** | ✅ | uncommitted |
+| **V5 consolidate & ship** | ✅ | README + CHANGELOG + 0.2.0 + run-cost preview; uncommitted |
+| **V4 escalation ladder** | 🔶 STARTED | Design + BENCHMARK L1 pre-registration + coverage-hole detector DONE. Remaining: Arm L wiring + scripted e2e; then metered run (BLOCKED on V1 bench). |
 
-## Facts already decided (do not re-derive, do not re-litigate)
+## Facts already decided (do not re-derive / re-litigate)
 
-- **Package manager: npm** (plan said pnpm; user chose npm). Gate = `npm run typecheck`.
-- **Node:** v20.19.3 installed (plan needs ≥20). ✔
-- **Providers (live):** claude 2.1.198, codex 0.135.0, **agy 1.0.15** (Antigravity/Gemini 3.1
-  Pro — REPLACES the discontinued gemini CLI). Read-only: claude `--permission-mode plan`,
-  codex `--sandbox read-only`, agy `--sandbox` (write-blocking unverified). Invocation: claude
-  `-p --output-format json` (envelope, text in `.result`); agy `-p` (raw text, no envelope);
-  codex `exec` (T3). Detail in `docs/PROVIDER_NOTES.md` — read before adapter work.
-- **All 3 adapters live (T3):** claude/codex/agy each pass smoke in `aiki doctor` → 3/3 ready.
-- **Display naming (user decision):** id stays `agy` internally/artifacts/meta; UI shows
-  "Gemini" via `DISPLAY_NAME` (types.ts). Don't show "agy" to users; keep it in typed commands.
-- **Judge = claude by default (user decision):** Opus 4.8, strongest → default judge. But make
-  the judge provider **user-overridable** via config (`.aiki/config.json → roles`) and/or a run
-  flag. Build overridability at T5 (roles) / T9 (config); do NOT hardcode claude as only judge.
-- **Roles (§10) — DECIDED at T5 (user, 2026-07-02):** idea-refinement → **analyst = agy**
-  (S1/S3 + one S4 seat), **judge = claude** (default, doesn't author S4 → clean adjudication),
-  **verifier = codex**, S4 seats = [agy, codex] (§10 resolved default). agy metered now, but keeping
-  it analyst preserves judge/author separation; revisit only if quota pain appears. Judge must stay
-  config/flag-overridable — override **seam** built at T5 (`resolveRoles(overrides?)`); actual config
-  loading is T9.
-- **npm install** needs `--cache <scratchpad>/.npmcache` on this box (default cache blocked).
-- **T6 decisions (2026-07-03) — do not re-litigate:**
-  - **Claims = the S4 `assumptions`** (already `{statement, type: VERIFIABLE|JUDGMENT}`). `attacks` are
-    NOT claims — they are the disagreement signal, re-anchored (per-seat assumption id → merged claim id)
-    and carried in the `ClaimSet` for S7. `open_questions`/`strongest_version` feed only the blind-spot corpus.
-  - **S7 contradiction = a contested assumption** (a claim with ≥1 attack). This is the deterministic,
-    pure-code disagreement signal AND exactly the `{disputed item + evidence}` S8 verifies (§9 S8). This is
-    why S7 can be pure code yet still feed S8 — attacks are the disputes.
-  - **Thresholds (tunable, same class as the S2 note):** S6 dedupe = Jaccard `overlap` ≥ **0.85** (plan
-    number, strict → most claims stay per-provider). S5 drift = **overlapCoefficient** (new export in
-    cluster.ts, |A∩B|/min) of `task_echo` vs `contract.task` ≥ **0.3** (coefficient not Jaccard, so a short
-    echo isn't penalized vs a long paragraph). Drift also requires ≥1 assumption.
-  - **S6 lexical dedup CANNOT do cross-provider consensus — decided, do NOT retune (decision B, 2026-07-03).**
-    Calibrated on the live run's 13 real claims: no bag-of-words threshold (Jaccard / overlap-coef /
-    +stopwords) separates true merges (C2↔C10 recognition, C1↔C12 willingness-to-pay) from false ones
-    (C2↔C3, C1↔C2) — models express the same claim with different words, and different claims share
-    context words. Lowering the threshold buys FALSE consensus (worse than none). **Resolution (refined by
-    grilling 2026-07-03):** S6 stays deterministic near-dup (correct as-built; `consensus=0` on prose is
-    expected, not a bug). Semantic consensus is established by a **constrained model call INSIDE S7** (run
-    on the judge role, IDs-only + attribution-withheld + validated by-reference → graceful lexical fallback)
-    — NOT by the S9 judge (the plan's S9 keeps consensus read-only, §13/§624). Full build spec in "Next
-    action" (T7 step 1). No embeddings (§3 forbids API keys). Do not reopen as a threshold tweak.
-- **Budget raised 9 → 12 (T7 grilling, 2026-07-03) — deviation from §19, on evidence.** The plan's
-  budget-9/default-8 never summed: real full pipeline = S1(1)+S2(3)+S3(1)+S4(2)+S7-grouping(1)+S8(1)+S9(1)
-  = **10** min, **11** with S8's 2nd pass, **11–12** with the routine agy-S2 §14 repair (live run burned 8
-  on S1–S4 alone). 9 aborts right before the judge, wasting every prior call. 12 = full run + 1 repair
-  without aborting a normal run, still a real cap (pathological repair-storm fails gracefully + flagged).
-  `--budget <n>` flag + T9 config override it. Change = `DEFAULT_BUDGET` in `context.ts`.
-- **T7 BUILT (2026-07-03) — how the synthesis half works, do not re-derive:**
-  - **S7 grouping call** lives in `s7-disagreement.ts` (`s7SemanticGroup` wrapper + `applyGroups` pure).
-    Runs on `ctx.roles.judge`, sees IDs+statements only, validates groups by-reference, merges into
-    lowest-id canonical (verbatim) with unioned providers; **any non-fatal failure → lexical map unchanged**
-    (skips the call entirely if <2 claims). Schema `ClaimGroups` (strict, IDs-only).
-  - **S8** `s8-verify.ts`: single anonymized pass on codex; zero disputes → writes empty `08` + no call;
-    verifier failure → all items `UNCERTAIN`("unverified"). `REFUTE≥1-or-justify` is prompt-enforced (soft).
-  - **S9** `s9-judge.ts`: `JudgeReportModel` (dissent min-0) for the call so S9 can salvage; pure
-    `adjudicationScopeViolations` (anti-blending, the §602 test) + `demoteSelfAuthored` (§272, no-op in
-    3-prov). One targeted re-ask on scope/dissent violation, then filter + placeholder-dissent + flag.
-  - **S10** `s10-render.ts`: pure `deriveAudit` (held/failed/unverified + HIGH/MED/LOW) + `renderReport`
-    (markdown decision brief, user-facing → DISPLAY_NAME so agy shows as "Gemini"). Writes `final-report.md`.
-  - Tests: `test/synthesis.test.ts` (grouping merge, anti-blending, audit, demotion); `engine.test.ts` now
-    e2e S1→S10. Skills/`rubric.json` loader still deferred — rubric stays inline (`IDEA_RUBRIC`).
-- **T8 BUILT (2026-07-03) — TUI + the engine seam it needed, do not re-derive:**
-  - **Engine seam (additive, headless unchanged):** `RunEvents` + `runStage` + `StageInfo` in
-    `context.ts`; `RunCtx.events`/`.aborted` getter; `ctx.call` passes `this.signal`; `RunOptions.events`
-    + `executeRun` emits `onStart` and finalizes `aborted = ctx.aborted || classified.aborted`.
-  - **Child-kill:** `RunRequest.signal`/`SpawnOpts.signal` → `spawnCapture` `killGroup()` on abort (shared
-    with the timeout path) → `runAdapter` skips its retry when `req.signal.aborted`.
-  - **s2Misread** gained the `clusters>1 && ctx.events?.clarify` branch + `how:'user-selected'`.
-  - **Workflow** wraps every stage in `runStage(ctx,'Sn',fn)` + exports `IDEA_STAGES` manifest.
-  - **TUI** in `src/tui/`: `timeline.ts` (pure reducer/glyphs/provider-resolution), `format.ts` (pure
-    completion/error), `app.tsx` (Ink state machine: detecting→input→running→clarify→finished; composes
-    engine primitives directly, NOT `run()`; Ctrl+C via AbortController), `index.ts` (`startTui`,
-    render `exitOnCtrlC:false`). Bare `aiki` → `startTui` (cli/index.ts default action). Names via DISPLAY_NAME.
-  - Tests: `test/tui.test.ts` (timeline + formatters); `engine.test.ts` +2 abort tests. app.tsx render is
-    NOT unit-tested (pure logic is) — the interactive run is the user's manual §603 acceptance.
-  - **INTERACTIVELY VERIFIED (2026-07-03):** user ran bare `aiki` → full S1→S10 completed live through
-    the TUI (detect → input → clarify → timeline → completion with verdict + top disagreements + report
-    path, run `…-8c44`). Two UI bugs found + fixed: (1) multi-line paste corrupted the single-line input
-    → onChange now collapses newlines to spaces (+ hint to use the file path for long ideas); (2) the
-    "Misunderstanding guard" label (22 chars) butted against the provider column → label pad 22→24. Ctrl+C
-    abort not yet user-tested. **S2 over-triggered the clarification live** (the known Jaccard debt) AND a
-    provider META-MISREAD the S2 prompt (echoed the instruction as the "interpretation") → a garbage
-    option-3. Both = S2 quality debt (clustering tune + S2-prompt hardening: "ORIGINAL TEXT is the task").
-  - **Self-consistency (S4, 1 survivor):** resample the survivor once → 2 samples, run flagged `low_diversity`.
-    Full 1-provider mode (§8 banner/self-judge) stays a T7+ concern. Provider attribution dedupes, so a
-    resampled claim shows `providers:[agy]` (honest: 1 provider) not `[agy,agy]`.
-  - **Flags plumbing:** `RunCtx.flags` set + `ctx.addFlag(...)`; `buildMeta` folds them into `meta.flags`.
-    S4 & S7 raise `low_diversity`; `synthesis_suspect` reserved for S9 (T7).
-  - **meta.roles** now also carries `s4_1..s4_n` seat entries (RunMeta.roles is `record<string,ProviderId>`;
-    seats appended as separate keys — no schema change).
-  - **Rubric (12 items) inlined** as `IDEA_RUBRIC` in `workflows/idea-refinement.ts` (T5 precedent — the
-    skill/`rubric.json` loader is still deferred). Moves to `skills/idea-refinement/rubric.json` at the loader task.
-  - **S6/S7 split pure core** (`mergeClaims`, `buildDisagreementMap`) from the ctx/write wrapper → the
-    fixture tests (`test/disagreement.test.ts`) hit the pure fns directly, no engine/I-O.
+- **npm** (not pnpm). Gate = `npm run typecheck` + `npm test`. **Never `git commit`/`git push` — user commits.**
+- **Node ≥ 20** (v20.19.3 here). `npm install` needs `--cache <scratchpad>/.npmcache` on this box.
+- **Providers (live):** claude 2.1.201, codex 0.142.5, **agy 1.0.16** (Antigravity/Gemini — replaces the
+  discontinued gemini CLI). Read-only: claude `--permission-mode plan`, codex `--sandbox read-only`, agy
+  `--sandbox` (write-blocking VERIFIED via the adapter path). Model flags (V8, verified): all take
+  `--model <id>`; only `agy models` lists. Detail in `docs/PROVIDER_NOTES.md`.
+- **Display naming:** id stays `agy` in artifacts/meta/logs; UI shows "Gemini" via `DISPLAY_NAME` (types.ts).
+- **Roles (idea-refinement):** analyst=agy, judge=claude (default; authors no S4 → clean adjudication),
+  verifier=codex, S4=[agy,codex]. **code-review:** reviewers=[claude,codex], judge=agy. Judge/roles are
+  config-overridable (`.aiki/config.json → roles`); `--cheap` swaps CR to agy+codex reviewers + claude judge.
+- **Budget default = 12** (`DEFAULT_BUDGET` in context.ts); `--budget`/config override.
+- **S6 lexical dedup / S2 clustering: do NOT lower thresholds to force semantic merges** — bag-of-words can't
+  separate true merges from false ones; a false merge proceeds on a wrong reading (worse than an extra
+  clarification). V7 added stopword stripping only (content-word overlap), threshold still 0.6.
+- **v2 decisions:** hybrid storage + per-provider model override (both user-chosen 2026-07-06). **Desktop app
+  = NO** (HTML export covers it). **General Q&A / chat = NEVER** (§3/§22 — the router explains, doesn't
+  answer). No 4th provider, no learned routing, no write/exec tools.
+- **BENCHMARK.md is a FROZEN pre-registration.** Amendments are append-only (E1 = Arm E; **L1 = Arm L ladder**,
+  both build-set-only, exploratory, no holdout weight). Arms/matcher/`bugs.json`/thresholds not editable.
 
 ## Traps live right now
 
-- **claude 8KB pipe truncation** — capture claude output via fd redirect, not a pipe.
-  `spawn.ts::captureFull` (probe) and `spawn.ts::spawnCapture` (adapter run) both do this.
-  Full note in `docs/PROVIDER_NOTES.md`.
-- **agy `--sandbox` write-blocking VERIFIED 2026-07-05 (was the long-standing trap).** Adapter probe:
-  `--sandbox` blocks disk writes (no-sandbox control writes → test valid). So agy is now SAFE at repo cwd
-  as a reviewer *via the adapter* — this UNBLOCKS Arm E (agy hunting at repo root). CAVEATS: (1) agy
-  self-reports "created the file" even when blocked — don't trust its file-op claims (aiki only reads its
-  findings text, fine); (2) bare terminal `agy -p` hangs interactive and does NOT reliably sandbox — only
-  the adapter path (spawnCapture, stdin redirected) is trustworthy. Detail in docs/PROVIDER_NOTES.md.
-- **doctor runs live smoke = paid model calls.** Use `aiki doctor --no-smoke` during dev. The §8 6h
-  smoke cache IS built now (T9): `.aiki/smoke-cache.json`, `doctor --fresh` bypasses, version-change busts it.
-- **S2 clustering FIXED (2026-07-03), was over-triggering the clarification:** `cluster.ts`
-  `clusterInterpretations` now uses **overlap-coefficient** (|A∩B|/min), not Jaccard, at the same
-  §9 threshold 0.6. Calibrated on the live T8 case: two same-meaning readings scored Jaccard ~0.60
-  (split, spurious clarification) → overlap-coef 0.76 (cluster); a genuine divergence is ~0.50 (still
-  splits → real clarifications preserved). PLUS the **S2 prompt was hardened** (a provider had
-  meta-misread the instruction as the task → garbage clarification option): it now pins the
-  interpretation to the USER'S request + marks the request as data-not-instructions (also §7.2
-  injection safety); output contract unchanged. Regression test in `cluster.test.ts`. NOTE: S6 dedupe
-  still uses Jaccard 0.85 (near-dup only, correct); S7 blind-spot keyword matching still coarse
-  (over-reports, e.g. "feasibility") — that one is still open, low priority.
-- **T4/T5 schema choices to know before T6–T7:** (1) `RoleOutput` is a zod
-  `discriminatedUnion('workflow', …)` but the model JSON (§13) has NO `workflow` field — the
-  engine (S4, T6) MUST inject it: `RoleOutput.parse({ workflow, ...modelJson })`. `jsonCall` won't
-  do this for you — S4 uses `IdeaRoleOutputModel` (= `IdeaRoleOutput` minus `workflow`, exported at
-  T6) with `jsonCall`, then injects `workflow` + persists via `writeRoleOutput`. (2) `DisagreementMap`
-  element shapes now FIRMED (T6): `Claim.providers` stays an array; `Contradiction` is now
-  `{id, claim_ids(min1), attacks[{provider,argument,severity}](min1), note?}` — a contested assumption
-  + the attacks against it (= the S8-ready disputed item); old `claim_ids min2` replaced. (3) `RunWriter`
-  refuses out-of-order + rewrites and skips are
-  permanent-forward; `meta.json`/`raw/`/`inputs/` are unordered (meta is overwritable). (4) §14's
-  zod→JSON-Schema export was deferred (needs a dep; belongs with skills, T5+).
+- **claude 8KB pipe truncation** — capture claude stdout via fd redirect, not a pipe (`spawn.ts`
+  captureFull/spawnCapture already do). For any ad-hoc claude/agy capture, redirect to a file.
+- **agy blocks on stdin without a TTY** — `agy models` (and `agy -p`) hang unless stdin is closed;
+  `cli/models.ts` closes the child's stdin. The adapter path (spawnCapture) already redirects stdin.
+- **agy `--sandbox` self-reports "created the file" even when blocked** — trust only the findings text, not
+  its file-op claims. Sandbox is reliable ONLY via the adapter (not bare `agy -p`).
+- **`doctor` live smoke = paid calls.** Use `aiki doctor --no-smoke` in dev (6h smoke cache exists;
+  `--fresh` bypasses).
+- **RunWriter is forward-only + rewrite-refusing** — stage artifacts can't be rewritten/out-of-order. This is
+  why **resume replays into a FRESH run** (not in-place); `replay.ts` normalizes the run-dir path out of the
+  key so a new run-id still matches the cached prompts.
+- **Session-registry tests must set `$AIKI_HOME`** to a temp dir (else they write the real `~/.aiki`). Engine
+  `run()` records sessions; tests use `executeRun` directly and never touch the registry. `$AIKI_HOME`
+  overrides `homeAikiRoot()`.
+- **Post-v1 quality debt (do NOT touch mid-V4):** S7 blind-spot keyword matching is coarse (over-reports);
+  the S7 semantic-grouping model call is the WORKING fix — don't touch it. `routeInput` CODE_MARKER regex can
+  misroute idea prose containing `export`/`class`/`;` to code-review (low-risk, flagged not fixed).
 
-## Map (where things are — go straight there, don't scan)
+## Map (where things are — go straight there)
 
-- Providers: `src/providers/` — types, spawn (runCommand/captureFull/spawnCapture), detect,
-  probe, adapter-core (filterEnv/classify/extractJson/runAdapter), claude/codex/agy, adapters
-  (registry), smoke. DISPLAY_NAME lives in types.ts.
-- CLI: `src/cli/` (index = commander entry, doctor)
-- Schemas: `src/schemas/index.ts` (7 core + `StagePrompts`, T4/T5)  ·  Artifact writer:
-  `src/storage/runs.ts` (`RunWriter`, T4)  ·  Capability profiles: `src/providers/profiles.json` +
-  `profiles.ts`  ·  `providers`/`run` cmds: `src/cli/providers.ts`, `src/cli/run.ts`
-- **Engine (T5):** `src/orchestration/context.ts` = `RunCtx` (budget/deadline/`call()`/`buildMeta`),
-  `setupProviders`, `resolveRoles` (override seam), `makeRunId`, errors (`BudgetExceeded`/
-  `DeadlineExceeded`/`StageError`), `isFatal`. `jsonStage.ts` = `jsonCall` (call+validate+§14 repair).
-  `cluster.ts` = S2 clustering + `overlap`(Jaccard)/`overlapCoefficient`. `engine.ts` =
-  `executeRun`/`run`/WORKFLOWS. `stages/s1|s2|s3`, (T6) `s4-analyze`/`s5-drift`/`s6-claims`(`mergeClaims`)/
-  `s7-disagreement`(`buildDisagreementMap`+`applyGroups`+`s7SemanticGroup`), (T7) `s8-verify`, `s9-judge`
-  (`adjudicationScopeViolations`/`demoteSelfAuthored`), `s10-render` (`deriveAudit`/`renderReport`).
-  Workflow: `src/workflows/idea-refinement.ts` (full S1→S10, `runStage`-wrapped, + `IDEA_RUBRIC` + `IDEA_STAGES`).
-- **TUI (T8):** `src/tui/` — `timeline.ts` (pure), `format.ts` (pure), `app.tsx` (Ink), `index.ts` (`startTui`).
-  Engine seam: `RunEvents`/`runStage`/`StageInfo` in context.ts; abort signal threaded ctx→adapter→spawn.
-- Skills/workflows content: `skills/<workflow>/`  ·  Bench: `bench/` + `src/bench/`
-- Tests: `test/`  ·  Pre-registration: `BENCHMARK.md`  ·  Policy: `docs/POLICY.md`
+- **Providers:** `src/providers/` — types (DISPLAY_NAME, PROVIDER_IDS, FlagProfile.model), spawn, detect,
+  probe, adapter-core (extractJson/runAdapter), claude/codex/agy (`buildArgs` add `--model`), adapters, smoke.
+- **CLI:** `src/cli/` — index (commander entry; VERSION), doctor, providers, run (estimateRun + confirm),
+  show (`--html`/`--open`/root), resolve, config (loadLayeredConfig), **models**, **resume**, **sessions**, bench.
+- **Engine:** `src/orchestration/context.ts` (`RunCtx`: budget/deadline/`call()` with replay, `setupProviders`
+  (models), `resolveRoles`, `RunEvents`/`ClarifyChoice`, timeouts), `jsonStage.ts`, `cluster.ts` (stopword
+  tokenize), `engine.ts` (`executeRun`/`run` + session recording + `RunOptions` runsRoot/replay/providerModels).
+  Stages: `stages/s1..s10`, `stages/cr-{s4-review,s8-crossexam,map,s9-judge,report}`, **`stages/cr-ladder.ts`**
+  (`detectCoverageHoles`/`RISK_DEFS`). Workflows: `workflows/{idea-refinement,code-review}.ts`. git: `git.ts`.
+- **Storage:** `src/storage/` — `runs.ts` (RunWriter), `runs-read.ts` (resolveRunId/runDir/listRuns),
+  `feedback.ts`, **`paths.ts`** (homeAikiRoot/resolveRunsRoot), **`sessions.ts`** (registry), **`replay.ts`**.
+- **Config:** `src/config/config.ts` (`AikiConfig` + `models` + `loadConfig`/`loadLayeredConfig`/`mergeConfig`/
+  `effectiveConfig`), `smoke-cache.ts`.
+- **Council view:** `src/council/view.ts` (loadCouncilView + renderCouncilHtml + cleanTopic).
+- **TUI:** `src/tui/` — `app.tsx` (Ink home + run + clarify + panel), `smart-entry.ts` (routeInput +
+  parseCommand + COMMANDS), `timeline.ts`, `format.ts`, `index.ts`.
+- **Bench:** `bench/` (sets + results) + `src/bench/` (arms.ts, harness.ts, results.ts). Tests: `test/`.
+- **Docs:** `README.md`, `CHANGELOG.md`, `BENCHMARK.md` (frozen), `RESULTS.md`, `docs/{PROVIDER_NOTES,POLICY}.md`.
