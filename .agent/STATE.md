@@ -31,12 +31,30 @@ Verdict + benchmark: `RESULTS.md`, `BENCHMARK.md` (frozen pre-registration).
     hunt + claude judge on disputes) **+ a coverage-hole targeted claude hunt**. Pre-registered as
     BENCHMARK.md **amendment L1** (build-set-only, frozen). Pure detector `detectCoverageHoles`/`RISK_DEFS`
     BUILT + tested (`src/orchestration/stages/cr-ladder.ts`, `test/cr-ladder.test.ts`, 7).
+- **Skills (role playbooks) — reviewer + judge WIRED, analyst DRAFTED-not-wired, + §19 exfil lint (uncommitted).**
+  Mechanism, "add-to" (never replace), role-keyed (provider-agnostic): `src/skills/<workflow>/<role>.md`
+  playbooks + `loadSkill` (`src/orchestration/skills.ts`), injected via a `{{SKILL}}` slot at each stage's
+  deterministic fill — `buildReviewerPrompt` (`src/workflows/code-review.ts`, filled at S3) and
+  `buildJudgePrompt` (`src/orchestration/stages/cr-s9-judge.ts`, filled into `basePrompt`; the re-ask inherits
+  it). Build copies `src/skills → dist/skills`. **§19: `loadSkill` now lints every playbook** (`lintSkill`:
+  url / upload / send-to / base64-blob) and **rejects a tripped file → falls back to no-skill** (fail-closed,
+  never crashes the run). Wired playbooks: `code-review/reviewer.md` (hunt-order + evidence-bar + confidence),
+  `code-review/judge.md` (evidence>assertion, UNRESOLVED is rare, real dissent). **Skill absent OR lint-rejected
+  → exact pre-skill baseline (zero regression); judge skill only affects the dispute path.** 222 tests green
+  (`test/skills.test.ts`, 15).
+- **Idea analyst skill — DRAFTED, deliberately NOT WIRED** (`src/skills/idea-refinement/analyst.md`, passes the
+  lint). Held pending the code-review bench A/B (per user decision "A", and the idea-workflow's own deferral
+  note). Wiring is heavier than reviewer/judge — idea's **S3 is a model call** (`s3Prompts` tailors templates),
+  so the playbook must be resolved INTO `IDEA_S4_ANALYST_TEMPLATE` **before** S3 (a `buildAnalystTemplate(skill)`
+  in `src/workflows/idea-refinement.ts` that fills `{{SKILL}}`, then pass the filled template to `s3Prompts`),
+  NOT appended after — else the S3 artifact wouldn't reflect the sent prompt. Remaining candidate: hole-hunter.
 - **Next action:** **finish V4 Arm L wiring** (see `.agent/HANDOFF.md` for the exact spec) — the targeted-hunt
   escalation stage + register Arm L (`ArmId`/`ARM_IDS`/results enums/`VALID_ARMS`/harness) + scripted e2e
   (auth-hole → exactly 1 targeted claude call + merged; covered → 0 hunt calls). Metered comparison run is
   the USER's and is BLOCKED until the V1 bench confirms disputes>0. **If not doing V4, the v2 round is DONE.**
-- **Commit:** everything except V1's committed teeth (`aa173bc`) is UNCOMMITTED. A ready-to-run commit-message
-  draft is in `.agent/HANDOFF.md`. **The user commits — never `git commit`/`git push`.**
+- **Commit:** v1 (`aa173bc`), the v2 product round (`66935c5`), and the V4 detector (`3526eda`) are COMMITTED
+  by the user. **NEW uncommitted work = the skills mechanism + reviewer playbook** (files above). **The user
+  commits — never `git commit`/`git push`.**
 - **Pending USER (metered/manual — none block committing):** (1) V1 paid bench
   `node dist/cli/index.js bench code-review --arms D --set build --yes` (~10 Opus) → **unblocks V4's metered
   run**; (2) TUI home + `/resume` + clarify screens read well; (3) live `aiki resume`; (4) a run with a pinned
@@ -59,6 +77,8 @@ Verdict + benchmark: `RESULTS.md`, `BENCHMARK.md` (frozen pre-registration).
 | **V9 slash-command TUI home** | ✅ | uncommitted |
 | **V5 consolidate & ship** | ✅ | README + CHANGELOG + 0.2.0 + run-cost preview; uncommitted |
 | **V4 escalation ladder** | 🔶 STARTED | Design + BENCHMARK L1 pre-registration + coverage-hole detector DONE. Remaining: Arm L wiring + scripted e2e; then metered run (BLOCKED on V1 bench). |
+| **Skills — reviewer + judge playbooks + §19 lint** | ✅ | `loadSkill`/`lintSkill` + `{{SKILL}}` seam in S4 reviewer + S9 judge; add-to, zero-regression when absent/lint-rejected; 222 tests. Uncommitted. Metered A/B is the USER's. |
+| **Skills — idea analyst playbook** | 🔶 DRAFTED | `src/skills/idea-refinement/analyst.md` written + lint-clean, NOT wired (held for the bench). Wiring = `buildAnalystTemplate` fill BEFORE S3 (S3 is a model call). |
 
 ## Facts already decided (do not re-derive / re-litigate)
 
