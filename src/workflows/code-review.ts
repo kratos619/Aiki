@@ -17,13 +17,14 @@ import { s8CrossExam } from '../orchestration/stages/cr-s8-crossexam.js';
 import { buildReviewMap } from '../orchestration/stages/cr-map.js';
 import { s9ReviewJudge } from '../orchestration/stages/cr-s9-judge.js';
 import { s10ReviewRender } from '../orchestration/stages/cr-report.js';
+import { loadSkill } from '../orchestration/skills.js';
 
 /** §12.2 reviewer prompt (per reviewer). S3 fills {{DIFF_PATH}} deterministically (no model call). */
 export const CR_REVIEWER_TEMPLATE = `ROLE: Independent senior code reviewer. You work ALONE. You have READ-ONLY
 access to the repository at your working directory.
 
 Review ONLY the changes in the diff at {{DIFF_PATH}} (context: repo root = your cwd). Investigate
-surrounding code as needed before reporting.
+surrounding code as needed before reporting.{{SKILL}}
 
 Produce ONLY JSON:
 - task_echo (≤2 sentences),
@@ -32,6 +33,14 @@ Produce ONLY JSON:
   claim, evidence "<the code/behavior that proves it>", suggested_fix, self_confidence 0-1}.
 Rules: severity P0 = correctness/security/data-loss. No style nits below P2.
 Every finding MUST cite a file and line range you verified exists (paths relative to the repo root). JSON only.`;
+
+/**
+ * Fill the reviewer template: {{DIFF_PATH}} → the diff file, {{SKILL}} → the role playbook (or nothing).
+ * An empty skill collapses the slot to nothing, so the prompt is byte-for-byte the pre-skill baseline.
+ */
+export function buildReviewerPrompt(diffPath: string, skill: string): string {
+  return CR_REVIEWER_TEMPLATE.replace('{{DIFF_PATH}}', diffPath).replace('{{SKILL}}', skill ? `\n\n${skill}` : '');
+}
 
 /** Timeline manifest (T8) for the code-review pipeline. S7 (map) is pure/deterministic (role null). */
 export const CR_STAGES: StageInfo[] = [
@@ -58,8 +67,9 @@ export async function runCodeReview(ctx: RunCtx, input: string): Promise<void> {
   };
   await ctx.writer.writeJson('intent-contract', contract);
 
-  // S3 (deterministic, NO call): fill the reviewer template's DIFF_PATH slot; persist for forensics.
-  const prompt = CR_REVIEWER_TEMPLATE.replace('{{DIFF_PATH}}', diffPath);
+  // S3 (deterministic, NO call): fill the reviewer template's slots — DIFF_PATH + the reviewer
+  // playbook (skill); persist the assembled prompt for forensics.
+  const prompt = buildReviewerPrompt(diffPath, loadSkill('code-review', 'reviewer'));
   await ctx.writer.writePrompt('reviewer.md', prompt);
 
   const reviewers = await runStage(ctx, 'S4', () => s4Review(ctx, prompt, files));

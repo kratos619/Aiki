@@ -4,10 +4,38 @@ Overwrite at each handoff; keep current, not cumulative. Read after `.agent/STAT
 
 ---
 
-**Status (2026-07-06):** v2 product round CODE-COMPLETE (V1–V3, V5–V9); **V4 escalation ladder STARTED**
-(design + BENCHMARK.md L1 pre-registration + the pure coverage-hole detector — done + tested). **207 tests
-green, typecheck + build clean. No half-written code.** Everything except V1's committed teeth (`aa173bc`)
-is UNCOMMITTED — the user commits (draft below).
+**Status (2026-07-06):** v1 + v2 product round + V4 detector are COMMITTED (`aa173bc`, `66935c5`, `3526eda`).
+**NEW this session (uncommitted, CLEAN — not half-done): skills mechanism + reviewer & judge playbooks +
+§19 exfil lint; idea analyst playbook DRAFTED but NOT wired.** Add-to, role-keyed:
+`src/skills/<workflow>/<role>.md` + `loadSkill` (`src/orchestration/skills.ts`) → `{{SKILL}}` slot filled by
+`buildReviewerPrompt` (`src/workflows/code-review.ts`, S4) and `buildJudgePrompt`
+(`src/orchestration/stages/cr-s9-judge.ts`, S9 basePrompt — the re-ask inherits it); build copies
+`src/skills → dist/skills`; wired playbooks `code-review/{reviewer,judge}.md`. **§19: `loadSkill` lints each
+playbook (`lintSkill`: url/upload/send-to/base64) and rejects a tripped file → no-skill fallback (fail-closed).**
+Skill absent OR lint-rejected → exact baseline (zero regression); judge skill affects only the dispute path.
+`src/skills/idea-refinement/analyst.md` is DRAFTED + lint-clean but INTENTIONALLY UNWIRED (held for the bench).
+**222 tests green, typecheck + build clean.** The user commits.
+
+## Wiring the idea analyst later (when the bench validates the pattern) — NOT the reviewer/judge recipe
+Idea's S3 (`s3Prompts`) is a MODEL call that tailors the templates, and it errors on any unresolved `{{...}}`.
+So do NOT add a raw `{{SKILL}}` slot to the `slots` map (the model may fumble it) and do NOT append after S3
+(the persisted `03-prompts/analyst.md` artifact would then not match what S4 received). Instead: add a
+`buildAnalystTemplate(skill)` in `src/workflows/idea-refinement.ts` that resolves `{{SKILL}}` in
+`IDEA_S4_ANALYST_TEMPLATE` (place the slot after `{{INPUT_PATH}}`, before "Produce ONLY JSON"), then pass the
+already-skill-filled template into `s3Prompts({ templates: { analyst: buildAnalystTemplate(loadSkill('idea-refinement','analyst')) }, ... })`. S3's deterministic fallback preserves it verbatim; the model is told to keep
+template rules intact. Add tests mirroring `buildReviewerPrompt`.
+
+**USER — eyeball + optional metered A/B (no-live-paid-runs; both are yours to run):**
+1. Cheap, FREE: the assembled reviewer prompt now carries the playbook (see it via
+   `node -e "import('./dist/workflows/code-review.js').then(m=>console.log(m.buildReviewerPrompt('X', require('fs').readFileSync('dist/skills/code-review/reviewer.md','utf8').trim())))"`).
+2. Metered A/B (isolates the skills' effect — same arm, prompt is the only change):
+   - Skill OFF: `rm dist/skills/code-review/*.md` (or one file to isolate a single skill) →
+     `node dist/cli/index.js bench code-review --arms D --set build --yes` → record recall/precision.
+   - Skill ON: `npm run build` (restores them) → rerun the same bench → compare. Lift = the skills' value.
+   - NOTE the judge skill only changes runs that produce disputes; on zero-dispute cases it's a no-op.
+
+**V4 remains the open in-flight item** (spec unchanged, below) — do it, the skills A/B, and the commit
+in whatever order you prefer; they're independent.
 
 ## Fresh-session orientation (30s)
 1. Read `.agent/STATE.md` (done if you're here).
