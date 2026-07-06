@@ -67,14 +67,26 @@ dispute count, verdict). USER: `aiki show <recent-run> --html` opens in a browse
 
 ## V4 — Escalation ladder (needs V1 teeth)   [token endgame; NEW pre-registration]
 
-Deterministic cascade for code-review (NOT learned — §22-safe):
-tier1 = agy+codex hunt (as --cheap); escalate a claude call ONLY on (a) disputed findings (thin
-judge, exists) or (b) coverage-hole: diff touches risk globs/keywords (auth/payment/crypto/async)
-where tier1 reported zero findings in that category → ONE targeted claude hunt on those hunks only.
-Pre-register as amendment L1 in BENCHMARK.md (build set, exploratory) BEFORE any metered run;
-report strict AND category-relaxed recall (known matcher limitation, see HANDOFF 2026-07-05).
-Acceptance: scripted-adapter e2e (hole triggers targeted call; no hole → 0 claude calls); USER:
-build-set bench ladder-arm vs D, expect ≈D-adjusted recall at ≤0.5 claude/case.
+Deterministic cascade for code-review (NOT learned — §22-safe): tier1 = agy+codex hunt (= Arm E);
+escalate a claude call ONLY on (a) a disputed finding (Arm E's judge) or (b) a coverage hole (targeted
+claude hunt on the risky hunks). **HARD PREREQ: the V1 S8-teeth disagreement signal must be live (disputes
+> 0 on the build set — the V1 paid bench) or (a) never fires and L1 is invalid.**
+
+**DONE 2026-07-06 (design + pre-registration + testable core):**
+- **Pre-registered** as amendment **L1** in BENCHMARK.md (append-only; build-set-only, exploratory, no
+  holdout weight — like E). Arm L composition, the coverage-hole rule, RISK_DEFS (auth/crypto/payment/async
+  globs+keywords+covering-categories), Question L1 (Arm L recall ≥ 0.90×D at ≤0.5 claude/case; report
+  strict AND category-relaxed recall), and the scripted acceptance are all FROZEN there.
+- **Coverage-hole detector BUILT + tested (pure, no paid calls):** `detectCoverageHoles(diff, findings)` +
+  `RISK_DEFS` in `src/orchestration/stages/cr-ladder.ts`; `test/cr-ladder.test.ts` (7). A risk is a "hole"
+  iff the diff triggers it (file glob OR added-line keyword) AND tier-1 has no finding of that risk's
+  category in the triggering files.
+
+**REMAINING (next chunk):** wire **Arm L** — the targeted-hunt escalation stage (a claude review scoped to
+the hole files → validate file:line → merge into the kept set) added to the code-review pipeline behind a
+ladder flag, `ARM_IDS`/results-enum/`VALID_ARMS`/harness role-injection `+L`, + the scripted-adapter e2e
+(hole → exactly 1 targeted call; covered → 0). Then USER: `bench code-review --arms D,L --set build --yes`
+(after the V1 bench confirms disputes>0). Metered run = the user's (no-live-paid-runs).
 
 ## V5 — Consolidate & ship   [DONE 2026-07-06]
 
