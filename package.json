@@ -1,6 +1,6 @@
 {
   "name": "aiki",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Local-first orchestration CLI binding your installed AI coding CLIs into schema-validated multi-model workflows.",
   "type": "module",
   "bin": {

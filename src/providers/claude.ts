@@ -22,6 +22,7 @@ const claudeSpec: AdapterSpec = {
     const args = ['-p', req.prompt];
     if (req.expectJson && flags.jsonOutput) args.push('--output-format', 'json');
     if (req.readOnly !== false && flags.readOnlyFlag === 'plan') args.push('--permission-mode', 'plan');
+    if (flags.model) args.push('--model', flags.model); // V8: verified `claude --model <alias|name>`
     return args;
   },
   extractText(stdout: string): string {

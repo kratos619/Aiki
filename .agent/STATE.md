@@ -5,11 +5,17 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
 
 ## Now
 
-- **Position (2026-07-05): v1 COMPLETE — thesis PROVEN, committed through `6ace559`.** T0–T12 done.
+- **Position (2026-07-06): v1 COMPLETE — thesis PROVEN, committed through `aa173bc`.** T0–T12 done.
   KC#1 PASS (D 100% vs B 77% recall = 1.30×, precision tied 1.00), KC#4 PASS, KC#2 deferred (see RESULTS.md).
   `--cheap` mode shipped (Arm E role swap). agy `--sandbox` VERIFIED write-safe. **Now working the v2 product
-  round → `plan/AIKI-v2-plan.md` (V1→V5). Current task: V1 (S8-teeth) — CODE DONE + tests green
-  (uncommitted), awaiting USER metered validation.** 167 tests green, build clean.
+  round → `plan/AIKI-v2-plan.md` (V1→V5 + v2.1 hardening V6→V9). Current: **v2 product round basically DONE
+  (2026-07-06)** — V1 S8-teeth (committed `aa173bc`) + V2 smart-entry + V3 council view/readability + v2.1
+  V6–V9 (hybrid storage, timeouts, sessions/resume, intent-clarify, model config, slash-command home) +
+  **V5 ship (README, CHANGELOG, 0.2.0, run-cost preview)**. 200 tests green, build clean. **ONLY V4
+  (escalation ladder) unstarted — BLOCKED on the V1 paid bench.** Everything except V1's committed teeth is
+  UNCOMMITTED. Prior: V3 CODE DONE + free
+  checks green (uncommitted), but USER validation found the HTML hard to understand; V1 paid validation
+  explicitly deferred by user.** 173 tests green, build clean.
   _Everything below this bullet until "## Task ledger" is DATED HISTORY (the T12 benchmark saga) — read only
   if you need detail; the live status is this bullet + the Next-action bullet + the v2 plan._
   - **T12 built (2026-07-04):** `bench/sets/code-review/holdout/{01-payments…10-analytics}/` = **10 cases /
@@ -42,8 +48,9 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
     met). Two UI bugs fixed (multi-line-paste input corruption; label/provider spacing). Cosmetic-only
     leftover: an aborted in-flight stage shows ✖ (killed → quorum-fail) not ⊘ — harmless, not fixed.
   - **T7 live proof (still valid):** run `…-af3d`, consensus=3 cross-provider, anti-blending 0 out-of-scope.
-- **First, sanity-check (30s):** `npm run typecheck && npm test` should be green (**148 tests**), and
-  `node dist/cli/index.js doctor --no-smoke` should list 3 providers.
+- **Sanity-check (2026-07-05):** `npm run typecheck`, `npm run build`, and `npm test` are green
+  (**173 tests**); `git diff --check` clean; `node dist/cli/index.js doctor --no-smoke` listed 3/3 providers
+  ready before V2 edits.
 - **The 2026-07-04 holdout run is VOID (Opus exhaustion mid-sweep) — do NOT fill RESULTS.md from it.**
   Opus quota died after case 02: A/B/C (claude-only) crashed with `provider claude call failed (CRASH)`
   from case 03 on (2/2/1 scored cases resp.); Arm D tolerated the dead claude reviewer and silently
@@ -105,16 +112,79 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
   verdict, run-cost preview). **Decided + logged in the plan: desktop app NO (terminal users, Electron
   tax; HTML export covers it — revisit only on external-user signal); general Q&A/chat NEVER (§3/§22 +
   council adds cost not accuracy on single-answer questions — router explains, doesn't answer).**
-- **Next action:** V1 (S8-teeth) CODE SHIPPED (uncommitted) — `cr-s8-crossexam.ts` prompt rework
-  (adversarial: rank peer findings weakest-first, actively refute the weakest with file:line evidence,
-  REFUTE only with evidence else UNCERTAIN) + rubber-stamp ONE-re-ask (mirrors S9 retry; still-stamped →
-  `synthesis_suspect`) + 4 unit tests (`test/v1-s8-teeth.test.ts`). "Ranked-weakest section" = the
-  existing `all_confirmed_justification` field (schema UNCHANGED per plan). 167 tests green, typecheck +
-  build clean; t10 e2e callCount=5 held. **AWAITING USER metered validation:**
-  `node dist/cli/index.js bench code-review --arms D --set build --yes` (~10 Opus) → expect disputes>0 on
-  ≥2/5 cases + S9 judge calls in metas, recall MUST stay 20/20 (drops → teeth cutting real findings →
-  revert cr-s8 prompt, iterate on build set NOT holdout). Passes → start V2 (smart entry).
-- **Scratch/probe files:** all deleted. Working tree = only intended edits.
+- **V3 READABILITY PASS DONE (2026-07-06, uncommitted) — renderer-only, schemas/artifacts UNCHANGED.**
+  Rewrote `src/council/view.ts`: the idea HTML is now a decision brief — verdict hero + plain status label
+  (Feasible-with-caveats / Proceed-with-caution, derived from upheld-dispute count), honest at-a-glance
+  (agreed / risks-that-stand / not-examined instead of the meaningless "9 disputes"), biggest-risk +
+  start-here callout, "Risks that held up" cards that RESOLVE `claim_ids`→the assumption and translate
+  UPHOLD/REJECT away, **blind spots promoted to a first-class section** (were counted but never rendered —
+  real bug), numbered "Recommended next steps" (derived), and collapsed `<details>` for dismissed
+  objections + full technical (per-model raw output, dissent, confidence). Two code-review-of-V3 gaps
+  fixed: blind_spots never shown; disputes never showed the assumption under attack. All new `CouncilView`
+  fields are ADDITIVE (topic/signal/agreements/risks/defended/blindSpots/nextSteps/biggestRisk/
+  bestNextStep/moderator) so `src/tui/app.tsx` is untouched. `show --html` now prints an ABSOLUTE
+  (clickable) path and gained `--open` (auto-launch via open/xdg-open/start) — fixes the manual two-step.
+  Aesthetic: editorial "decision memo", warm-ivory paper, native serif/sans/mono (no web-font fetch → stays
+  truly offline), staggered load reveal, prefers-reduced-motion honored. Regenerated the sample HTML.
+  Screenshot-verified in a browser. `test/t9.test.ts` +1 idea-path html regression (blind spots rendered,
+  assumption resolved, raw ids kept out of the main body). typecheck + build clean, **174 tests green**.
+- **V2/V3 code review verdict (2026-07-06):** V2 smart-entry router + `show`/default-branch wiring are
+  correct (the earlier "unknown option --html" was a stray `aiki` token in the user's command, not a bug).
+  Minor NON-blocking note (not fixed, out of scope): `routeInput` CODE_MARKER regex in `src/tui/smart-entry.ts`
+  can misroute idea prose containing `export`/`class`/`;` to code-review — low-risk, flag only.
+- **v2.1 HARDENING ROUND (added 2026-07-06 from real-use feedback; decisions locked with user):** hybrid
+  storage + config+free-model-override. Plan items V6–V9 in `plan/AIKI-v2-plan.md`. Progress:
+  - **V6.1 hybrid runs root DONE (uncommitted):** `src/storage/paths.ts` (`homeAikiRoot`, `resolveRunsRoot`
+    = repo `.aiki` when in a git repo, else `~/.aiki`). Wired into engine `run()` (`RunOptions.runsRoot`),
+    the TUI (`AppProps.runsRoot`, `startRun`), and `cli/run.ts` + `show`/`resolve` (CLI entry injects the
+    resolved root; **library defaults stay `.aiki` so all tests are untouched**). `test/paths.test.ts` (3).
+    Verified: `show` from repo → repo `.aiki`; from `/tmp` → `~/.aiki`.
+  - **V6.2 timeouts raised DONE (uncommitted):** `context.ts` per-call 180→300s, wall-clock 10→20min
+    (user-authorized §7.1/§19 deviation; a real Opus judge hit the old 180×2=360s ceiling + the 10-min cap).
+  - **V6.3 sessions + resume DONE (uncommitted):** global registry `~/.aiki/sessions.jsonl` (via
+    `src/storage/sessions.ts`; `$AIKI_HOME` overrides `~/.aiki`), `aiki sessions` (list, newest-first),
+    `aiki resume <id>` (`src/cli/resume.ts`). **Resume = CALL REPLAY** (`src/storage/replay.ts`): re-runs the
+    pipeline into a fresh run; `RunCtx.call` replays any completed `(provider,prompt)` from the old run's
+    `raw/` outputs (run-dir path normalized so a new run-id still matches), so only the failed stage onward
+    hits a model. Replayed calls don't spend budget and aren't counted as new calls (moved `calls.push`
+    into the real-call branch). Sessions recorded in engine `run()` (headless) + `app.tsx` (TUI); tests use
+    `executeRun` directly so they never touch the registry. `test/resume.test.ts` (5). Smoke-verified:
+    `sessions`/`resume` error paths + help.
+  - **Masthead cleaned:** `cleanTopic()` strips the "The user is asking about…" preamble → plain question.
+  - **V7 intent-clarify UX DONE (uncommitted):** clarify now offers pick-one / `N+1`=both (combine all) /
+    `N+2`=other (type your own). `RunEvents.clarify` → `ClarifyChoice` (pick|both|text) in `context.ts`;
+    `s2Misread` maps to `chosen.how` = user-selected|user-combined|user-typed; TUI `app.tsx` renders the
+    options + a text-entry sub-mode (`clarifyTyping`/`clarifyText`). Near-identical readings: STOPWORD +
+    framing-word strip in `cluster.ts tokenize` (content-word overlap; 0.6 threshold UNCHANGED — loosening
+    = false merges, documented trap). `test/{s2-clarify,cluster}.test.ts`. Residual: bag-of-words can't
+    merge inflected paraphrases; `both` is the reliable merge (human-in-loop by design, §19).
+  - **V8 model config DONE (uncommitted):** verified flags (PROVIDER_NOTES): claude `--model`, codex
+    `-m/--model` (before prompt), agy `--model` + `agy models` lists (only agy enumerates). Per-PROVIDER
+    model (`models:{claude?,codex?,agy?}` in AikiConfig). Config LAYERING: `loadLayeredConfig` = global
+    `~/.aiki/config.json` base + project `.aiki` override (`mergeConfig` merges roles/models keys); wired
+    into run/resume/TUI/`config`. Threading: config.models → `RunOptions.providerModels`/`AppProps` →
+    `setupProviders(models)` → `FlagProfile.model` → adapter `buildArgs` `--model`. `aiki models` command
+    (`cli/models.ts`; agy list via execFile with stdin CLOSED — agy blocks without a TTY). `$AIKI_HOME`
+    overrides `~/.aiki`. `test/v8-models.test.ts` (6). Live-verified models/config with pins.
+  - **V9 slash-command home DONE (uncommitted):** TUI entry is now a home screen — banner + version + text
+    box with `/idea <text>`, `/review [--branch]`, `/resume <id>`, `/sessions`, `/models`, `/config`,
+    `/help` (single-key r/b/i removed). `parseCommand` + `COMMANDS` (pure) in `smart-entry.ts`; non-slash
+    text still → `routeInput`. Info commands render an in-screen panel; `/resume` builds the replay cache +
+    `startRun(...,replay)`. `formatModels()` extracted for the panel. Removed vestigial `routedIdea`.
+    `test/tui.test.ts` +3. Render = manual acceptance; module-load verified.
+  - **V5 ship DONE (uncommitted):** `README.md` (what aiki is + EXACT RESULTS §7 verdict + quickstart +
+    slash-command table + models + sessions/resume + safety), `CHANGELOG.md`, version 0.1.0→**0.2.0**
+    (`package.json` + `cli/index.ts VERSION`), run-cost preview on `aiki run` (`estimateRun` pure + tested,
+    `--yes`/non-TTY-gated confirm). `test/run-cost.test.ts`. 200 tests green.
+- **Next action:** **V4 — escalation ladder** is the ONLY unstarted item, and it is BLOCKED on the V1 paid
+  bench (needs the disagreement signal + a NEW BENCHMARK.md pre-registration L1). So the actionable path is:
+  (1) USER commits the v2 round (draft message ready — see below/HANDOFF), (2) USER runs the pending
+  validations, (3) then V4 once the V1 bench passes. If not doing V4, the v2 product round is COMPLETE.
+- **Still pending USER (metered/manual, unchanged):** (1) V1 paid bench `node dist/cli/index.js bench
+  code-review --arms D --set build --yes` (~10 Opus) → unblocks V4; (2) V2 manual TUI (banner + `r`);
+  (3) V3 — `show <run> --html --open` reads clearly. V4 escalation ladder BLOCKED on (1).
+- **Scratch/probe files:** all deleted. Working tree note: `AGENTS.md` is untracked from outside this
+  session; current session only refreshed `.agent` handoff/ledger.
   Frozen still frozen: arms/matcher/`bugs.json`/thresholds/pipeline. Post-eval fix list (do NOT touch now):
   S8 never-refutes (agy judge dormant in bench — 0 calls ever), agy sandbox verify, S7 coarse keywords.
 - **Post-verdict experiment "Arm E" (user proposal 2026-07-05, logged not built):** Opus-thrift role swap —
@@ -269,9 +339,11 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
   hardening; see traps). Remaining low-priority: S7 blind-spot keyword matching is coarse → over-reports
   (e.g. flags "feasibility" as uncovered though discussed). Not blocking. **Do NOT touch the S7
   semantic-grouping model call — that's the working fix, not the coarse part.**
-- **In-flight?** V1 (S8-teeth) is CODE-COMPLETE + tests green but NOT yet user-validated (the metered
-  bench is the user's, per no-live-paid-runs). No half-written code. Read `.agent/HANDOFF.md` for the exact
-  validation command + the pass/fail rule + where the code lives.
+- **In-flight?** No half-written code. **The entire v2 product round (V1–V3, V6–V9, V5 ship) is
+  CODE-COMPLETE + free checks green (200 tests, build clean).** Only V4 (escalation ladder) is unstarted and
+  it's BLOCKED on the V1 paid bench. Everything except V1's committed teeth (`aa173bc`) is UNCOMMITTED — a
+  commit-message draft is in `.agent/HANDOFF.md`; the user commits. Manual/metered validations still the
+  user's. Read `.agent/HANDOFF.md` for the commit draft + validation list + the V4 spec.
 
 ## Task ledger (§24)
 
@@ -291,7 +363,10 @@ For full history: `git log --oneline` (free). For the spec: `plan/AIKI-build-pla
 | T11 bench harness + build set | ✅ | arms A–D, `sameFinding` scorer, resolve-CR, 5 cases/20 bugs, incremental results; 9 tests + scripted bench e2e |
 | T12 freeze + holdout + RESULTS.md | ✅ DONE (2026-07-05) | Verdict written: KC#1 PASS (D 43/43=100% vs B 33/43=77%, 1.30×; precision 1.00/1.00, 59 FP-adjudicated → 0 FP), KC#4 PASS, KC#2 deferred (A2). Full writeup in RESULTS.md §1/§4–§7. Freeze LIFTED. |
 | **v1 shipped extras** | ✅ | agy sandbox VERIFIED; Arm E built + build-set-evaluated (E ~94% true recall at ~⅓ Opus); `aiki run code-review --cheap` shipped. |
-| **v2 round → `plan/AIKI-v2-plan.md`** | 🔶 IN PROGRESS | V1 S8-teeth code done + 167 tests green (awaiting USER bench validation) → V2 smart-entry → V3 Council View + `show --html` → V4 escalation ladder → V5 ship. Desktop app + chat = rejected (logged in plan). |
+| **v2 round → `plan/AIKI-v2-plan.md`** | 🔶 IN PROGRESS | V1 S8-teeth code done in `aa173bc` (paid bench deferred by user); V2 smart-entry + V3 Council View/`show --html` code done; V3 readability pass DONE 2026-07-06 (plain decision brief). V4 ladder blocked on V1 paid bench → V5 ship. Desktop app + chat = rejected. |
+| **v2.1 hardening → plan V6–V9** | ✅ COMPLETE 2026-07-06 | V6 hybrid storage + timeouts + sessions/resume · V7 intent-clarify (both/type-your-own + stopword merge) · V8 per-provider model config + `aiki models` · V9 slash-command TUI home. 198 tests green. All uncommitted. |
+| **V5 ship** | ✅ DONE 2026-07-06 | README + CHANGELOG + version 0.2.0 + run-cost preview on `aiki run`. 200 tests green. |
+| **V4 escalation ladder** | ⛔ BLOCKED | needs the V1 paid bench (disagreement signal) + a NEW BENCHMARK.md pre-registration. Only unstarted v2 item. |
 
 ## Facts already decided (do not re-derive, do not re-litigate)
 

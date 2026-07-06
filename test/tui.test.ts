@@ -11,6 +11,7 @@ import {
   type StageRow,
 } from '../src/tui/timeline.js';
 import { formatCompletion, formatError } from '../src/tui/format.js';
+import { parseCommand, quickActionReducer, routeInput } from '../src/tui/smart-entry.js';
 import { IDEA_STAGES } from '../src/workflows/idea-refinement.js';
 import type { RoleMap } from '../src/orchestration/context.js';
 import type { DisagreementMap, JudgeReport } from '../src/schemas/index.js';
@@ -86,5 +87,47 @@ describe('completion + error formatters', () => {
     expect(formatError('AUTH').fix).toMatch(/login/);
     expect(formatError('ZZZ').fix).toMatch(/logs/);
     expect(formatError('QUORUM', '.aiki/runs/x').partialDir).toBe('.aiki/runs/x');
+  });
+});
+
+describe('smart entry router (V2)', () => {
+  it('routes short general questions away from council work', () => {
+    expect(routeInput('What is the capital of France?')).toBe('question');
+    expect(routeInput('how do I reverse a list?')).toBe('question');
+  });
+
+  it('routes code-ish text toward code review', () => {
+    expect(routeInput('diff --git a/src/a.ts b/src/a.ts')).toBe('code-review');
+    expect(routeInput('src/payments/charge.ts has an auth check')).toBe('code-review');
+    expect(routeInput('const x = user.id;')).toBe('code-review');
+  });
+
+  it('keeps product ideas on the idea flow', () => {
+    expect(routeInput('Build a local tool that compares model critiques for code review')).toBe('idea');
+  });
+
+  it('maps quick actions and blocks repo actions outside git', () => {
+    expect(quickActionReducer('r', true).action).toBe('review-working-tree');
+    expect(quickActionReducer('b', true).action).toBe('review-branch');
+    expect(quickActionReducer('i', false).action).toBe('idea');
+    expect(quickActionReducer('r', false)).toMatchObject({ action: null, message: 'not inside a git repo' });
+  });
+});
+
+describe('slash-command parser (V9)', () => {
+  it('non-slash input → null (falls through to routeInput)', () => {
+    expect(parseCommand('build a local cli')).toBeNull();
+    expect(parseCommand('  what is X?')).toBeNull();
+  });
+
+  it('parses command + rest + args', () => {
+    expect(parseCommand('/idea a fridge-to-recipe app')).toEqual({ cmd: 'idea', rest: 'a fridge-to-recipe app', args: ['a', 'fridge-to-recipe', 'app'] });
+    expect(parseCommand('/review --branch')).toEqual({ cmd: 'review', rest: '--branch', args: ['--branch'] });
+    expect(parseCommand('/sessions')).toEqual({ cmd: 'sessions', rest: '', args: [] });
+  });
+
+  it('lowercases the command, trims, and handles a bare slash', () => {
+    expect(parseCommand('  /RESUME 20260706-abcd  ')).toEqual({ cmd: 'resume', rest: '20260706-abcd', args: ['20260706-abcd'] });
+    expect(parseCommand('/')).toEqual({ cmd: '', rest: '', args: [] });
   });
 });

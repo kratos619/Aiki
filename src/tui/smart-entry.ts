@@ -1,0 +1,59 @@
+export type InputRoute = 'question' | 'code-review' | 'idea';
+export type QuickAction = 'review-working-tree' | 'review-branch' | 'idea';
+
+export const PRODUCT_LINE =
+  'aiki stress-tests ideas and reviews code; for general questions use a single model — a council adds cost, not accuracy, when there is one right answer.';
+
+const QUESTION_START = /^(what|why|how|who|when|where|is|are|can|could|should|would|do|does|did|will)\b/i;
+const CODE_MARKER = /(diff --git|^@@|\+\+\+ b\/|--- a\/|```|[A-Za-z0-9_-]+\/[A-Za-z0-9_./-]+\.(ts|tsx|js|jsx|py|go|rs|java|rb|php|css|html|md)\b|\b(function|const|let|class|import|export)\b|[{};])/m;
+
+export function routeInput(text: string): InputRoute {
+  const trimmed = text.trim();
+  if (!trimmed) return 'idea';
+  const codeLike = CODE_MARKER.test(trimmed);
+  if (codeLike) return 'code-review';
+  const words = trimmed.split(/\s+/).filter(Boolean).length;
+  if (words <= 18 && (trimmed.endsWith('?') || QUESTION_START.test(trimmed))) return 'question';
+  return 'idea';
+}
+
+// ── Slash commands (V9) — the deterministic home-screen command set. NOT chat: a fixed parser. ──────
+
+export interface ParsedCommand {
+  cmd: string; // lowercased command name, no leading slash ('' for a bare "/")
+  rest: string; // everything after the command name, trimmed (e.g. the idea text)
+  args: string[]; // `rest` split on whitespace (for flag checks like --branch)
+}
+
+/** The home-screen command list (also drives `/help`). */
+export const COMMANDS: Array<{ name: string; usage: string; help: string }> = [
+  { name: 'idea', usage: '/idea <text>', help: 'stress-test an idea with the council' },
+  { name: 'review', usage: '/review [--branch]', help: 'review your working-tree changes (or the branch)' },
+  { name: 'resume', usage: '/resume <id>', help: 'continue a killed/timed-out run (replays finished work)' },
+  { name: 'sessions', usage: '/sessions', help: 'list past runs (newest first)' },
+  { name: 'models', usage: '/models', help: 'show/choose the model each provider uses' },
+  { name: 'config', usage: '/config', help: 'show the effective config' },
+  { name: 'help', usage: '/help', help: 'this list' },
+];
+
+/** Parse a slash command like "/review --branch" or "/idea build X". Returns null for non-slash input
+ *  (which then goes through `routeInput`). Pure + deterministic. */
+export function parseCommand(input: string): ParsedCommand | null {
+  const t = input.trim();
+  if (!t.startsWith('/')) return null;
+  const body = t.slice(1);
+  const sp = body.search(/\s/);
+  const cmd = (sp === -1 ? body : body.slice(0, sp)).toLowerCase();
+  const rest = sp === -1 ? '' : body.slice(sp + 1).trim();
+  return { cmd, rest, args: rest ? rest.split(/\s+/) : [] };
+}
+
+export function quickActionReducer(key: string, hasRepo: boolean): { action: QuickAction | null; message?: string } {
+  const k = key.toLowerCase();
+  if (k === 'i') return { action: 'idea' };
+  if (k === 'r' || k === 'b') {
+    if (!hasRepo) return { action: null, message: 'not inside a git repo' };
+    return { action: k === 'r' ? 'review-working-tree' : 'review-branch' };
+  }
+  return { action: null };
+}
