@@ -15,6 +15,7 @@ import { appendFeedback, buildFeedbackEntries, FeedbackError, parseVerdictFlags,
 
 export interface ResolveOptions {
   verdict?: string[]; // repeatable --verdict <id>=<verdict>; presence ⇒ non-interactive
+  root?: string; // runs root (hybrid, injected by the CLI entry); default '.aiki'.
 }
 
 /** A uniform annotatable item across workflows: id + a ruling/status snapshot + a display label. */
@@ -87,14 +88,15 @@ function shortcutKeys(vocab: Verdict[]): Record<string, Verdict> {
 }
 
 export async function resolve(runArg: string | undefined, opts: ResolveOptions = {}): Promise<number> {
-  const match = await resolveRunId(runArg);
+  const root = opts.root ?? '.aiki';
+  const match = await resolveRunId(runArg, root);
   if (!match.ok) {
     if (match.kind === 'none') process.stderr.write('no runs found under .aiki/runs/\n');
     else if (match.kind === 'no-match') process.stderr.write(`no run matches "${match.arg}". Omit the id for the most recent run.\n`);
     else process.stderr.write(`"${match.arg}" is ambiguous — matches:\n${match.candidates.map((c) => `  ${c}`).join('\n')}\n`);
     return 1;
   }
-  const dir = runDir(match.runId);
+  const dir = runDir(match.runId, root);
   const meta = await readJsonArtifact<RunMeta>(dir, 'meta.json');
   const workflow: WorkflowId = meta?.workflow ?? 'idea-refinement';
   const judge = await readJsonArtifact<JudgeReport>(dir, '09-judge-report.json');

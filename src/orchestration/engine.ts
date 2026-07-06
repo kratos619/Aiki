@@ -3,8 +3,11 @@
 // (budget/deadline/abort/bad-output/quorum) becomes a graceful failure: partial artifacts on disk
 // stay valid (RunWriter atomic writes) and meta records what happened (§6, §19).
 
+import { dirname, resolve } from 'node:path';
 import { BudgetExceeded, DeadlineExceeded, StageError, makeRunId, resolveRoles, setupProviders, RunCtx, type RoleMap, type RunEvents, type WorkflowId } from './context.js';
+import type { ProviderId } from '../providers/types.js';
 import { RunWriter } from '../storage/runs.js';
+import { recordSession, updateSessionStatus } from '../storage/sessions.js';
 import { runIdeaRefinement } from '../workflows/idea-refinement.js';
 import { runCodeReview } from '../workflows/code-review.js';
 
@@ -60,6 +63,10 @@ export interface RunOptions {
   events?: RunEvents; // TUI seam (T8); absent = headless
   roleOverrides?: Partial<RoleMap>; // §10 override seam; config loading is T9
   cwd?: string; // provider-call working dir; code-review sets the repo root (T10). Default = run dir.
+  runsRoot?: string; // where to write .aiki/runs (hybrid: repo vs ~/.aiki). Default = '.aiki' (cwd-relative).
+  replay?: Map<string, string>; // resume (V6.3): prior (provider,prompt)→output; matched calls skip the model.
+  resumedFrom?: string; // resume: the run id this one continues (recorded in the session registry).
+  providerModels?: Partial<Record<ProviderId, string>>; // V8: per-provider model → CLI `--model <id>`.
 }
 
 /**
@@ -68,7 +75,7 @@ export interface RunOptions {
  * surfaces as a call failure handled by the stage's quorum logic.
  */
 export async function run(workflow: WorkflowId, input: string, opts: RunOptions = {}): Promise<RunOutcome> {
-  const handles = await setupProviders();
+  const handles = await setupProviders(opts.providerModels);
   if (handles.length < 2) {
     return {
       ok: false,
@@ -81,7 +88,7 @@ export async function run(workflow: WorkflowId, input: string, opts: RunOptions 
 
   const runId = makeRunId(workflow);
   const roles = resolveRoles(workflow, handles.map((h) => h.id), opts.roleOverrides);
-  const writer = new RunWriter(runId);
+  const writer = new RunWriter(runId, opts.runsRoot);
   const ctx = new RunCtx({
     runId,
     workflow,
@@ -93,7 +100,21 @@ export async function run(workflow: WorkflowId, input: string, opts: RunOptions 
     deadlineMs: opts.deadlineMs,
     signal: opts.signal,
     events: opts.events,
+    replay: opts.replay,
   });
 
-  return executeRun(ctx, input, WORKFLOWS[workflow]);
+  // Register the session (V6.3) so `aiki sessions`/`resume` can find it from anywhere. run() is a
+  // real-CLI entry (setupProviders); tests use executeRun directly and never touch the global registry.
+  await recordSession({
+    id: runId,
+    workflow,
+    cwd: opts.cwd ?? writer.dir,
+    runsRoot: resolve(dirname(dirname(writer.dir))),
+    startedAt: new Date().toISOString(),
+    status: 'running',
+    ...(opts.resumedFrom ? { resumedFrom: opts.resumedFrom } : {}),
+  });
+  const outcome = await executeRun(ctx, input, WORKFLOWS[workflow]);
+  await updateSessionStatus(runId, outcome.ok ? 'ok' : 'failed');
+  return outcome;
 }

@@ -4,7 +4,7 @@
 import { spawn } from 'node:child_process';
 import { access, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { ConfigError, effectiveConfig, loadConfig } from '../config/config.js';
+import { ConfigError, effectiveConfig, loadLayeredConfig } from '../config/config.js';
 
 const ROOT = '.aiki';
 const CONFIG_PATH = join(ROOT, 'config.json');
@@ -39,7 +39,7 @@ export async function config(opts: { edit?: boolean } = {}): Promise<number> {
   if (opts.edit) return editConfig();
 
   try {
-    const eff = effectiveConfig(await loadConfig(ROOT));
+    const eff = effectiveConfig(await loadLayeredConfig()); // global ~/.aiki base + this project's .aiki
     process.stdout.write(`${JSON.stringify(eff, null, 2)}\n`);
     process.stderr.write('(roles shown are config pins; the actual per-run assignment also depends on which providers are available)\n');
     return 0;

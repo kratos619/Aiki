@@ -7,24 +7,35 @@ import { Box, Text, useApp, useInput } from 'ink';
 import Spinner from 'ink-spinner';
 import TextInput from 'ink-text-input';
 import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { DISPLAY_NAME } from '../providers/types.js';
+import { dirname, join, resolve } from 'node:path';
+import { DISPLAY_NAME, type ProviderId } from '../providers/types.js';
 import {
   RunCtx,
   makeRunId,
   resolveRoles,
   setupProviders,
+  type ClarifyChoice,
   type ProviderHandle,
   type RoleMap,
   type RunEvents,
+  type WorkflowId,
 } from '../orchestration/context.js';
 import { executeRun } from '../orchestration/engine.js';
 import { RunWriter } from '../storage/runs.js';
+import { recordSession, updateSessionStatus, readSessions, findSession } from '../storage/sessions.js';
+import { buildReplayCache } from '../storage/replay.js';
+import { loadLayeredConfig, effectiveConfig } from '../config/config.js';
+import { formatModels } from '../cli/models.js';
 import { IDEA_STAGES, runIdeaRefinement } from '../workflows/idea-refinement.js';
+import { CR_STAGES, runCodeReview } from '../workflows/code-review.js';
+import { computeDiff, computeWorkingTreeDiff, detectRepoStatus, type RepoStatus } from '../orchestration/git.js';
+import { loadCouncilView, type CouncilView } from '../council/view.js';
 import { GLYPH, displayNames, elapsedLabel, initTimeline, markEnd, markStart, type StageRow } from './timeline.js';
 import { formatCompletion, formatError, type CompletionView, type ErrorView } from './format.js';
+import { COMMANDS, PRODUCT_LINE, parseCommand, routeInput, type ParsedCommand, type QuickAction } from './smart-entry.js';
 
 type Phase = 'detecting' | 'input' | 'running' | 'clarify' | 'finished';
+type WorkflowRunner = (ctx: RunCtx, input: string) => Promise<void>;
 
 async function loadCompletion(dir: string): Promise<CompletionView | null> {
   try {
@@ -42,30 +53,41 @@ async function loadCompletion(dir: string): Promise<CompletionView | null> {
 export interface AppProps {
   roleOverrides?: Partial<RoleMap>;
   budget?: number;
+  runsRoot?: string; // hybrid runs root resolved by the CLI entry (repo .aiki vs ~/.aiki).
+  providerModels?: Partial<Record<ProviderId, string>>; // V8: per-provider model → CLI --model
+  version?: string; // shown in the home banner (V9)
 }
 
 export function App(props: AppProps): React.JSX.Element {
-  const { roleOverrides, budget: budgetOverride } = props;
+  const { roleOverrides, budget: budgetOverride, runsRoot, providerModels, version } = props;
   const { exit } = useApp();
   const [phase, setPhase] = useState<Phase>('detecting');
+  const [workflow, setWorkflow] = useState<WorkflowId>('idea-refinement');
   const [handles, setHandles] = useState<ProviderHandle[]>([]);
+  const [repo, setRepo] = useState<RepoStatus | null>(null);
   const [idea, setIdea] = useState('');
+  const [routerMessage, setRouterMessage] = useState('');
   const [rows, setRows] = useState<StageRow[]>([]);
   const [now, setNow] = useState(Date.now());
   const [budget, setBudget] = useState(0);
   const [dir, setDir] = useState('');
-  const [clarify, setClarify] = useState<{ question: string; options: string[]; resolve: (n: number) => void } | null>(null);
+  const [clarify, setClarify] = useState<{ question: string; options: string[]; resolve: (c: ClarifyChoice) => void } | null>(null);
+  const [clarifyTyping, setClarifyTyping] = useState(false); // "type your own" sub-mode
+  const [clarifyText, setClarifyText] = useState('');
+  const [panel, setPanel] = useState<string | null>(null); // V9: /sessions /models /config /help output
   const [completion, setCompletion] = useState<CompletionView | null>(null);
+  const [councilView, setCouncilView] = useState<CouncilView | null>(null);
   const [errorView, setErrorView] = useState<ErrorView | null>(null);
   const [aborted, setAborted] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const ctxRef = useRef<RunCtx | null>(null);
 
-  // Detect providers once, up front.
+  // Detect providers + repo context once, up front.
   useEffect(() => {
     let alive = true;
-    void setupProviders().then((hs) => {
+    void Promise.all([setupProviders(providerModels), detectRepoStatus(process.cwd())]).then(([hs, repoStatus]) => {
       if (!alive) return;
+      setRepo(repoStatus);
       if (hs.length < 2) {
         setErrorView(formatError('QUORUM'));
         setPhase('finished');
@@ -89,64 +111,187 @@ export function App(props: AppProps): React.JSX.Element {
   useInput((input, key) => {
     if (key.ctrl && input === 'c') {
       abortRef.current?.abort();
-      if (clarify) clarify.resolve(0); // unblock S2 so the run reaches its abort guard
+      if (clarify) clarify.resolve({ kind: 'pick', index: 0 }); // unblock S2 so the run reaches its abort guard
       if (phase === 'detecting' || phase === 'input' || phase === 'finished') exit();
       return;
     }
-    if (phase === 'clarify' && clarify) {
+    // Clarify key handling — the "type your own" sub-mode lets TextInput capture keys instead.
+    if (phase === 'clarify' && clarify && !clarifyTyping) {
       const n = Number.parseInt(input, 10);
-      if (!Number.isNaN(n) && n >= 1 && n <= clarify.options.length) clarify.resolve(n - 1);
+      const N = clarify.options.length;
+      if (!Number.isNaN(n)) {
+        if (n >= 1 && n <= N) clarify.resolve({ kind: 'pick', index: n - 1 });
+        else if (n === N + 1) clarify.resolve({ kind: 'both' });
+        else if (n === N + 2) setClarifyTyping(true);
+      }
       return;
     }
     if (phase === 'finished') exit();
   });
 
-  const start = (text: string): void => {
+  const startRun = (wf: WorkflowId, text: string, cwd: string | null, runner: WorkflowRunner, stages: typeof IDEA_STAGES, replay?: Map<string, string>): void => {
     const trimmed = text.trim();
     if (!trimmed) return;
+    setPanel(null);
     const available = handles.map((h) => h.id);
-    const rs = resolveRoles('idea-refinement', available, roleOverrides);
-    const runId = makeRunId('idea-refinement');
-    const writer = new RunWriter(runId);
+    const rs = resolveRoles(wf, available, roleOverrides);
+    const runId = makeRunId(wf);
+    const writer = new RunWriter(runId, runsRoot);
     const controller = new AbortController();
     abortRef.current = controller;
     const events: RunEvents = {
       onStageStart: (id) => setRows((r) => markStart(r, id, Date.now())),
       onStageEnd: (id, st) => setRows((r) => markEnd(r, id, st, Date.now())),
       clarify: (question, options) =>
-        new Promise<number>((res) => {
+        new Promise<ClarifyChoice>((res) => {
           setClarify({
             question,
             options,
-            resolve: (n) => {
+            resolve: (c) => {
               setClarify(null);
+              setClarifyTyping(false);
+              setClarifyText('');
               setPhase('running');
-              res(n);
+              res(c);
             },
           });
           setPhase('clarify');
         }),
     };
-    const ctx = new RunCtx({ runId, workflow: 'idea-refinement', handles, roles: rs, writer, cwd: writer.dir, budget: budgetOverride, signal: controller.signal, events });
+    const ctx = new RunCtx({ runId, workflow: wf, handles, roles: rs, writer, cwd: cwd ?? writer.dir, budget: budgetOverride, signal: controller.signal, events, replay });
     ctxRef.current = ctx;
-    setRows(initTimeline(IDEA_STAGES, rs, available));
+    setWorkflow(wf);
+    setRows(initTimeline(stages, rs, available));
     setBudget(ctx.budget.limit);
     setDir(writer.dir);
+    setCompletion(null);
+    setCouncilView(null);
+    setErrorView(null);
+    setRouterMessage('');
     setPhase('running');
-    void executeRun(ctx, trimmed, runIdeaRefinement).then(async (o) => {
+    void recordSession({ id: runId, workflow: wf, cwd: cwd ?? writer.dir, runsRoot: resolve(dirname(dirname(writer.dir))), startedAt: new Date().toISOString(), status: 'running' });
+    void executeRun(ctx, trimmed, runner).then(async (o) => {
       const wasAborted = ctx.aborted;
       setAborted(wasAborted);
-      if (o.ok) setCompletion(await loadCompletion(o.dir));
+      void updateSessionStatus(o.runId, wasAborted ? 'aborted' : o.ok ? 'ok' : 'failed');
+      if (o.ok) {
+        setCouncilView(await loadCouncilView(o.runId, o.dir));
+        setCompletion(wf === 'idea-refinement' ? await loadCompletion(o.dir) : null);
+      }
       else if (!wasAborted) setErrorView(formatError(o.error?.code ?? 'CRASH', o.dir || undefined));
       setPhase('finished');
     });
   };
 
+  const startIdea = (text: string): void => startRun('idea-refinement', text, null, runIdeaRefinement, IDEA_STAGES);
+
+  const startCodeReview = async (action: QuickAction): Promise<void> => {
+    if (!repo || !repo.defaultBranch) {
+      setRouterMessage('code review needs a git repo with a detectable default branch');
+      return;
+    }
+    try {
+      const diff = action === 'review-working-tree'
+        ? await computeWorkingTreeDiff(repo.defaultBranch, repo.root)
+        : await computeDiff(repo.defaultBranch, 'HEAD', repo.root);
+      if (!diff.trim()) {
+        setRouterMessage('no changes to review');
+        return;
+      }
+      startRun('code-review', diff, repo.root, runCodeReview, CR_STAGES);
+    } catch (e) {
+      setRouterMessage(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const sessionsPanel = async (lead?: string): Promise<string> => {
+    const all = (await readSessions()).slice(0, 12);
+    if (!all.length) return 'no sessions yet.';
+    const mark = { running: '●', ok: '✔', failed: '✖', aborted: '⊘' } as const;
+    const rows = all.map((s) => `  ${mark[s.status]} ${s.id}  ${s.workflow}${s.status === 'failed' || s.status === 'aborted' ? '   /resume ' + s.id : ''}`);
+    return [lead ?? 'Recent sessions:', ...rows].join('\n');
+  };
+  const configPanel = async (): Promise<string> => {
+    try {
+      return 'Effective config:\n' + JSON.stringify(effectiveConfig(await loadLayeredConfig()), null, 2);
+    } catch (e) {
+      return e instanceof Error ? e.message : String(e);
+    }
+  };
+  const helpPanel = (): string => ['Commands:', ...COMMANDS.map((c) => `  ${c.usage.padEnd(20)} ${c.help}`), '', 'Or just type your idea and press Enter.'].join('\n');
+
+  const resumeInTui = async (idArg?: string): Promise<void> => {
+    if (!idArg) return void setPanel(await sessionsPanel('Resume which? type /resume <id>'));
+    const sess = await findSession(idArg);
+    if (!sess) return void setRouterMessage(`no session matches "${idArg}" — see /sessions`);
+    if ('ambiguous' in sess) return void setRouterMessage(`"${idArg}" is ambiguous: ${sess.ambiguous.join(', ')}`);
+    const wf = sess.workflow as WorkflowId;
+    const oldDir = join(sess.runsRoot, 'runs', sess.id);
+    let input: string;
+    try {
+      input = await readFile(join(oldDir, 'inputs', wf === 'code-review' ? 'diff.patch' : 'idea.md'), 'utf8');
+    } catch {
+      return void setRouterMessage(`can't recover the input for ${sess.id} — nothing to resume`);
+    }
+    const replay = await buildReplayCache(oldDir);
+    if (replay.size === 0) return void setRouterMessage(`no completed calls for ${sess.id} — start fresh`);
+    const [runner, stages] = wf === 'code-review' ? ([runCodeReview, CR_STAGES] as const) : ([runIdeaRefinement, IDEA_STAGES] as const);
+    startRun(wf, input, wf === 'code-review' ? sess.cwd : null, runner, stages, replay);
+  };
+
+  const runCommand = async (p: ParsedCommand): Promise<void> => {
+    setRouterMessage('');
+    setPanel(null);
+    switch (p.cmd) {
+      case 'idea':
+        if (p.rest) startIdea(p.rest);
+        else setRouterMessage('type your idea after the command, e.g.  /idea a fridge-to-recipe app');
+        return;
+      case 'review':
+        void startCodeReview(p.args.includes('--branch') || p.args.includes('-b') ? 'review-branch' : 'review-working-tree');
+        return;
+      case 'resume':
+        void resumeInTui(p.args[0]);
+        return;
+      case 'sessions':
+        setPanel('loading…'); setPanel(await sessionsPanel()); return;
+      case 'models':
+        setPanel('loading models…'); setPanel(await formatModels()); return;
+      case 'config':
+        setPanel(await configPanel()); return;
+      case 'help': case '':
+        setPanel(helpPanel()); return;
+      default:
+        setRouterMessage(`unknown command /${p.cmd} — type /help`);
+    }
+  };
+
+  const submitInput = (text: string): void => {
+    const parsed = parseCommand(text);
+    if (parsed) { void runCommand(parsed); return; }
+
+    setPanel(null);
+    const route = routeInput(text);
+    if (route === 'question') {
+      setIdea('');
+      setRouterMessage(`${PRODUCT_LINE} Type /idea if you meant an idea.`);
+      return;
+    }
+    if (route === 'code-review') {
+      setIdea('');
+      setRouterMessage(repo ? 'That looks code-related. Type /review (working tree) or /review --branch.' : 'That looks code-related. Open aiki inside a git repo, then /review.');
+      return;
+    }
+    startIdea(text);
+  };
+
   // ── render ────────────────────────────────────────────────────────────────
   return (
     <Box flexDirection="column" paddingX={1}>
-      <Text bold color="cyan">
-        aiki · idea-refinement
+      <Text>
+        <Text bold color="cyan">aiki</Text>
+        {version ? <Text dimColor> v{version}</Text> : null}
+        <Text dimColor> · {phase === 'input' ? 'local model council — ideas & code review' : workflow}</Text>
       </Text>
 
       {phase === 'detecting' && (
@@ -160,6 +305,11 @@ export function App(props: AppProps): React.JSX.Element {
 
       {(phase === 'input' || phase === 'running' || phase === 'clarify' || phase === 'finished') && handles.length > 0 && (
         <Box flexDirection="column" marginTop={1}>
+          {repo && (
+            <Text>
+              repo: {repo.name} — {repo.changedFiles} changed files vs {repo.defaultBranch ?? 'unknown default branch'}
+            </Text>
+          )}
           <Text dimColor>providers ready:</Text>
           {handles.map((h) => (
             <Text key={h.id}>
@@ -172,12 +322,47 @@ export function App(props: AppProps): React.JSX.Element {
 
       {phase === 'input' && (
         <Box flexDirection="column" marginTop={1}>
-          <Text>Describe your idea in one line, then press Enter:</Text>
-          <Box borderStyle="round" paddingX={1}>
-            {/* Single-line input: collapse pasted newlines to spaces so multi-line paste doesn't corrupt the render. */}
-            <TextInput value={idea} onChange={(v) => setIdea(v.replace(/\s*[\r\n]+\s*/g, ' '))} onSubmit={start} />
+          <Box flexDirection="column" marginBottom={1}>
+            <Text>
+              <Text color="cyan">/idea </Text>
+              <Text dimColor>{'<text>'}</Text>
+              {'   stress-test an idea'}
+            </Text>
+            <Text>
+              <Text color="cyan">/review </Text>
+              <Text dimColor>[--branch]</Text>
+              {'  review your changes'}
+              {repo ? '' : <Text dimColor>  (needs a git repo)</Text>}
+            </Text>
+            <Text>
+              <Text color="cyan">/resume </Text>
+              <Text dimColor>{'<id>'}</Text>
+              {'   continue a stopped run  ·  '}
+              <Text color="cyan">/sessions</Text>
+              {'  '}
+              <Text color="cyan">/models</Text>
+              {'  '}
+              <Text color="cyan">/config</Text>
+              {'  '}
+              <Text color="cyan">/help</Text>
+            </Text>
           </Box>
-          <Text dimColor>tip: for a long idea, use `aiki run idea-refinement ./idea.md` instead</Text>
+          <Text dimColor>Type a command, or just describe your idea and press Enter:</Text>
+          <Box borderStyle="round" paddingX={1}>
+            <Text>▸ </Text>
+            {/* Single-line input: collapse pasted newlines to spaces so multi-line paste doesn't corrupt the render. */}
+            <TextInput value={idea} onChange={(v) => setIdea(v.replace(/\s*[\r\n]+\s*/g, ' '))} onSubmit={submitInput} />
+          </Box>
+          {routerMessage ? <Text color="yellow">{routerMessage}</Text> : null}
+          {panel ? (
+            <Box flexDirection="column" marginTop={1} borderStyle="round" paddingX={1}>
+              {panel.split('\n').map((l, i) => (
+                <Text key={i}>{l}</Text>
+              ))}
+            </Box>
+          ) : (
+            <Text dimColor>tip: long idea? use `aiki run idea-refinement ./idea.md`</Text>
+          )}
         </Box>
       )}
 
@@ -209,7 +394,26 @@ export function App(props: AppProps): React.JSX.Element {
               <Text color="cyan">{i + 1}</Text>. {o}
             </Text>
           ))}
-          <Text dimColor>press 1–{clarify.options.length} to choose</Text>
+          <Text>
+            {'  '}
+            <Text color="cyan">{clarify.options.length + 1}</Text>. {clarify.options.length === 2 ? 'both readings — combine them' : 'all readings — combine them'}
+          </Text>
+          <Text>
+            {'  '}
+            <Text color="cyan">{clarify.options.length + 2}</Text>. other — type your own
+          </Text>
+          {clarifyTyping ? (
+            <Box borderStyle="round" paddingX={1} marginTop={1}>
+              <Text>▸ </Text>
+              <TextInput
+                value={clarifyText}
+                onChange={(v) => setClarifyText(v.replace(/\s*[\r\n]+\s*/g, ' '))}
+                onSubmit={() => clarifyText.trim() && clarify.resolve({ kind: 'text', text: clarifyText })}
+              />
+            </Box>
+          ) : (
+            <Text dimColor>press 1–{clarify.options.length + 2} to choose</Text>
+          )}
         </Box>
       )}
 
@@ -227,7 +431,37 @@ export function App(props: AppProps): React.JSX.Element {
               {errorView.partialDir ? <Text dimColor>partial artifacts: {errorView.partialDir}</Text> : null}
             </Box>
           )}
-          {!aborted && !errorView && (
+          {!aborted && !errorView && councilView && (
+            <Box flexDirection="column">
+              <Text color="green" bold>
+                ✔ Run complete
+              </Text>
+              <Box flexDirection="column" marginTop={1}>
+                <Text bold>Verdict</Text>
+                <Text>{councilView.verdict}</Text>
+                <Text dimColor>{councilView.calls} · {councilView.stats.join(' · ')}</Text>
+              </Box>
+              <Box flexDirection="column" marginTop={1}>
+                <Text bold>Providers</Text>
+                {councilView.columns.map((c) => (
+                  <Text key={c.provider}>{c.title}: {c.lines[0] ?? 'no role output recorded'}</Text>
+                ))}
+              </Box>
+              {councilView.rows.length > 0 && (
+                <Box flexDirection="column" marginTop={1}>
+                  <Text bold>Council map</Text>
+                  {councilView.rows.slice(0, 5).map((r, i) => (
+                    <Text key={i}>
+                      {r.kind.toUpperCase()} · {r.title}{r.ruling ? ` · judge: ${r.ruling}` : ''}
+                    </Text>
+                  ))}
+                </Box>
+              )}
+              <Text dimColor>{'\n'}report: {dir}/final-report.md</Text>
+              <Text dimColor>html: aiki show {councilView.runId} --html</Text>
+            </Box>
+          )}
+          {!aborted && !errorView && !councilView && (
             <Box flexDirection="column">
               <Text color="green" bold>
                 ✔ Run complete

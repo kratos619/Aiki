@@ -8,12 +8,16 @@ import { providers } from './providers.js';
 import { runCommand } from './run.js';
 import { show } from './show.js';
 import { resolve } from './resolve.js';
+import { resumeCommand } from './resume.js';
+import { sessionsCommand } from './sessions.js';
 import { config } from './config.js';
+import { modelsCommand } from './models.js';
 import { benchCommand } from './bench.js';
-import { ConfigError, loadConfig } from '../config/config.js';
+import { ConfigError, loadLayeredConfig } from '../config/config.js';
+import { resolveRunsRoot } from '../storage/paths.js';
 import { startTui } from '../tui/index.js';
 
-export const VERSION = '0.1.0';
+export const VERSION = '0.2.0';
 
 const program = new Command();
 
@@ -47,16 +51,17 @@ program
 
 program
   .command('run')
-  .description('Headless run of a workflow (§5). idea-refinement: text/file. code-review: --base/--head or --diff.')
+  .description('Headless run of a workflow (§5). idea-refinement: text/file. code-review: git diff or --diff.')
   .argument('<workflow>', 'workflow id: idea-refinement | code-review')
   .argument('[input]', 'idea-refinement: inline text or a path to a .md file')
   .option('--budget <n>', 'max provider calls for this run (default 12)', (v) => parseInt(v, 10))
-  .option('--base <ref>', 'code-review: base git ref to diff from')
+  .option('--base <ref>', 'code-review: base git ref to diff from (default: detected default branch)')
   .option('--head <ref>', 'code-review: head git ref to diff to (default HEAD)')
   .option('--diff <file>', 'code-review: review a patch file instead of computing a git diff')
   .option('--cheap', 'code-review: Gemini+Codex review, Claude judges only disputes (~⅓ the Opus; experimental)')
-  .action(async (workflow: string, input: string | undefined, opts: { budget?: number; base?: string; head?: string; diff?: string; cheap?: boolean }) => {
-    process.exit(await runCommand(workflow, input, { budget: opts.budget, base: opts.base, head: opts.head, diff: opts.diff, cheap: opts.cheap }));
+  .option('--yes', 'skip the run-cost confirmation prompt')
+  .action(async (workflow: string, input: string | undefined, opts: { budget?: number; base?: string; head?: string; diff?: string; cheap?: boolean; yes?: boolean }) => {
+    process.exit(await runCommand(workflow, input, { budget: opts.budget, base: opts.base, head: opts.head, diff: opts.diff, cheap: opts.cheap, yes: opts.yes }));
   });
 
 program
@@ -64,8 +69,10 @@ program
   .description('Print a stored run\'s final report; --raw lists artifact files. No id → latest run.')
   .argument('[run-id]', 'run id or a unique suffix/substring (omit for the most recent run)')
   .option('--raw', 'list the run\'s artifact files instead of the report')
-  .action(async (runId: string | undefined, opts: { raw?: boolean }) => {
-    process.exit(await show(runId, { raw: opts.raw }));
+  .option('--html', 'write a self-contained council-view HTML file and print its path')
+  .option('--open', 'with --html, open the generated file in the default browser')
+  .action(async (runId: string | undefined, opts: { raw?: boolean; html?: boolean; open?: boolean }) => {
+    process.exit(await show(runId, { raw: opts.raw, html: opts.html, open: opts.open, root: await resolveRunsRoot() }));
   });
 
 program
@@ -74,7 +81,23 @@ program
   .argument('[run-id]', 'run id or a unique suffix/substring (omit for the most recent run)')
   .option('--verdict <id=verdict>', 'non-interactive verdict, repeatable: <item-id>=<correct|incorrect|unsure>', collect, [])
   .action(async (runId: string | undefined, opts: { verdict?: string[] }) => {
-    process.exit(await resolve(runId, { verdict: opts.verdict }));
+    process.exit(await resolve(runId, { verdict: opts.verdict, root: await resolveRunsRoot() }));
+  });
+
+program
+  .command('sessions')
+  .description('List runs from the global registry (~/.aiki/sessions.jsonl), newest first.')
+  .option('--json', 'print the registry as JSON')
+  .action(async (opts: { json?: boolean }) => {
+    process.exit(await sessionsCommand({ json: opts.json }));
+  });
+
+program
+  .command('resume')
+  .description('Continue a killed/timed-out run from where it stopped (replays completed calls; §V6.3).')
+  .argument('[run-id]', 'run id or a unique suffix/substring (see `aiki sessions`)')
+  .action(async (runId: string | undefined) => {
+    process.exit(await resumeCommand(runId, { root: await resolveRunsRoot() }));
   });
 
 program
@@ -90,6 +113,13 @@ program
   });
 
 program
+  .command('models')
+  .description('Show configurable models per provider (lists via the CLI where supported) + your current pins.')
+  .action(async () => {
+    process.exit(await modelsCommand());
+  });
+
+program
   .command('config')
   .description('Print the effective config; --edit opens .aiki/config.json (§128).')
   .option('--edit', 'open .aiki/config.json in $VISUAL/$EDITOR (created if missing)')
@@ -97,11 +127,11 @@ program
     process.exit(await config({ edit: opts.edit }));
   });
 
-// Bare `aiki` (no subcommand) → interactive TUI, honoring config (roles/budget).
+// Bare `aiki` (no subcommand) → interactive TUI, honoring layered config (roles/budget/models).
 program.action(async () => {
   let cfg;
   try {
-    cfg = await loadConfig();
+    cfg = await loadLayeredConfig();
   } catch (e) {
     if (e instanceof ConfigError) {
       process.stderr.write(`${e.message}\n`);
@@ -109,7 +139,7 @@ program.action(async () => {
     }
     throw e;
   }
-  startTui({ roleOverrides: cfg.roles, budget: cfg.budget });
+  startTui({ roleOverrides: cfg.roles, budget: cfg.budget, runsRoot: await resolveRunsRoot(), providerModels: cfg.models, version: VERSION });
 });
 
 program.parseAsync(process.argv);

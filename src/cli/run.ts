@@ -2,10 +2,12 @@
 // code-review computes a git diff from --base/--head (or reads --diff) and reviews it at the repo root.
 
 import { readFile } from 'node:fs/promises';
+import { createInterface } from 'node:readline';
 import { run as runEngine } from '../orchestration/engine.js';
 import type { RoleMap, WorkflowId } from '../orchestration/context.js';
-import { ConfigError, loadConfig } from '../config/config.js';
-import { computeDiff, GitError, repoToplevel } from '../orchestration/git.js';
+import { ConfigError, loadLayeredConfig } from '../config/config.js';
+import { computeDiff, detectDefaultBranch, GitError, repoToplevel } from '../orchestration/git.js';
+import { resolveRunsRoot } from '../storage/paths.js';
 
 const WORKFLOWS: WorkflowId[] = ['idea-refinement', 'code-review'];
 
@@ -15,6 +17,25 @@ export interface RunFlags {
   head?: string;
   diff?: string; // path to a patch file (alternative to --base/--head)
   cheap?: boolean; // code-review: agy+codex reviewers, claude judge (Opus-thrift; experimental — bench Arm E)
+  yes?: boolean; // skip the run-cost confirmation (also skipped when non-interactive)
+}
+
+/** Rough provider-call estimate for the run-cost preview (V5). Approximate — the real count varies with
+ *  §14 repairs, cross-exam skips, and quorum. `opus` = the Claude/Opus subset (the metered-cost driver). */
+export function estimateRun(workflow: WorkflowId, opts: { cheap?: boolean } = {}): { calls: number; opus: number } {
+  if (workflow === 'code-review') return { calls: 5, opus: opts.cheap ? 1 : 2 };
+  return { calls: 10, opus: 3 }; // idea-refinement (S2 has claude; S7 + S9 run on the claude judge)
+}
+
+/** Thin y/N prompt (default yes). Only used on an interactive TTY. */
+function confirm(question: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    rl.question(question, (a) => {
+      rl.close();
+      resolve(!/^n/i.test(a.trim()));
+    });
+  });
 }
 
 /** Resolve an idea-refinement input: an existing file path → its contents, else the arg as inline text. */
@@ -40,16 +61,17 @@ async function resolveCodeReview(opts: RunFlags): Promise<{ text: string; cwd: s
       return { done: 1 };
     }
   } else {
-    if (!opts.base) {
-      process.stderr.write('code-review needs --base <ref> (--head defaults to HEAD), or --diff <file>\n');
-      return { done: 1 };
-    }
     if (!repoRoot) {
       process.stderr.write('not inside a git repository — pass --diff <file> instead\n');
       return { done: 1 };
     }
+    const base = opts.base ?? await detectDefaultBranch(repoRoot);
+    if (!base) {
+      process.stderr.write('cannot detect default branch — pass --base <ref>, or --diff <file>\n');
+      return { done: 1 };
+    }
     try {
-      diff = await computeDiff(opts.base, opts.head ?? 'HEAD', repoRoot);
+      diff = await computeDiff(base, opts.head ?? 'HEAD', repoRoot);
     } catch (e) {
       process.stderr.write(`${e instanceof GitError ? e.message : String(e)}\n`);
       return { done: 1 };
@@ -83,10 +105,11 @@ export async function runCommand(workflow: string, input: string | undefined, op
     text = resolved;
   }
 
-  // Precedence (§10/T9): --budget flag > config.budget > built-in default. roles/deadline are config-only.
+  // Precedence (§10/T9): --budget flag > config.budget > built-in default. roles/deadline/models are
+  // config-only (layered: global ~/.aiki base, project .aiki override).
   let cfg;
   try {
-    cfg = await loadConfig();
+    cfg = await loadLayeredConfig();
   } catch (e) {
     if (e instanceof ConfigError) {
       process.stderr.write(`${e.message}\n`);
@@ -103,11 +126,25 @@ export async function runCommand(workflow: string, input: string | undefined, op
     else process.stderr.write('--cheap only applies to code-review; ignoring for this workflow.\n');
   }
 
+  // Run-cost preview (V5): show the estimate; confirm interactively unless --yes or non-interactive.
+  const est = estimateRun(workflow as WorkflowId, { cheap: opts.cheap });
+  const note = `  ≈${est.calls} provider call(s), ~${est.opus} on Claude/Opus (the metered part).`;
+  if (!opts.yes && process.stdin.isTTY && process.stdout.isTTY) {
+    if (!(await confirm(`${note}\n  Continue? [Y/n] `))) {
+      process.stdout.write('  cancelled.\n');
+      return 0;
+    }
+  } else {
+    process.stdout.write(`${note}\n`);
+  }
+
   const outcome = await runEngine(workflow as WorkflowId, text, {
     budget: opts.budget ?? cfg.budget,
     deadlineMs: cfg.deadlineMs,
     roleOverrides,
     cwd, // code-review: repo root; idea-refinement: undefined → run dir
+    runsRoot: await resolveRunsRoot(), // hybrid: repo .aiki when in a repo, else ~/.aiki
+    providerModels: cfg.models, // V8: per-provider model → CLI --model
   });
 
   if (outcome.ok) {

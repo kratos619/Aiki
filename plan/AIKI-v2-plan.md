@@ -76,12 +76,79 @@ report strict AND category-relaxed recall (known matcher limitation, see HANDOFF
 Acceptance: scripted-adapter e2e (hole triggers targeted call; no hole → 0 claude calls); USER:
 build-set bench ladder-arm vs D, expect ≈D-adjusted recall at ≤0.5 claude/case.
 
-## V5 — Consolidate & ship
+## V5 — Consolidate & ship   [DONE 2026-07-06]
 
-README: what aiki is, the pre-registered verdict (exact qualified claim from RESULTS §7 — never
-stronger), quickstart, `--cheap`, safety model (read-only, no keys), benchmark link. Run-cost
-preview on `aiki run` (mirror bench's estimate+confirm; skip prompt when --yes/non-TTY). Version
-bump, CHANGELOG. Acceptance: fresh-clone quickstart works on a stranger's repo with 3 CLIs installed.
+`README.md` (what aiki is + the EXACT RESULTS §7 verdict with caveats + requirements + install + quickstart
+with the slash-command table + headless equivalents + models + sessions/resume + storage + safety model +
+how-it-works + benchmark links). `CHANGELOG.md` (0.2.0 v2 product round). Version bump 0.1.0→**0.2.0**
+(`package.json` + `cli/index.ts VERSION`). Run-cost preview on `aiki run`: `estimateRun(workflow,{cheap})`
+(pure, tested) + a `--yes`/non-TTY-gated confirm before spending. `test/run-cost.test.ts` (2). 200 tests
+green. **Remaining acceptance is manual (user):** fresh-clone quickstart on a stranger's repo with the 3
+CLIs. **V4 escalation ladder is the only unstarted v2 item — BLOCKED on the V1 paid bench.**
+
+---
+
+## v2.1 — product-hardening round (added 2026-07-06, from real-use feedback)
+
+Execute in order, same discipline. Decisions locked with the user 2026-07-06: **hybrid storage**
+(config + session registry in `~/.aiki`; runs in the project's `.aiki/runs` when inside a repo, else
+`~/.aiki/runs`) and **config + free model override** (pick provider AND type any model id per role;
+adapters pass it through `--model`; no hardcoded versions; enumerate only where a CLI supports listing).
+
+### V6 — Run-anywhere + resilience
+1. **Hybrid runs root** — `src/storage/paths.ts` (`homeAikiRoot`, `resolveRunsRoot`); wired into engine
+   `run()`, the TUI, and `show`/`resolve`. Library defaults stay `.aiki`; only CLI entry injects the
+   hybrid root. **[DONE 2026-07-06]** (`test/paths.test.ts`).
+2. **Timeouts raised** (real Opus judge blew them): per-call 180→300s, wall-clock 10→20min
+   (`context.ts`, user-authorized §7.1/§19 deviation). **[DONE 2026-07-06]**
+3. **Global session registry + resume** — `~/.aiki/sessions.jsonl` records every run {id, workflow, cwd,
+   runsRoot, startedAt, status}; `aiki sessions` lists them cross-location; `aiki resume <id>` re-enters a
+   killed/timed-out run. **[DONE 2026-07-06]** — implemented via CALL REPLAY (cleaner than stage-skip): the
+   pipeline re-runs into a fresh run and `RunCtx.call` replays any completed `(provider,prompt)` from the
+   old run's `raw/` outputs, so only the failed stage onward hits a model. Replayed calls don't spend
+   budget and don't count as new calls. `$AIKI_HOME` overrides `~/.aiki` (tests + relocation).
+   `test/resume.test.ts` (5): full replay → 0 real calls; S9-fail → only judge re-called; registry CRUD.
+
+### V7 — Intent clarify UX (S2 misunderstanding guard)   [DONE 2026-07-06]
+`1`/`2`/…/`N+1 = both (combine all)`/`N+2 = other (type your own)` on the clarify prompt, fed back into S3.
+`RunEvents.clarify` now returns `ClarifyChoice` (`pick`|`both`|`text`); `s2Misread` maps it to
+`chosen.how` = user-selected|user-combined|user-typed; TUI (`app.tsx`) renders the extra options + a
+text-entry sub-mode. Tests: `test/s2-clarify.test.ts` (4).
+Near-identical readings: added STOPWORD + restatement-framing removal to `cluster.ts tokenize` (content-word
+overlap), so same-meaning readings that only differ in framing now merge; the 0.6 threshold is UNCHANGED
+(loosening it = false merges = proceeding on a wrong reading, a documented trap). `test/cluster.test.ts`
+(+3). **Residual limitation (honest):** bag-of-words still can't merge different-vocabulary/inflected
+paraphrases (cli vs clis, orchestration vs orchestrate) — that's WHY the human stays in the loop; `both`
+is the reliable one-key merge. No stemming (would risk false merges).
+
+### V8 — Model config (per-provider model)   [DONE 2026-07-06]
+Verified flags (docs/PROVIDER_NOTES.md): **claude `--model <alias|name>`, codex `-m/--model` (before the
+prompt), agy `--model` + `agy models` LISTS** (only agy enumerates). Implemented as **per-provider** model
+(each CLI runs its own families, so provider granularity is the natural fit for "judge model" + each
+"hunter model" — simpler + lower-risk than per-role-seat). Config: `models: {claude?,codex?,agy?}` in
+`AikiConfig`; **config layering** via `loadLayeredConfig` (global `~/.aiki/config.json` base + project
+`.aiki/config.json` override; `mergeConfig` merges roles/models keys). Threading: config.models →
+`RunOptions.providerModels`/`AppProps.providerModels` → `setupProviders(models)` sets `FlagProfile.model` →
+adapter `buildArgs` adds `--model <id>` (recorded in meta.flag_profiles). `aiki models` lists via `agy
+models` (closing stdin — agy blocks without a TTY) else free-text; shows current pins + how to set.
+`$AIKI_HOME` overrides `~/.aiki`. No hardcoded versions. Tests: `test/v8-models.test.ts` (6, injected-spawn
+argv + schema + mergeConfig) + t9 effective-config updated. Live-verified `aiki models`/`config` with pins.
+
+### V9 — Slash-command home (UI/UX pass)   [DONE 2026-07-06]
+TUI entry reworked into a home screen: banner + version + a text box driven by deterministic slash commands
+`/idea <text>`, `/review [--branch]`, `/resume <id>`, `/sessions`, `/models`, `/config`, `/help` — replacing
+the single-key r/b/i. `parseCommand` (pure) in `smart-entry.ts` + `COMMANDS`; non-slash text still falls
+through `routeInput` (idea / route-away). `/sessions`/`/models`/`/config`/`/help` render into an in-screen
+panel (no phase change); `/resume` locates the run (registry/`findSession`), recovers input, builds the
+replay cache, and starts a run with `replay` (startRun gained a `replay` param). `formatModels()` extracted
+from `modelsCommand` for the panel. Still a router NOT chat (§3/§22). Removed the vestigial `routedIdea`
+state. Tests: `test/tui.test.ts` +3 (parseCommand). TUI render = manual acceptance (per precedent); module
+graph load-verified.
+
+---
+
+**v2.1 hardening round (V6–V9) COMPLETE 2026-07-06.** Remaining from the original v2 plan: V4 escalation
+ladder (BLOCKED on the V1 paid bench) and V5 consolidate & ship.
 
 ---
 

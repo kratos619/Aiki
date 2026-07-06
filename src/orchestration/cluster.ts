@@ -11,13 +11,29 @@
 
 export const SAME_CLUSTER_THRESHOLD = 0.6; // §9
 
-/** Lowercase, split on non-alphanumerics, drop empties. Overlap is on the resulting token SET. */
+// Function words + restatement boilerplate ("the user is asking to…") carry no meaning about WHAT the
+// task is; keeping them dilutes the content-word overlap so two same-meaning readings that phrase the
+// framing differently split spuriously (V7). Dropping them makes the coefficient compare content only.
+// This does NOT loosen the 0.6 threshold — genuinely different readings still have disjoint content
+// words and split (see cluster.test). Deliberately conservative: no stemming (would risk false merges).
+const STOPWORDS = new Set<string>([
+  'a', 'an', 'the', 'and', 'or', 'but', 'of', 'to', 'in', 'on', 'at', 'by', 'for', 'with', 'without',
+  'from', 'into', 'as', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'it', 'its', 'this', 'that',
+  'these', 'those', 'their', 'them', 'they', 'i', 'you', 'we', 'he', 'she', 'his', 'her', 'our', 'your',
+  'my', 'me', 'us', 'do', 'does', 'did', 'will', 'would', 'can', 'could', 'should', 'if', 'then', 'than',
+  'so', 'such', 'not', 'no', 'over', 'under', 'about', 'up', 'down', 'out', 'how', 'what', 'which',
+  // restatement framing verbs/nouns
+  'user', 'users', 'wants', 'want', 'wanting', 'asking', 'asks', 'ask', 'request', 'requesting', 'needs',
+  'need', 'wishes', 'wish', 'seeking', 'looking', 'like',
+]);
+
+/** Lowercase, split on non-alphanumerics, drop empties + stopwords. Overlap is on the resulting SET. */
 export function tokenize(text: string): Set<string> {
   return new Set(
     text
       .toLowerCase()
       .split(/[^a-z0-9]+/)
-      .filter((t) => t.length > 0),
+      .filter((t) => t.length > 0 && !STOPWORDS.has(t)),
   );
 }
 
