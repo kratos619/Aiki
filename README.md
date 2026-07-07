@@ -22,6 +22,14 @@ On a pre-registered, 10-case held-out code-review benchmark (see [BENCHMARK.md](
 > **cross-provider structured review caught every planted bug where the best single model missed ~1 in 4,
 > at equal precision, on a 10-case held-out set.**
 
+| Arm | What it is | Seeded-bug recall | Precision | Calls |
+|---|---|---|---|---|
+| B | best single model — structured, self-adversarial review | 77% (33/43) | 1.00 | 10 |
+| **D** | **cross-provider council** — Claude + Codex reviewers, Gemini judge | **100% (43/43)** | **1.00** | 44 |
+
+**1.30× the recall at identical precision** (0 false positives across 59 adjudicated unmatched findings).
+Primary metric = seeded-bug recall (micro). Reproduce: `aiki bench code-review --arms B,D --set holdout --yes`.
+
 Nothing stronger. Honest caveats, in full: the win is a **recall** win (precision was non-discriminating on
 this bug-dense set); it is **not** a claim of beating cheap self-consistency (that comparison is deferred,
 not evaluated); n=10, single run per arm — directional, not a p-value. Details in RESULTS.md §7.
