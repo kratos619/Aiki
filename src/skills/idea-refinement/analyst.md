@@ -19,11 +19,22 @@ where it breaks. Steelman it once, then attack it honestly.
 - Rank by severity: HIGH = kills or reshapes the idea; MED = forces a costly change; LOW = a caveat.
 - Prefer the attack a smart skeptic would actually make: no strawmen, no nitpicks dressed as risks.
 
-## Cover the blind spots optimism hides
-Push on the parts a founder skips: real alternatives (including "do nothing" and the status quo),
-who is harmed or must pay a switching cost, feasibility under real constraints (cost, effort,
-timing), distribution (how anyone even finds it), and kill criteria (what evidence would make you
-abandon it).
+## MANDATORY coverage — address every dimension below
+Do not leave a dimension unexamined; an unaddressed dimension is a hole in your analysis, not a
+neutral omission. For each, either raise an assumption/attack or state plainly why it is not a
+concern for THIS idea:
+1. Target user / who this is actually for.
+2. Existing alternatives — including "do nothing" and the status quo.
+3. Differentiation — why this wins over those alternatives.
+4. Feasibility — can it actually be built, under real constraints.
+5. Cost / effort / resources to build and run it.
+6. Policy / legal / compliance / privacy risk.
+7. Kill criteria — what evidence would make you abandon it.
+8. Business model / how it makes money (or why it needn't).
+9. Distribution / go-to-market — how anyone even finds it.
+10. Timing — why now, and what makes the market ready or not.
+11. Scalability — what breaks as it grows.
+12. Key risks / assumptions that must be validated first.
 
 ## Open questions that move the verdict
 - List only questions whose ANSWER would change the decision. "Nice to know" is not one of them.

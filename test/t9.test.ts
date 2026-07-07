@@ -304,6 +304,7 @@ describe('show / resolve / config (cwd-based)', () => {
           { id: 'D2', ruling: 'REJECT', reasoning: 'Attacks a reading the claim never asserts.', evidence_cited: 'y' },
         ],
         verdict: 'Feasible only as a scoped, niche product.',
+        key_points: ['The frontier-quality promise does not survive on-device constraints.', 'agy and codex split on what "best" means; the chair sided with the scoped reading.'],
         dissent: ['Might be too pessimistic for high-end devices.'],
         confidence_notes: 'D1 HIGH; D2 HIGH.',
       }),
@@ -316,7 +317,12 @@ describe('show / resolve / config (cwd-based)', () => {
     expect(html).toContain('business model / monetization'); // blind spot is RENDERED, not just counted
     expect(html).toContain('Users will accept lower quality than cloud models.'); // D1 upheld → risk shows the resolved assumption, not "D1"
     expect(html).toContain('risks that stand'); // honest glance stat
-    expect(html).toContain('Moderator: Claude'); // judge attributed
+    expect(html).toContain('Chair: Claude'); // judge attributed (chairman of the panel)
+    expect(html).toContain("Chairman's reasoning"); // the deeper bulleted verdict reasoning
+    expect(html).toContain('the chair sided with the scoped reading.'); // a key_point renders
+    expect(html).toContain('How each model saw it'); // per-model section surfaced, not folded
+    expect(html).toContain('Copy report (Markdown)'); // copy-to-clipboard control
+    expect(html).toContain('const REPORT_MD ='); // the embedded markdown for the copy button
     // The upheld dispute is a REJECT/UPHOLD-free story above the fold; raw rulings live only in <details>.
     const mainBody = html.slice(0, html.indexOf('<details'));
     expect(mainBody).not.toContain('UPHOLD');

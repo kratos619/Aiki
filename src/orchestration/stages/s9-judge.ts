@@ -21,10 +21,17 @@ const S9_PROMPT = `ROLE: Judge. You adjudicate ONLY the disputed items below. Co
 settled; do not restate, edit, re-litigate, or reference them in your adjudications.
 Apply this rubric strictly: {{RUBRIC_JSON}}
 
+You are the CHAIRMAN of the panel. Write for a decision-maker who did not see the debate — be clear,
+specific, and professional. No hedging mush, no restating the question back.
+
 Output ONLY JSON matching the judge schema:
 - adjudications: for EACH disputed id → {id, ruling: UPHOLD|REJECT|UNRESOLVED, reasoning ≤3 sentences, evidence_cited}.
   UPHOLD = the argument defeats the claim; REJECT = the claim survives; UNRESOLVED = genuinely undecided.
-- verdict: ≤80 words, grounded ONLY in adjudicated + consensus claims.
+- verdict: 2-5 sentences — your clear recommendation (proceed / proceed-if / don't) and the single most
+  important reason. Grounded ONLY in adjudicated + consensus claims.
+- key_points: 4-8 bullets — the reasoning a decision-maker needs, in plain language. Cover: what decided
+  it, the decisive trade-offs, where the analysts DISAGREED and whose side you took and why, and the one
+  thing that would most change the verdict. Each bullet a full standalone point, not a fragment.
 - dissent: ≥1 item — the strongest argument AGAINST your own verdict. Empty dissent is invalid.
 - confidence_notes: which conclusions are HIGH/MEDIUM/LOW and why.
 DISPUTED ITEMS + VERIFICATION: {{DISPUTES_JSON}}

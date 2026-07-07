@@ -82,6 +82,12 @@ export function renderReport(ctx: RunCtx, args: S10Args): string {
 
   L.push('## Verdict', '', judgeReport.verdict, '');
 
+  if (judgeReport.key_points?.length) {
+    L.push("## Chairman's reasoning", '');
+    for (const p of judgeReport.key_points) L.push(`- ${p}`);
+    L.push('');
+  }
+
   L.push('## Strongest case (per analyst)', '');
   for (const seat of seats) L.push(`- **${disp(seat.provider)}:** ${seat.output.strongest_version}`);
   L.push('');

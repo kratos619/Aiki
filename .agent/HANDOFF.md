@@ -13,7 +13,12 @@ Overwrite at each handoff; keep current, not cumulative. Read after `.agent/STAT
 `src/skills → dist/skills`; wired playbooks `code-review/{reviewer,judge}.md`. **§19: `loadSkill` lints each
 playbook (`lintSkill`: url/upload/send-to/base64) and rejects a tripped file → no-skill fallback (fail-closed).**
 Skill absent OR lint-rejected → exact baseline (zero regression); judge skill affects only the dispute path.
-`src/skills/idea-refinement/analyst.md` is DRAFTED + lint-clean but INTENTIONALLY UNWIRED (held for the bench).
+`src/skills/idea-refinement/analyst.md` is now WIRED (user directed, 2026-07-07) — `buildAnalystTemplate` fills
+`{{SKILL}}` in `IDEA_S4_ANALYST_TEMPLATE` BEFORE S3; playbook now mandates 12-dim rubric coverage. Idea-report
+overhaul (V11): judge `key_points` (chairman reasoning, optional schema field), fuller verdict, new clean HTML
+(system-sans/white, not parchment/serif) + Copy-Markdown button (`councilMarkdown`) + surfaced "How each model
+saw it", and AUTO-OPEN on run success (`src/council/open.ts`; TUI + `run` TTY-gated + `show --open`). NOTE: the
+2026-07-05 example run predates `key_points`, so its HTML has no "Chairman's reasoning" — only a FRESH run shows it.
 
 **ALSO NEW: V10 TUI input polish** (user feedback round 2026-07-07): live command palette
 (`filterCommands`/`suggestCommand` in `src/tui/smart-entry.ts` — pure + tested; wiring in `src/tui/app.tsx`),

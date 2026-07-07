@@ -254,7 +254,8 @@ const Adjudication = z
 export const JudgeReport = z
   .object({
     adjudications: z.array(Adjudication),
-    verdict: z.string().min(1), // ≤80 words, grounded in adjudicated + consensus claims only
+    verdict: z.string().min(1), // the recommendation + core reason (idea: 2-5 sentences; grounded in adjudicated + consensus claims)
+    key_points: z.array(z.string()).max(10).optional(), // chairman's bulleted reasoning (idea workflow); code-review omits it
     dissent: z.array(z.string()).min(1), // ≥1 — empty dissent is invalid (§9); strongest counter-argument
     confidence_notes: z.string().min(1), // which conclusions are HIGH/MEDIUM/LOW and why
   })

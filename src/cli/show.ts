@@ -2,19 +2,11 @@
 // A partial/aborted run (no final-report.md) falls back to a short summary from meta.json (grilled
 // 2026-07-04). Run-id arg is resolved by suffix/substring (no arg → latest).
 
-import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 import type { RunMeta } from '../schemas/index.js';
 import { listArtifacts, readFinalReport, readJsonArtifact, resolveRunId, runDir } from '../storage/runs-read.js';
 import { writeCouncilHtml } from '../council/view.js';
-
-/** Open a file in the OS default handler. Detached + unref so aiki can exit immediately. */
-function openInBrowser(path: string): void {
-  const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
-  const child = spawn(cmd, [path], { stdio: 'ignore', detached: true, shell: process.platform === 'win32' });
-  child.on('error', () => process.stderr.write(`could not auto-open — open it manually: ${path}\n`));
-  child.unref();
-}
+import { openInBrowser } from '../council/open.js';
 
 /** Emit the resolution error for a failed run-id match. */
 function reportMatchError(match: Extract<Awaited<ReturnType<typeof resolveRunId>>, { ok: false }>): void {
