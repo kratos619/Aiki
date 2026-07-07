@@ -8,6 +8,7 @@ import type { RoleMap, WorkflowId } from '../orchestration/context.js';
 import { ConfigError, loadLayeredConfig } from '../config/config.js';
 import { computeDiff, detectDefaultBranch, GitError, repoToplevel } from '../orchestration/git.js';
 import { resolveRunsRoot } from '../storage/paths.js';
+import { openCouncilHtml } from '../council/open.js';
 
 const WORKFLOWS: WorkflowId[] = ['idea-refinement', 'code-review'];
 
@@ -148,7 +149,13 @@ export async function runCommand(workflow: string, input: string | undefined, op
   });
 
   if (outcome.ok) {
-    process.stdout.write(`\n  ✔ run ${outcome.runId} complete — ${outcome.callCount} provider call(s)\n  artifacts: ${outcome.dir}\n\n`);
+    process.stdout.write(`\n  ✔ run ${outcome.runId} complete — ${outcome.callCount} provider call(s)\n  artifacts: ${outcome.dir}\n`);
+    // Auto-open the readable report in the browser (interactive terminals only; skipped in pipes/CI).
+    if (process.stdout.isTTY) {
+      const html = await openCouncilHtml(outcome.runId, outcome.dir);
+      if (html) process.stdout.write(`  report: ${html} — opening in your browser…\n`);
+    }
+    process.stdout.write('\n');
     return 0;
   }
   process.stderr.write(

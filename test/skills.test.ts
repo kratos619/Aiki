@@ -4,6 +4,7 @@ import { describe, it, expect } from 'vitest';
 import { loadSkill, lintSkill } from '../src/orchestration/skills.js';
 import { buildReviewerPrompt } from '../src/workflows/code-review.js';
 import { buildJudgePrompt } from '../src/orchestration/stages/cr-s9-judge.js';
+import { buildAnalystTemplate } from '../src/workflows/idea-refinement.js';
 
 const path = '/repo/.aiki/runs/x/inputs/diff.patch';
 
@@ -18,6 +19,12 @@ describe('loadSkill', () => {
     const skill = loadSkill('code-review', 'judge');
     expect(skill.length).toBeGreaterThan(0);
     expect(skill).toContain('How to weigh each dispute');
+  });
+
+  it('loads the idea-refinement analyst playbook (mandates rubric coverage)', () => {
+    const skill = loadSkill('idea-refinement', 'analyst');
+    expect(skill.length).toBeGreaterThan(0);
+    expect(skill).toContain('MANDATORY coverage');
   });
 
   it('returns empty string for a missing playbook (backward-compatible)', () => {
@@ -84,5 +91,21 @@ describe('buildJudgePrompt', () => {
     const filled = buildJudgePrompt(disputes, '');
     expect(filled).not.toContain('{{SKILL}}');
     expect(filled).toContain('genuinely undecided.\nOutput ONLY JSON matching the judge schema:');
+  });
+});
+
+describe('buildAnalystTemplate (idea S4, resolved before S3)', () => {
+  it('injects the skill and leaves S3 slots intact for the model to fill', () => {
+    const t = buildAnalystTemplate('COVER-EVERYTHING');
+    expect(t).toContain('COVER-EVERYTHING');
+    expect(t).toContain('{{INPUT_PATH}}'); // S3 still fills these
+    expect(t).toContain('{{INTENT_CONTRACT_JSON}}');
+    expect(t).not.toContain('{{SKILL}}');
+  });
+
+  it('empty skill collapses to the exact pre-skill baseline', () => {
+    const t = buildAnalystTemplate('');
+    expect(t).not.toContain('{{SKILL}}');
+    expect(t).toContain('read the file at {{INPUT_PATH}}\n\nProduce ONLY JSON');
   });
 });

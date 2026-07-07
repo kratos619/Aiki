@@ -27,6 +27,7 @@ export interface CouncilView {
   runId: string;
   workflow: WorkflowId;
   verdict: string;
+  keyPoints: string[]; // chairman's bulleted reasoning (idea); [] for code-review
   confidence: string;
   dissent: string[];
   columns: Column[];
@@ -232,6 +233,7 @@ export async function loadCouncilView(runId: string, dir: string): Promise<Counc
     runId,
     workflow: meta.workflow,
     verdict,
+    keyPoints: judge?.key_points ?? [],
     confidence: judge?.confidence_notes ?? '',
     dissent: judge?.dissent ?? [],
     columns,
@@ -348,16 +350,95 @@ function renderIdeaBody(view: CouncilView): string {
       </details>`
     : '';
 
+  const chairman = view.keyPoints?.length
+    ? section('', "Chairman's reasoning", `<ul class="reasons">${view.keyPoints.map((p) => `<li>${escapeHtml(p)}</li>`).join('')}</ul>`, 100,
+        'How the chair weighed the debate to reach the verdict above.')
+    : '';
+
+  const modelCards = view.columns.length
+    ? view.columns.map((c) => `
+      <article class="card model-card">
+        <h3>${escapeHtml(c.title)}</h3>
+        ${c.lines.length ? `<ul class="model-lines">${c.lines.slice(0, 10).map((l) => `<li>${escapeHtml(l)}</li>`).join('')}</ul>` : '<p class="muted">No output recorded.</p>'}
+      </article>`).join('')
+    : '<p class="muted">No per-model output recorded.</p>';
+
   return `
     ${hero}
+    ${chairman}
     ${bottomLine}
     ${section('01', 'Risks that held up', riskCards, 180, 'Assumptions your idea depends on that the council challenged — and the challenge stuck.')}
-    ${section('02', 'Blind spots — answer these before you build', blindGrid, 240, 'Nobody on the council examined these. They are usually where ideas actually fail.')}
-    ${section('03', 'Where the models agreed', agreeList, 300, 'Points more than one model independently backed.')}
-    ${section('04', 'Recommended next steps', steps, 360, 'Derived from the risks and blind spots above.')}
+    ${section('02', 'How each model saw it', `<div class="model-grid">${modelCards}</div>`, 220, 'Each model analysed the idea alone, then cross-examined the others. Here is where each one landed.')}
+    ${section('03', 'Blind spots — answer these before you build', blindGrid, 260, 'Angles the council did not examine. These are usually where ideas actually fail.')}
+    ${section('04', 'Where the models agreed', agreeList, 300, 'Points more than one model independently backed.')}
+    ${section('05', 'Recommended next steps', steps, 360, 'Derived from the risks and blind spots above.')}
     ${defendedBlock}
     ${renderTechnical(view)}
   `;
+}
+
+/** Serialize a council view to clean Markdown — for the HTML "Copy" button (paste into a coding assistant). */
+function councilMarkdown(view: CouncilView): string {
+  const isIdea = view.workflow !== 'code-review';
+  const L: string[] = [];
+  L.push(`# ${isIdea && view.topic ? cleanTopic(view.topic) : isIdea ? 'Idea refinement' : 'Code review'}`, '');
+  const panel = view.columns.map((c) => c.title).join(', ');
+  if (panel) L.push(`Panel: ${panel}${view.moderator ? ` · Chair: ${view.moderator}` : ''}`, '');
+  L.push('## Verdict', '', view.verdict, '');
+  if (view.keyPoints?.length) {
+    L.push("## Chairman's reasoning", '');
+    for (const p of view.keyPoints) L.push(`- ${p}`);
+    L.push('');
+  }
+  if (isIdea) {
+    if (view.risks?.length) {
+      L.push('## Risks that held up', '');
+      for (const r of view.risks) {
+        L.push(`### ${r.assumption} (${sevLabel(r.severity)})`);
+        L.push(`- Challenge: ${r.challenge.replace(/\s*\n+\s*/g, ' ')}`);
+        if (r.reasoning) L.push(`- Why it stands: ${r.reasoning}`);
+        L.push('');
+      }
+    }
+    if (view.columns.length) {
+      L.push('## How each model saw it', '');
+      for (const c of view.columns) {
+        L.push(`### ${c.title}`);
+        for (const l of c.lines.slice(0, 10)) L.push(`- ${l}`);
+        L.push('');
+      }
+    }
+    if (view.blindSpots?.length) {
+      L.push('## Blind spots to resolve', '');
+      for (const b of view.blindSpots) L.push(`- ${b}`);
+      L.push('');
+    }
+    if (view.agreements?.length) {
+      L.push('## Where the models agreed', '');
+      for (const a of view.agreements) L.push(`- ${a.statement}`);
+      L.push('');
+    }
+    if (view.nextSteps?.length) {
+      L.push('## Recommended next steps', '');
+      view.nextSteps.forEach((s, i) => L.push(`${i + 1}. ${s}`));
+      L.push('');
+    }
+  } else if (view.rows.length) {
+    L.push('## Findings', '');
+    for (const r of view.rows) {
+      L.push(`- **${r.title}**${r.ruling ? ` — judge: ${r.ruling}` : ''}`);
+      if (r.detail) L.push(`  - ${r.detail}`);
+    }
+    L.push('');
+  }
+  if (view.dissent.length) {
+    L.push('## Dissent (strongest counter-argument)', '');
+    for (const d of view.dissent) L.push(`- ${d}`);
+    L.push('');
+  }
+  if (view.confidence) L.push('## Confidence', '', view.confidence, '');
+  L.push('---', `Generated by aiki · ${view.runId} · analysis, not advice — verify before acting.`);
+  return L.join('\n');
 }
 
 function renderReviewBody(view: CouncilView): string {
@@ -415,13 +496,15 @@ export function renderCouncilHtml(view: CouncilView): string {
   const panel = view.columns.map((c) => c.title);
   const metaBits = [
     panel.length ? `Panel: ${panel.join(' · ')}` : '',
-    view.moderator ? `Moderator: ${view.moderator}` : '',
+    view.moderator ? `Chair: ${view.moderator}` : '',
     view.calls,
   ].filter(Boolean);
   const flags = view.flags.length
     ? `<div class="warns">${view.flags.map((f) => `<span class="warn">⚑ ${escapeHtml(f.replaceAll('_', ' '))}</span>`).join('')}</div>`
     : '';
   const body = isIdea ? renderIdeaBody(view) : renderReviewBody(view);
+  // Embed the report as Markdown for the Copy button. Escape "<" so a "</script>" in content can't break out.
+  const md = JSON.stringify(councilMarkdown(view)).replace(/</g, '\\u003c');
 
   return `<!doctype html>
 <html lang="en">
@@ -435,21 +518,16 @@ export function renderCouncilHtml(view: CouncilView): string {
   --serif:"Iowan Old Style","Palatino Linotype",Palatino,Charter,Georgia,"Times New Roman",serif;
   --sans:-apple-system,BlinkMacSystemFont,"Avenir Next","Segoe UI",system-ui,sans-serif;
   --mono:"SF Mono","JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
-  --paper:#f4efe4; --panel:#fbf8f1; --ink:#221d16; --soft:#6c6151; --faint:#8b8172; --line:#ddd3bf;
-  --good:#3d6b4e; --good-bg:#e7efe4; --risk:#a4392a; --risk-bg:#f6e5df;
-  --caution:#966410; --caution-bg:#f6ebd3; --slate:#4a6272; --accent:#7a2f24;
+  --paper:#ffffff; --panel:#f7f8fa; --ink:#1a1c1f; --soft:#5b6470; --faint:#9aa1ab; --line:#e6e8ec;
+  --good:#15803d; --good-bg:#e9f7ef; --risk:#c0392b; --risk-bg:#fbeae7;
+  --caution:#b45309; --caution-bg:#fdf2e2; --slate:#475569; --accent:#2563eb;
 }
 *{box-sizing:border-box;}
 html{-webkit-text-size-adjust:100%;}
-body{margin:0;background:
-  radial-gradient(120% 60% at 100% -10%, rgba(122,47,36,.05), transparent 60%),
-  radial-gradient(90% 50% at -10% 0%, rgba(61,107,78,.05), transparent 55%),
-  var(--paper);
-  color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.55;
-  background-attachment:fixed;}
-main{max-width:820px;margin:0 auto;padding:48px 26px 90px;}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.6;}
+main{max-width:800px;margin:0 auto;padding:34px 24px 90px;}
 a{color:var(--accent);}
-h1,h2,h3,h4{font-family:var(--serif);font-weight:600;letter-spacing:-.01em;}
+h1,h2,h3,h4{font-family:var(--sans);font-weight:650;letter-spacing:-.01em;}
 p{margin:0 0 .6em;}
 
 /* masthead */
@@ -470,7 +548,27 @@ p{margin:0 0 .6em;}
   padding:5px 13px;border-radius:100px;margin-bottom:14px;}
 .tone-good .pill{background:var(--good-bg);color:var(--good);} .tone-caution .pill{background:var(--caution-bg);color:var(--caution);}
 .tone-risk .pill{background:var(--risk-bg);color:var(--risk);}
-.verdict-text{font-family:var(--serif);font-size:clamp(19px,2.5vw,23px);line-height:1.45;color:var(--ink);margin:0;}
+.verdict-text{font-family:var(--sans);font-weight:520;font-size:clamp(18px,2.3vw,21px);line-height:1.5;color:var(--ink);margin:0;}
+
+/* top action bar + copy */
+.bar{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:10px 20px;background:var(--panel);border-bottom:1px solid var(--line);}
+.bar-label{font-family:var(--mono);font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--soft);}
+.copy-btn{font-family:var(--sans);font-size:13.5px;font-weight:600;cursor:pointer;color:#fff;background:var(--accent);
+  border:0;border-radius:8px;padding:8px 15px;transition:background .15s ease,transform .1s ease;}
+.copy-btn:hover{filter:brightness(1.05);} .copy-btn:active{transform:translateY(1px);}
+.copy-btn.ok{background:var(--good);}
+
+/* chairman's reasoning */
+.reasons{margin:0;padding:0;list-style:none;}
+.reasons li{position:relative;padding:11px 0 11px 26px;border-bottom:1px solid var(--line);font-size:15.5px;color:var(--ink);}
+.reasons li:last-child{border-bottom:0;}
+.reasons li::before{content:"";position:absolute;left:4px;top:18px;width:7px;height:7px;border-radius:50%;background:var(--accent);}
+
+/* per-model grid */
+.model-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;}
+.model-card h3{font-size:15.5px;margin:0 0 10px;padding-bottom:8px;border-bottom:1px solid var(--line);}
+.model-lines{margin:0;padding-left:18px;} .model-lines li{font-size:13.5px;color:#3a3f47;margin-bottom:7px;}
 .glance{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:22px;}
 .stat{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:14px 12px;text-align:center;}
 .stat .n{display:block;font-family:var(--serif);font-size:30px;line-height:1;}
@@ -557,9 +655,12 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-fa
 </style>
 </head>
 <body>
+<div class="bar">
+  <span class="bar-label">${escapeHtml(kicker)}</span>
+  <button class="copy-btn" onclick="copyReport(this)">Copy report (Markdown)</button>
+</div>
 <main>
   <header class="mast">
-    <div class="kicker">${escapeHtml(kicker)}</div>
     <h1>${escapeHtml(title)}</h1>
     <div class="mmeta">${metaBits.map((b) => `<span>${escapeHtml(b)}</span>`).join('')}</div>
     ${flags}
@@ -567,6 +668,15 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-fa
   ${body}
   <footer>Generated by aiki · ${escapeHtml(view.runId)} · a local model council. This is analysis, not advice — verify before acting.</footer>
 </main>
+<script>
+const REPORT_MD = ${md};
+function copyReport(btn){
+  navigator.clipboard.writeText(REPORT_MD).then(function(){
+    var o=btn.textContent; btn.textContent='✓ Copied'; btn.classList.add('ok');
+    setTimeout(function(){ btn.textContent=o; btn.classList.remove('ok'); }, 1600);
+  }).catch(function(){ btn.textContent='Copy failed — select the text manually'; });
+}
+</script>
 </body>
 </html>`;
 }

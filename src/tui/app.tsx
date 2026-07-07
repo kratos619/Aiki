@@ -31,6 +31,7 @@ import { IDEA_STAGES, runIdeaRefinement } from '../workflows/idea-refinement.js'
 import { CR_STAGES, runCodeReview } from '../workflows/code-review.js';
 import { computeDiff, computeWorkingTreeDiff, detectRepoStatus, type RepoStatus } from '../orchestration/git.js';
 import { loadCouncilView, type CouncilView } from '../council/view.js';
+import { openCouncilHtml } from '../council/open.js';
 import { GLYPH, displayNames, elapsedLabel, initTimeline, markEnd, markStart, progressBar, runningPhrase, totalElapsed, type StageRow } from './timeline.js';
 import { formatCompletion, formatError, type CompletionView, type ErrorView } from './format.js';
 import { COMMANDS, PRODUCT_LINE, filterCommands, parseCommand, routeInput, scopeRedirect, suggestCommand, type ParsedCommand, type QuickAction } from './smart-entry.js';
@@ -218,6 +219,7 @@ export function App(props: AppProps): React.JSX.Element {
       if (o.ok) {
         setCouncilView(await loadCouncilView(o.runId, o.dir));
         setCompletion(wf === 'idea-refinement' ? await loadCompletion(o.dir) : null);
+        void openCouncilHtml(o.runId, o.dir); // auto-open the readable report in the browser
       }
       else if (!wasAborted) setErrorView(formatError(o.error?.code ?? 'CRASH', o.dir || undefined));
       setPhase('finished');
@@ -594,7 +596,7 @@ export function App(props: AppProps): React.JSX.Element {
                 </Box>
               )}
               <Text dimColor>{'\n'}report: {dir}/final-report.md</Text>
-              <Text dimColor>html: aiki show {councilView.runId} --html</Text>
+              <Text dimColor>report opened in your browser · reopen: aiki show {councilView.runId} --html --open</Text>
             </Box>
           )}
           {!aborted && !errorView && !councilView && (

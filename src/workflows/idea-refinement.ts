@@ -17,6 +17,7 @@ import { s7Disagreement, type RubricItem } from '../orchestration/stages/s7-disa
 import { s8Verify } from '../orchestration/stages/s8-verify.js';
 import { s9Judge } from '../orchestration/stages/s9-judge.js';
 import { s10Render } from '../orchestration/stages/s10-render.js';
+import { loadSkill } from '../orchestration/skills.js';
 
 /** §12.1 idea-vetting rubric: 12 mandatory coverage items. S7 flags any item no analyst addressed
  *  as a blind spot. Inlined here (like the S4 template) while the skill/`rubric.json` loader (§11)
@@ -41,7 +42,7 @@ export const IDEA_S4_ANALYST_TEMPLATE = `ROLE: Independent analyst on a decision
 other analysts' output. Be adversarial toward the idea, not polite.
 
 TASK CONTRACT: {{INTENT_CONTRACT_JSON}}
-INPUT DOCUMENT: read the file at {{INPUT_PATH}}
+INPUT DOCUMENT: read the file at {{INPUT_PATH}}{{SKILL}}
 
 Produce ONLY JSON matching {{S4_SCHEMA_REF}} with:
 - task_echo: restate the task in ≤2 sentences (drift check).
@@ -51,6 +52,15 @@ Produce ONLY JSON matching {{S4_SCHEMA_REF}} with:
   Every attack MUST target an assumption id. Unanchored attacks will be discarded.
 - open_questions: ≤5 questions whose answers would change the verdict.
 Rules: no motivation, no summaries of your own output, no markdown, JSON only.`;
+
+/**
+ * Resolve the {{SKILL}} slot in the analyst template BEFORE S3 (S3 is a model call that tailors the
+ * template + errors on any leftover {{...}}). An empty skill collapses the slot → exact pre-skill
+ * baseline; the S3 deterministic fallback then preserves the embedded playbook verbatim.
+ */
+export function buildAnalystTemplate(skill: string): string {
+  return IDEA_S4_ANALYST_TEMPLATE.replace('{{SKILL}}', skill ? `\n\n${skill}` : '');
+}
 
 /** Timeline manifest (T8): the 10 stages in order, each with the provider-role its row displays.
  *  The TUI draws the pending skeleton from this and resolves chips from `ctx.roles`. Ids match the
@@ -83,7 +93,7 @@ export async function runIdeaRefinement(ctx: RunCtx, input: string): Promise<voi
     s3Prompts(ctx, {
       contract,
       interpretation: guard.chosen.my_interpretation,
-      templates: { analyst: IDEA_S4_ANALYST_TEMPLATE },
+      templates: { analyst: buildAnalystTemplate(loadSkill('idea-refinement', 'analyst')) },
       slots: { INPUT_PATH: inputPath, S4_SCHEMA_REF: 'the idea-refinement S4 RoleOutput schema' },
     }),
   );
