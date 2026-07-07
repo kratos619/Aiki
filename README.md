@@ -136,4 +136,4 @@ under its run directory.
 
 ## License
 
-See the repository. Analysis, not advice — verify before acting.
+MIT — see [LICENSE](LICENSE). Analysis, not advice — verify before acting.

@@ -7,10 +7,11 @@ import { Box, Text, useApp, useInput } from 'ink';
 import Spinner from 'ink-spinner';
 import TextInput from 'ink-text-input';
 import { readFile } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { DISPLAY_NAME, type ProviderId } from '../providers/types.js';
 import {
   RunCtx,
+  DEFAULT_BUDGET,
   makeRunId,
   resolveRoles,
   setupProviders,
@@ -30,9 +31,9 @@ import { IDEA_STAGES, runIdeaRefinement } from '../workflows/idea-refinement.js'
 import { CR_STAGES, runCodeReview } from '../workflows/code-review.js';
 import { computeDiff, computeWorkingTreeDiff, detectRepoStatus, type RepoStatus } from '../orchestration/git.js';
 import { loadCouncilView, type CouncilView } from '../council/view.js';
-import { GLYPH, displayNames, elapsedLabel, initTimeline, markEnd, markStart, type StageRow } from './timeline.js';
+import { GLYPH, displayNames, elapsedLabel, initTimeline, markEnd, markStart, progressBar, runningPhrase, totalElapsed, type StageRow } from './timeline.js';
 import { formatCompletion, formatError, type CompletionView, type ErrorView } from './format.js';
-import { COMMANDS, PRODUCT_LINE, parseCommand, routeInput, type ParsedCommand, type QuickAction } from './smart-entry.js';
+import { COMMANDS, PRODUCT_LINE, filterCommands, parseCommand, routeInput, suggestCommand, type ParsedCommand, type QuickAction } from './smart-entry.js';
 
 type Phase = 'detecting' | 'input' | 'running' | 'clarify' | 'finished';
 type WorkflowRunner = (ctx: RunCtx, input: string) => Promise<void>;
@@ -75,6 +76,11 @@ export function App(props: AppProps): React.JSX.Element {
   const [clarifyTyping, setClarifyTyping] = useState(false); // "type your own" sub-mode
   const [clarifyText, setClarifyText] = useState('');
   const [panel, setPanel] = useState<string | null>(null); // V9: /sessions /models /config /help output
+  const [sel, setSel] = useState(0); // V10: command-palette highlight index
+  // V10: TextInput only puts the cursor at the end on MOUNT (ink-text-input keeps the old offset on an
+  // external value change). Bumping this key remounts it after a Tab-complete so typing continues at the end.
+  const [inputEpoch, setInputEpoch] = useState(0);
+  const [pendingIdea, setPendingIdea] = useState<string | null>(null); // V10: confirm gate before a paid run
   const [completion, setCompletion] = useState<CompletionView | null>(null);
   const [councilView, setCouncilView] = useState<CouncilView | null>(null);
   const [errorView, setErrorView] = useState<ErrorView | null>(null);
@@ -108,12 +114,47 @@ export function App(props: AppProps): React.JSX.Element {
     return () => clearInterval(t);
   }, [phase]);
 
+  // V10 command palette: matches for what's being typed (only on the input screen, not mid-confirm).
+  const paletteMatches = phase === 'input' && pendingIdea === null ? filterCommands(idea) : [];
+  const selIdx = Math.min(sel, Math.max(paletteMatches.length - 1, 0));
+
   useInput((input, key) => {
     if (key.ctrl && input === 'c') {
       abortRef.current?.abort();
       if (clarify) clarify.resolve({ kind: 'pick', index: 0 }); // unblock S2 so the run reaches its abort guard
       if (phase === 'detecting' || phase === 'input' || phase === 'finished') exit();
       return;
+    }
+    // V10 confirm gate: the TextInput is unmounted while pending, so Enter/Esc arrive here only.
+    if (phase === 'input' && pendingIdea !== null) {
+      if (key.return) {
+        const text = pendingIdea;
+        setPendingIdea(null);
+        startIdea(text);
+      } else if (key.escape) {
+        setPendingIdea(null);
+        setRouterMessage('cancelled — nothing was run.');
+      }
+      return;
+    }
+    // V10: Esc on the home screen clears everything typed/shown — universal "get me out" key.
+    if (phase === 'input' && key.escape) {
+      setIdea('');
+      setPanel(null);
+      setRouterMessage('');
+      setSel(0);
+      return;
+    }
+    // V10 palette keys: ↑/↓ move the highlight, Tab completes into the box. (Enter submits via TextInput.)
+    if (phase === 'input' && paletteMatches.length > 0) {
+      if (key.upArrow) return void setSel((selIdx - 1 + paletteMatches.length) % paletteMatches.length);
+      if (key.downArrow) return void setSel((selIdx + 1) % paletteMatches.length);
+      if (key.tab) {
+        setIdea(`/${paletteMatches[selIdx]!.name} `);
+        setSel(0);
+        setInputEpoch((e) => e + 1); // remount the input → cursor lands after "/command " ready to type
+        return;
+      }
     }
     // Clarify key handling — the "type your own" sub-mode lets TextInput capture keys instead.
     if (phase === 'clarify' && clarify && !clarifyTyping) {
@@ -218,7 +259,23 @@ export function App(props: AppProps): React.JSX.Element {
       return e instanceof Error ? e.message : String(e);
     }
   };
-  const helpPanel = (): string => ['Commands:', ...COMMANDS.map((c) => `  ${c.usage.padEnd(20)} ${c.help}`), '', 'Or just type your idea and press Enter.'].join('\n');
+  const helpPanel = (): string =>
+    [
+      'aiki — a local council of your installed AI CLIs (Claude, Codex, Gemini).',
+      'It stress-tests ideas and reviews code by making the models cross-examine',
+      'each other; a judge settles disputes. Artifacts land in .aiki/runs/.',
+      '',
+      'Commands:',
+      ...COMMANDS.map((c) => `  ${c.usage.padEnd(20)} ${c.help}`),
+      '',
+      'Examples:',
+      '  /idea a fridge-to-recipe app for students',
+      '  /review --branch          review this branch vs the default branch',
+      '  /resume 20260707-1645     continue a stopped run (finished calls replay free)',
+      '',
+      'Plain text works too — it routes to the idea flow, with a confirm step',
+      'so nothing spends model calls until you say so.',
+    ].join('\n');
 
   const resumeInTui = async (idArg?: string): Promise<void> => {
     if (!idArg) return void setPanel(await sessionsPanel('Resume which? type /resume <id>'));
@@ -261,14 +318,28 @@ export function App(props: AppProps): React.JSX.Element {
         setPanel(await configPanel()); return;
       case 'help': case '':
         setPanel(helpPanel()); return;
-      default:
-        setRouterMessage(`unknown command /${p.cmd} — type /help`);
+      default: {
+        const near = suggestCommand(p.cmd);
+        setRouterMessage(`unknown command /${p.cmd}${near ? ` — did you mean /${near}?` : ' — type /help'}`);
+      }
     }
   };
 
   const submitInput = (text: string): void => {
     const parsed = parseCommand(text);
-    if (parsed) { void runCommand(parsed); return; }
+    if (parsed) {
+      // V10: Enter with the palette open runs the HIGHLIGHTED command when the typed word isn't
+      // itself a known command (so "/mo" ⏎ runs /models; "/review" ⏎ still runs review exactly).
+      const known = COMMANDS.some((c) => c.name === parsed.cmd);
+      setIdea('');
+      setSel(0);
+      if (!known && !parsed.rest && paletteMatches.length > 0) {
+        void runCommand({ cmd: paletteMatches[selIdx]!.name, rest: '', args: [] });
+        return;
+      }
+      void runCommand(parsed);
+      return;
+    }
 
     setPanel(null);
     const route = routeInput(text);
@@ -282,7 +353,10 @@ export function App(props: AppProps): React.JSX.Element {
       setRouterMessage(repo ? 'That looks code-related. Type /review (working tree) or /review --branch.' : 'That looks code-related. Open aiki inside a git repo, then /review.');
       return;
     }
-    startIdea(text);
+    // V10 confirm gate: plain text never starts a paid run directly — show what will happen first.
+    setIdea('');
+    setRouterMessage('');
+    setPendingIdea(text);
   };
 
   // ── render ────────────────────────────────────────────────────────────────
@@ -310,13 +384,16 @@ export function App(props: AppProps): React.JSX.Element {
               repo: {repo.name} — {repo.changedFiles} changed files vs {repo.defaultBranch ?? 'unknown default branch'}
             </Text>
           )}
-          <Text dimColor>providers ready:</Text>
-          {handles.map((h) => (
-            <Text key={h.id}>
-              {'  '}
-              <Text color="green">✔</Text> {DISPLAY_NAME[h.id]} {h.version ? <Text dimColor>{h.version}</Text> : null}
-            </Text>
-          ))}
+          <Text>
+            {handles.map((h, i) => (
+              <Text key={h.id}>
+                {i > 0 ? <Text dimColor> · </Text> : null}
+                <Text color="green">✔</Text> {DISPLAY_NAME[h.id]}
+                {h.version ? <Text dimColor> {h.version}</Text> : null}
+              </Text>
+            ))}
+            <Text dimColor> — council ready</Text>
+          </Text>
         </Box>
       )}
 
@@ -347,12 +424,41 @@ export function App(props: AppProps): React.JSX.Element {
               <Text color="cyan">/help</Text>
             </Text>
           </Box>
-          <Text dimColor>Type a command, or just describe your idea and press Enter:</Text>
-          <Box borderStyle="round" paddingX={1}>
-            <Text>▸ </Text>
-            {/* Single-line input: collapse pasted newlines to spaces so multi-line paste doesn't corrupt the render. */}
-            <TextInput value={idea} onChange={(v) => setIdea(v.replace(/\s*[\r\n]+\s*/g, ' '))} onSubmit={submitInput} />
-          </Box>
+          {pendingIdea !== null ? (
+            /* V10 confirm gate — nothing spends model calls until Enter. */
+            <Box flexDirection="column" borderStyle="round" paddingX={1}>
+              <Text>Run the idea council on:</Text>
+              <Text color="cyan">  “{pendingIdea.length > 100 ? `${pendingIdea.slice(0, 97)}…` : pendingIdea}”</Text>
+              <Text dimColor>  10-stage pipeline · up to {budgetOverride ?? DEFAULT_BUDGET} model calls · Ctrl+C aborts mid-run</Text>
+              <Text>
+                <Text color="green">enter</Text> run  ·  <Text color="yellow">esc</Text> cancel
+              </Text>
+            </Box>
+          ) : (
+            <>
+              <Text dimColor>Type a command, or just describe your idea and press Enter:</Text>
+              <Box borderStyle="round" paddingX={1}>
+                <Text>▸ </Text>
+                {/* Single-line input: collapse pasted newlines to spaces (multi-line paste) and strip tabs (Tab = palette-complete). */}
+                <TextInput key={inputEpoch} value={idea} onChange={(v) => setIdea(v.replace(/\s*[\r\n]+\s*/g, ' ').replace(/\t/g, ''))} onSubmit={submitInput} />
+              </Box>
+            </>
+          )}
+          {paletteMatches.length > 0 && (
+            /* V10 live command palette — filtered as you type; ↑↓ move, Tab completes, Enter runs. */
+            <Box flexDirection="column" borderStyle="round" paddingX={1}>
+              {paletteMatches.map((m, i) => (
+                <Text key={m.name}>
+                  <Text color={i === selIdx ? 'cyan' : undefined} bold={i === selIdx}>
+                    {i === selIdx ? '▸ ' : '  '}
+                    /{m.name}
+                  </Text>
+                  <Text dimColor>{`  ${m.usage.replace(`/${m.name}`, '').trim().padEnd(10)}  ${m.help}`}</Text>
+                </Text>
+              ))}
+              <Text dimColor>↑↓ select · tab complete · enter run</Text>
+            </Box>
+          )}
           {routerMessage ? <Text color="yellow">{routerMessage}</Text> : null}
           {panel ? (
             <Box flexDirection="column" marginTop={1} borderStyle="round" paddingX={1}>
@@ -361,7 +467,7 @@ export function App(props: AppProps): React.JSX.Element {
               ))}
             </Box>
           ) : (
-            <Text dimColor>tip: long idea? use `aiki run idea-refinement ./idea.md`</Text>
+            <Text dimColor>new here? /help explains how aiki works · long idea? `aiki run idea-refinement ./idea.md`</Text>
           )}
         </Box>
       )}
@@ -372,16 +478,34 @@ export function App(props: AppProps): React.JSX.Element {
             const color = r.status === 'done' ? 'green' : r.status === 'failed' ? 'red' : r.status === 'running' ? 'yellow' : 'gray';
             return (
               <Text key={r.id}>
-                <Text color={color}>{GLYPH[r.status]}</Text> {r.id.padEnd(3)} {r.label.padEnd(24)}
+                {r.status === 'running' ? (
+                  <Text color="yellow">
+                    <Spinner type="dots" />
+                  </Text>
+                ) : (
+                  <Text color={color}>{GLYPH[r.status]}</Text>
+                )}{' '}
+                {r.id.padEnd(3)} {r.label.padEnd(24)}
                 <Text dimColor>{displayNames(r.providers) || '—'}</Text> {'  '}{elapsedLabel(r, now)}
               </Text>
             );
           })}
-          {phase === 'running' && (
-            <Text dimColor>
-              {'\n'}calls used {ctxRef.current?.calls.length ?? 0}/{budget} · Ctrl+C aborts (artifacts kept)
-            </Text>
-          )}
+          {phase === 'running' &&
+            (() => {
+              const running = rows.find((r) => r.status === 'running');
+              const p = progressBar(rows);
+              const secs = running?.startedAt !== undefined ? Math.floor((now - running.startedAt) / 1000) : 0;
+              return (
+                <Box flexDirection="column" marginTop={1}>
+                  <Text>
+                    <Text color="cyan">{p.bar}</Text>
+                    <Text dimColor> {p.done}/{p.total}</Text>
+                    {running ? <Text color="yellow">  {runningPhrase(running.id, secs)}…</Text> : null}
+                  </Text>
+                  <Text dimColor>calls used {ctxRef.current?.calls.length ?? 0}/{budget} · Ctrl+C aborts (artifacts kept)</Text>
+                </Box>
+              );
+            })()}
         </Box>
       )}
 
@@ -420,7 +544,10 @@ export function App(props: AppProps): React.JSX.Element {
       {phase === 'finished' && (
         <Box flexDirection="column" marginTop={1}>
           {aborted && (
-            <Text color="yellow">⊘ Run aborted — partial artifacts at {dir}</Text>
+            <Box flexDirection="column">
+              <Text color="yellow">⊘ Run aborted — partial artifacts at {dir}</Text>
+              <Text dimColor>  finished calls replay free: aiki resume {basename(dir)}</Text>
+            </Box>
           )}
           {!aborted && errorView && (
             <Box flexDirection="column" borderStyle="round" borderColor="red" paddingX={1}>
@@ -433,8 +560,9 @@ export function App(props: AppProps): React.JSX.Element {
           )}
           {!aborted && !errorView && councilView && (
             <Box flexDirection="column">
-              <Text color="green" bold>
-                ✔ Run complete
+              <Text>
+                <Text color="green" bold>✔ Run complete</Text>
+                {totalElapsed(rows) ? <Text dimColor> · council adjourned in {totalElapsed(rows)}</Text> : null}
               </Text>
               <Box flexDirection="column" marginTop={1}>
                 <Text bold>Verdict</Text>
@@ -463,8 +591,9 @@ export function App(props: AppProps): React.JSX.Element {
           )}
           {!aborted && !errorView && !councilView && (
             <Box flexDirection="column">
-              <Text color="green" bold>
-                ✔ Run complete
+              <Text>
+                <Text color="green" bold>✔ Run complete</Text>
+                {totalElapsed(rows) ? <Text dimColor> · council adjourned in {totalElapsed(rows)}</Text> : null}
               </Text>
               {completion ? (
                 <Box flexDirection="column" marginTop={1}>

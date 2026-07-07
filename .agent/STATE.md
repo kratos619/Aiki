@@ -42,6 +42,13 @@ Verdict + benchmark: `RESULTS.md`, `BENCHMARK.md` (frozen pre-registration).
   `code-review/judge.md` (evidence>assertion, UNRESOLVED is rare, real dissent). **Skill absent OR lint-rejected
   → exact pre-skill baseline (zero regression); judge skill only affects the dispute path.** 222 tests green
   (`test/skills.test.ts`, 15).
+- **V10 TUI input polish (uncommitted):** live command palette (`filterCommands`: prefix-then-substring,
+  bare `/` lists all; ↑↓ select, Tab completes, Enter runs highlighted), near-miss recovery
+  (`suggestCommand`, edit-distance ≤2: `/model` → "did you mean /models?"), **confirm gate — plain text
+  NEVER starts a paid run directly** (shows the idea + up-to-N-calls line; Enter runs, Esc cancels; fixes
+  the "typed `I`, burned a run" incident), richer `/help` (what aiki is + examples) + "new here?" hint.
+  Pure logic in `src/tui/smart-entry.ts` (tested, `test/tui.test.ts` +9); wiring in `src/tui/app.tsx`.
+  **Manual TUI look/feel check = USER.** NO chat mode — §3/§22 upheld (router explains, doesn't answer).
 - **Idea analyst skill — DRAFTED, deliberately NOT WIRED** (`src/skills/idea-refinement/analyst.md`, passes the
   lint). Held pending the code-review bench A/B (per user decision "A", and the idea-workflow's own deferral
   note). Wiring is heavier than reviewer/judge — idea's **S3 is a model call** (`s3Prompts` tailors templates),
@@ -79,6 +86,9 @@ Verdict + benchmark: `RESULTS.md`, `BENCHMARK.md` (frozen pre-registration).
 | **V4 escalation ladder** | 🔶 STARTED | Design + BENCHMARK L1 pre-registration + coverage-hole detector DONE. Remaining: Arm L wiring + scripted e2e; then metered run (BLOCKED on V1 bench). |
 | **Skills — reviewer + judge playbooks + §19 lint** | ✅ | `loadSkill`/`lintSkill` + `{{SKILL}}` seam in S4 reviewer + S9 judge; add-to, zero-regression when absent/lint-rejected; 222 tests. Uncommitted. Metered A/B is the USER's. |
 | **Skills — idea analyst playbook** | 🔶 DRAFTED | `src/skills/idea-refinement/analyst.md` written + lint-clean, NOT wired (held for the bench). Wiring = `buildAnalystTemplate` fill BEFORE S3 (S3 is a model call). |
+| **V10 TUI input polish** | ✅ | Command palette (+Tab cursor-to-end via input remount) + did-you-mean + plain-text confirm gate + richer /help; uncommitted. Visual check = USER. |
+| **Ship packaging (Gate 4)** | ✅ | LICENSE (MIT, Gaurav Palaspagar), package.json license/author/repo/bugs/homepage/keywords/`files`/`prepublishOnly`; **sourcemap+dts trim (tsconfig declaration/sourceMap→false) → pack 204→74 files, 182→107 kB**; `npm pack --dry-run` verified all runtime assets ship; `aiki --version/--help` run; npm name `aiki` FREE (404). Uncommitted. **Publish = USER (`npm login && npm publish`).** |
+| **V10.1 run-screen life** | ✅ | Spinner on running row, ▰▱ progress bar + n/N, rotating stage phrases (4s cycle, `runningPhrase`), compact 1-line providers, Esc clears home, "adjourned in Xs" + abort resume-hint; pure parts tested (235 total). Uncommitted. Visual check = USER. |
 
 ## Facts already decided (do not re-derive / re-litigate)
 

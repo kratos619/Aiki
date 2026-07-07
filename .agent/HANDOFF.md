@@ -14,7 +14,31 @@ Overwrite at each handoff; keep current, not cumulative. Read after `.agent/STAT
 playbook (`lintSkill`: url/upload/send-to/base64) and rejects a tripped file → no-skill fallback (fail-closed).**
 Skill absent OR lint-rejected → exact baseline (zero regression); judge skill affects only the dispute path.
 `src/skills/idea-refinement/analyst.md` is DRAFTED + lint-clean but INTENTIONALLY UNWIRED (held for the bench).
-**222 tests green, typecheck + build clean.** The user commits.
+
+**ALSO NEW: V10 TUI input polish** (user feedback round 2026-07-07): live command palette
+(`filterCommands`/`suggestCommand` in `src/tui/smart-entry.ts` — pure + tested; wiring in `src/tui/app.tsx`),
+"did you mean /models?" on near-misses, **confirm gate: plain text shows a run-preview box (Enter run / Esc
+cancel) instead of instantly spending calls**, richer `/help` + "new here?" hint. NO chat mode (§3/§22 —
+user asked, pushed back, user approved the compliant version). **ALSO NEW: V10.1 run-screen life** (`src/tui/timeline.ts` pure: `runningPhrase` 4s-rotating stage phrases,
+`progressBar` ▰▱ + n/N, `totalElapsed`; `src/tui/app.tsx`: Spinner on the running row, compact 1-line
+provider strip, Esc clears home screen, success line "· council adjourned in Xs", abort screen shows
+`aiki resume <id>` free-replay hint). Tab-complete now remounts TextInput (`inputEpoch` key) so the cursor
+lands after "/command " — ink-text-input only end-positions the cursor on mount.
+
+**Manual TUI look/feel check = USER**
+(`node dist/cli/index.js`: type `/`, `/mo`+Tab+keep typing, `/model`+Enter, plain text → confirm box → Esc;
+then a real run to see the spinner/progress/phrases screen).
+**235 tests green, typecheck + build clean.** The user commits.
+
+**ALSO NEW: Ship packaging (Gate 4).** `LICENSE` (MIT © 2026 Gaurav Palaspagar — DEFAULTS, user did not
+confirm license type / copyright holder; both trivially changeable pre-publish). `package.json` gained
+`license`/`author`/`repository`/`bugs`/`homepage`/`keywords`/`files:["dist",README,CHANGELOG,LICENSE]`/
+`prepublishOnly:"build && typecheck && test"`. README license line → MIT. Verified: `npm pack --dry-run`
+ships all runtime assets (dist/skills/*.md, dist/providers/profiles.json, LICENSE/README/CHANGELOG),
+`node dist/cli/index.js --version|--help` run non-interactively, npm name `aiki` is FREE (registry 404).
+Sourcemap trim DONE (user asked): `tsconfig` `declaration`/`sourceMap` → false; clean rebuild (`rm -rf dist`
+needed — tsc doesn't purge stale emit) → pack 204→74 files, 182→107 kB, 0 map/dts. **Publish is the USER's:
+`npm login` then `npm publish` (a new public package — irreversible name claim).**
 
 ## Wiring the idea analyst later (when the bench validates the pattern) — NOT the reviewer/judge recipe
 Idea's S3 (`s3Prompts`) is a MODEL call that tailors the templates, and it errors on any unresolved `{{...}}`.

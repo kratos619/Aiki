@@ -3,9 +3,36 @@
   "version": "0.2.0",
   "description": "Local-first orchestration CLI binding your installed AI coding CLIs into schema-validated multi-model workflows.",
   "type": "module",
+  "license": "MIT",
+  "author": "Gaurav Palaspagar",
+  "homepage": "https://github.com/kratos619/Aiki#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kratos619/Aiki.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kratos619/Aiki/issues"
+  },
+  "keywords": [
+    "cli",
+    "llm",
+    "orchestration",
+    "code-review",
+    "multi-model",
+    "claude",
+    "codex",
+    "gemini",
+    "local-first"
+  ],
   "bin": {
     "aiki": "dist/cli/index.js"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
   "engines": {
     "node": ">=20"
   },
@@ -14,6 +41,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "prepublishOnly": "npm run build && npm run typecheck && npm test",
     "aiki": "node --loader tsx dist/cli/index.js"
   },
   "dependencies": {
