@@ -7,11 +7,14 @@ import {
   initTimeline,
   markEnd,
   markStart,
+  progressBar,
+  runningPhrase,
   stageProviders,
+  totalElapsed,
   type StageRow,
 } from '../src/tui/timeline.js';
 import { formatCompletion, formatError } from '../src/tui/format.js';
-import { parseCommand, quickActionReducer, routeInput } from '../src/tui/smart-entry.js';
+import { filterCommands, parseCommand, quickActionReducer, routeInput, suggestCommand } from '../src/tui/smart-entry.js';
 import { IDEA_STAGES } from '../src/workflows/idea-refinement.js';
 import type { RoleMap } from '../src/orchestration/context.js';
 import type { DisagreementMap, JudgeReport } from '../src/schemas/index.js';
@@ -129,5 +132,81 @@ describe('slash-command parser (V9)', () => {
   it('lowercases the command, trims, and handles a bare slash', () => {
     expect(parseCommand('  /RESUME 20260706-abcd  ')).toEqual({ cmd: 'resume', rest: '20260706-abcd', args: ['20260706-abcd'] });
     expect(parseCommand('/')).toEqual({ cmd: '', rest: '', args: [] });
+  });
+});
+
+describe('run-screen life: phrases + progress + total time (V10)', () => {
+  it('runningPhrase rotates every 4s and is stage-flavored', () => {
+    expect(runningPhrase('S9', 0)).toBe('the judge is deliberating');
+    expect(runningPhrase('S9', 4)).toBe('weighing evidence over confidence');
+    expect(runningPhrase('S9', 8)).toBe('the judge is deliberating'); // wraps
+    expect(runningPhrase('S9', 3)).toBe(runningPhrase('S9', 0)); // stable within a window
+  });
+
+  it('runningPhrase falls back for an unknown stage', () => {
+    expect(runningPhrase('S99', 0)).toBe('working');
+  });
+
+  it('progressBar counts done/failed/skipped as finished', () => {
+    const rows: StageRow[] = [
+      { id: 'S1', label: '', providers: [], status: 'done' },
+      { id: 'S2', label: '', providers: [], status: 'failed' },
+      { id: 'S3', label: '', providers: [], status: 'skipped' },
+      { id: 'S4', label: '', providers: [], status: 'running' },
+      { id: 'S5', label: '', providers: [], status: 'pending' },
+    ];
+    expect(progressBar(rows)).toEqual({ bar: '▰▰▰▱▱', done: 3, total: 5 });
+  });
+
+  it('totalElapsed spans first start to last end; empty before anything ran', () => {
+    const rows: StageRow[] = [
+      { id: 'S1', label: '', providers: [], status: 'done', startedAt: 1000, endedAt: 5000 },
+      { id: 'S2', label: '', providers: [], status: 'done', startedAt: 5000, endedAt: 85_000 },
+    ];
+    expect(totalElapsed(rows)).toBe('84s');
+    expect(totalElapsed([{ id: 'S1', label: '', providers: [], status: 'pending' }])).toBe('');
+  });
+});
+
+describe('command palette filter (V10)', () => {
+  it('bare "/" lists every command', () => {
+    expect(filterCommands('/').map((c) => c.name)).toEqual(['idea', 'review', 'resume', 'sessions', 'models', 'config', 'help']);
+  });
+
+  it('prefix filter: "/mo" → models', () => {
+    expect(filterCommands('/mo').map((c) => c.name)).toEqual(['models']);
+  });
+
+  it('prefix matches rank before substring matches ("/re" → review, resume before any substring hit)', () => {
+    const names = filterCommands('/re').map((c) => c.name);
+    expect(names.slice(0, 2)).toEqual(['review', 'resume']);
+  });
+
+  it('substring matches work ("/ess" → sessions)', () => {
+    expect(filterCommands('/ess').map((c) => c.name)).toEqual(['sessions']);
+  });
+
+  it('palette is off for non-slash input and once a space is typed', () => {
+    expect(filterCommands('an idea about fridges')).toEqual([]);
+    expect(filterCommands('/review --branch')).toEqual([]);
+  });
+
+  it('no match → empty (not everything)', () => {
+    expect(filterCommands('/xyzzy')).toEqual([]);
+  });
+});
+
+describe('suggestCommand (near-miss recovery, V10)', () => {
+  it('/model → models (the incident that motivated this)', () => {
+    expect(suggestCommand('model')).toBe('models');
+  });
+
+  it('one-letter typos recover: confg → config, reviw → review', () => {
+    expect(suggestCommand('confg')).toBe('config');
+    expect(suggestCommand('reviw')).toBe('review');
+  });
+
+  it('gibberish → null (no false "did you mean")', () => {
+    expect(suggestCommand('xyzzy')).toBeNull();
   });
 });

@@ -36,6 +36,49 @@ export const COMMANDS: Array<{ name: string; usage: string; help: string }> = [
   { name: 'help', usage: '/help', help: 'this list' },
 ];
 
+/** Live palette filter (V10): while the user is typing the command word (input starts with "/",
+ *  no space yet), return the commands it matches — prefix matches first, then substring matches
+ *  (so "/mo" and "/dels" both find models). Bare "/" lists everything. Pure + deterministic. */
+export function filterCommands(input: string): typeof COMMANDS {
+  const t = input.trimStart();
+  if (!t.startsWith('/') || /\s/.test(t)) return [];
+  const q = t.slice(1).toLowerCase();
+  const prefix = COMMANDS.filter((c) => c.name.startsWith(q));
+  const substr = COMMANDS.filter((c) => !c.name.startsWith(q) && c.name.includes(q));
+  return [...prefix, ...substr];
+}
+
+function editDistance(a: string, b: string): number {
+  const dp = Array.from({ length: a.length + 1 }, (_, i) => {
+    const row = new Array<number>(b.length + 1).fill(0);
+    row[0] = i;
+    return row;
+  });
+  for (let j = 0; j <= b.length; j++) dp[0]![j] = j;
+  for (let i = 1; i <= a.length; i++)
+    for (let j = 1; j <= b.length; j++)
+      dp[i]![j] = Math.min(dp[i - 1]![j]! + 1, dp[i]![j - 1]! + 1, dp[i - 1]![j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return dp[a.length]![b.length]!;
+}
+
+/** Near-miss recovery (V10): the closest command to an unknown one (≤2 edits, e.g. /model → /models),
+ *  falling back to a substring match; null when nothing is plausibly meant. */
+export function suggestCommand(cmd: string): string | null {
+  const q = cmd.toLowerCase();
+  let best: string | null = null;
+  let bestD = 3; // accept distance ≤ 2
+  for (const c of COMMANDS) {
+    const d = editDistance(q, c.name);
+    if (d < bestD) {
+      bestD = d;
+      best = c.name;
+    }
+  }
+  if (best) return best;
+  const sub = COMMANDS.find((c) => c.name.includes(q) || q.includes(c.name));
+  return sub ? sub.name : null;
+}
+
 /** Parse a slash command like "/review --branch" or "/idea build X". Returns null for non-slash input
  *  (which then goes through `routeInput`). Pure + deterministic. */
 export function parseCommand(input: string): ParsedCommand | null {
