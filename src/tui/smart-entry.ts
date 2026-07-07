@@ -7,6 +7,25 @@ export const PRODUCT_LINE =
 const QUESTION_START = /^(what|why|how|who|when|where|is|are|can|could|should|would|do|does|did|will)\b/i;
 const CODE_MARKER = /(diff --git|^@@|\+\+\+ b\/|--- a\/|```|[A-Za-z0-9_-]+\/[A-Za-z0-9_./-]+\.(ts|tsx|js|jsx|py|go|rs|java|rb|php|css|html|md)\b|\b(function|const|let|class|import|export)\b|[{};])/m;
 
+// ── Scope redirect (V10.2) — catch "explore my whole codebase / brainstorm features for me" asks and
+// point them at the right door, instead of silently stress-testing the request sentence as an "idea".
+// aiki reviews a DIFF and vets a STATED idea; it does not roam a repo (§3/§22). Pure + deterministic. ──
+
+// "go through / analyze / review MY|THIS|THE code|codebase|repo|project|files"
+const CODEBASE_SCAN = /\b(go through|read|scan|analy[sz]e|explore|look (?:at|through|into)|review|audit|inspect|check)\b[^.?!]*\b(my|this|the|our|these)\s+(code|code ?base|repo|repository|project|files|source)\b/i;
+// "what|which ... features|improvements|improve|add|build" (interrogative — genuine ideas don't lead with it)
+const BRAINSTORM = /\b(what|which)\b[^.?!]{0,60}\b(features?|improvements?|improve|add|build)\b/i;
+
+export const SCOPE_REDIRECT_MSG =
+  'aiki reviews your *changes*, not a whole codebase, and vets a *specific* idea rather than brainstorming for you. Try /review for your current changes, or /idea "<one concrete idea>" to stress-test a specific one.';
+
+/** A helpful scope message if the text is a codebase-exploration / feature-brainstorm ask, else null. */
+export function scopeRedirect(text: string): string | null {
+  const t = text.trim();
+  if (!t) return null;
+  return CODEBASE_SCAN.test(t) || BRAINSTORM.test(t) ? SCOPE_REDIRECT_MSG : null;
+}
+
 export function routeInput(text: string): InputRoute {
   const trimmed = text.trim();
   if (!trimmed) return 'idea';

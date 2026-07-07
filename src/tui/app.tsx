@@ -33,7 +33,7 @@ import { computeDiff, computeWorkingTreeDiff, detectRepoStatus, type RepoStatus 
 import { loadCouncilView, type CouncilView } from '../council/view.js';
 import { GLYPH, displayNames, elapsedLabel, initTimeline, markEnd, markStart, progressBar, runningPhrase, totalElapsed, type StageRow } from './timeline.js';
 import { formatCompletion, formatError, type CompletionView, type ErrorView } from './format.js';
-import { COMMANDS, PRODUCT_LINE, filterCommands, parseCommand, routeInput, suggestCommand, type ParsedCommand, type QuickAction } from './smart-entry.js';
+import { COMMANDS, PRODUCT_LINE, filterCommands, parseCommand, routeInput, scopeRedirect, suggestCommand, type ParsedCommand, type QuickAction } from './smart-entry.js';
 
 type Phase = 'detecting' | 'input' | 'running' | 'clarify' | 'finished';
 type WorkflowRunner = (ctx: RunCtx, input: string) => Promise<void>;
@@ -342,6 +342,14 @@ export function App(props: AppProps): React.JSX.Element {
     }
 
     setPanel(null);
+    // V10.2: "explore my codebase / brainstorm features" → a scope-explaining redirect, BEFORE we would
+    // otherwise mis-route it into a full (paid) idea-refinement run on the request sentence.
+    const redirect = scopeRedirect(text);
+    if (redirect) {
+      setIdea('');
+      setRouterMessage(redirect);
+      return;
+    }
     const route = routeInput(text);
     if (route === 'question') {
       setIdea('');

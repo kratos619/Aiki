@@ -14,7 +14,7 @@ import {
   type StageRow,
 } from '../src/tui/timeline.js';
 import { formatCompletion, formatError } from '../src/tui/format.js';
-import { filterCommands, parseCommand, quickActionReducer, routeInput, suggestCommand } from '../src/tui/smart-entry.js';
+import { filterCommands, parseCommand, quickActionReducer, routeInput, scopeRedirect, suggestCommand } from '../src/tui/smart-entry.js';
 import { IDEA_STAGES } from '../src/workflows/idea-refinement.js';
 import type { RoleMap } from '../src/orchestration/context.js';
 import type { DisagreementMap, JudgeReport } from '../src/schemas/index.js';
@@ -165,6 +165,31 @@ describe('run-screen life: phrases + progress + total time (V10)', () => {
     ];
     expect(totalElapsed(rows)).toBe('84s');
     expect(totalElapsed([{ id: 'S1', label: '', providers: [], status: 'pending' }])).toBe('');
+  });
+});
+
+describe('scope redirect (V10.2) — codebase-explore / feature-brainstorm asks', () => {
+  it('redirects "explore my codebase" style asks (not a real idea, must not paid-run)', () => {
+    for (const p of [
+      'go through the code and tell me what are the key areas to improve',
+      'review my codebase and find improvements',
+      'analyze this project and suggest what to build next',
+      'what more features can we add?',
+      'what more feature we can add',
+    ]) {
+      expect(scopeRedirect(p), p).not.toBeNull();
+    }
+  });
+
+  it('leaves genuine stated ideas alone (they should reach the idea flow)', () => {
+    for (const p of [
+      'build a plugin marketplace to boost retention',
+      'Users keep asking for more features, so we should add a plugin marketplace',
+      'a fridge-to-recipe app for students',
+      'open-source our core product to beat a better-funded competitor',
+    ]) {
+      expect(scopeRedirect(p), p).toBeNull();
+    }
   });
 });
 
