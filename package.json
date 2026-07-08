@@ -1,6 +1,6 @@
 {
   "name": "aiki-cli",
-  "version": "0.2.0",
+  "version": "0.2.2",
   "description": "Local-first orchestration CLI binding your installed AI coding CLIs into schema-validated multi-model workflows.",
   "type": "module",
   "license": "MIT",

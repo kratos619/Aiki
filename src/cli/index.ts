@@ -13,11 +13,10 @@ import { sessionsCommand } from './sessions.js';
 import { config } from './config.js';
 import { modelsCommand } from './models.js';
 import { benchCommand } from './bench.js';
+import { VERSION } from './version.js';
 import { ConfigError, loadLayeredConfig } from '../config/config.js';
 import { resolveRunsRoot } from '../storage/paths.js';
 import { startTui } from '../tui/index.js';
-
-export const VERSION = '0.2.0';
 
 const program = new Command();
 

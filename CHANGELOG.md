@@ -20,6 +20,7 @@
 ### Fixed
 - Codex provider smoke no longer crashes in non-git folders; Aiki now passes Codex's verified
   `--skip-git-repo-check` flag while keeping `-s read-only`.
+- `aiki --version` now reads from `package.json`, preventing CLI/package version drift.
 
 ## 0.2.0 — 2026-07-06 — v2 product round
 
