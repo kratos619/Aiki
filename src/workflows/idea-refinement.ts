@@ -7,6 +7,7 @@
 import { resolve } from 'node:path';
 import type { RunCtx, StageInfo } from '../orchestration/context.js';
 import { runStage } from '../orchestration/context.js';
+import { renderGrilledInput, s0Grill } from '../orchestration/stages/s0-grill.js';
 import { s1Intent } from '../orchestration/stages/s1-intent.js';
 import { s2Misread } from '../orchestration/stages/s2-misread.js';
 import { s3Prompts } from '../orchestration/stages/s3-prompts.js';
@@ -16,6 +17,7 @@ import { s6Claims } from '../orchestration/stages/s6-claims.js';
 import { s7Disagreement, type RubricItem } from '../orchestration/stages/s7-disagreement.js';
 import { s8Verify } from '../orchestration/stages/s8-verify.js';
 import { s9Judge } from '../orchestration/stages/s9-judge.js';
+import { s9bPlan } from '../orchestration/stages/s9b-plan.js';
 import { s10Render } from '../orchestration/stages/s10-render.js';
 import { loadSkill } from '../orchestration/skills.js';
 
@@ -62,10 +64,11 @@ export function buildAnalystTemplate(skill: string): string {
   return IDEA_S4_ANALYST_TEMPLATE.replace('{{SKILL}}', skill ? `\n\n${skill}` : '');
 }
 
-/** Timeline manifest (T8): the 10 stages in order, each with the provider-role its row displays.
+/** Timeline manifest (T8): the stages in order, each with the provider-role its row displays.
  *  The TUI draws the pending skeleton from this and resolves chips from `ctx.roles`. Ids match the
  *  `runStage` calls below. S7 shows the judge (it makes the grouping call); S5/S6/S10 are pure (—). */
 export const IDEA_STAGES: StageInfo[] = [
+  { id: 'S0', label: 'Intent preflight', role: 'analyst' },
   { id: 'S1', label: 'Intent contract', role: 'analyst' },
   { id: 'S2', label: 'Misunderstanding guard', role: 'all' },
   { id: 'S3', label: 'Prompt generation', role: 'analyst' },
@@ -75,19 +78,23 @@ export const IDEA_STAGES: StageInfo[] = [
   { id: 'S7', label: 'Disagreement map', role: 'judge' },
   { id: 'S8', label: 'Verifier loop', role: 'verifier' },
   { id: 'S9', label: 'Judge synthesis', role: 'judge' },
+  { id: 'S9b', label: 'Validation plan', role: 'judge' },
   { id: 'S10', label: 'Report', role: null },
 ];
 
-/** Runs the full idea-refinement pipeline S1–S10. Throws on any fatal condition; the engine's
+/** Runs the full idea-refinement pipeline S0–S10. Throws on any fatal condition; the engine's
  *  `executeRun` wrapper turns that into a graceful failure + meta. Each stage is wrapped in
  *  `runStage` so the TUI timeline (T8) gets start/end events; headless, that's a no-op. */
 export async function runIdeaRefinement(ctx: RunCtx, input: string): Promise<void> {
-  const contract = await runStage(ctx, 'S1', () => s1Intent(ctx, input));
-  const guard = await runStage(ctx, 'S2', () => s2Misread(ctx, contract, input));
+  const brief = await runStage(ctx, 'S0', () => s0Grill(ctx, input));
+  const grilledInput = renderGrilledInput(input, brief);
+  const contract = await runStage(ctx, 'S1', () => s1Intent(ctx, grilledInput));
+  const guard = await runStage(ctx, 'S2', () => s2Misread(ctx, contract, grilledInput));
 
   // Persist the input as a file so S4's "read the file at {{INPUT_PATH}}" resolves (not a stage).
   await ctx.writer.writeInput('idea.md', input);
-  const inputPath = resolve(ctx.writer.dir, 'inputs', 'idea.md');
+  await ctx.writer.writeInput('idea-brief.md', grilledInput);
+  const inputPath = resolve(ctx.writer.dir, 'inputs', 'idea-brief.md');
 
   const stagePrompts = await runStage(ctx, 'S3', () =>
     s3Prompts(ctx, {
@@ -105,5 +112,6 @@ export async function runIdeaRefinement(ctx: RunCtx, input: string): Promise<voi
   const map = await runStage(ctx, 'S7', () => s7Disagreement(ctx, claimSet, kept, IDEA_RUBRIC));
   const verifications = await runStage(ctx, 'S8', () => s8Verify(ctx, map));
   const judgeReport = await runStage(ctx, 'S9', () => s9Judge(ctx, contract, map, verifications, IDEA_RUBRIC));
-  await runStage(ctx, 'S10', () => s10Render(ctx, { contract, seats: kept, map, verifications, judgeReport }));
+  const actionPlan = await runStage(ctx, 'S9b', () => s9bPlan(ctx, contract, kept, map, judgeReport));
+  await runStage(ctx, 'S10', () => s10Render(ctx, { contract, seats: kept, map, verifications, judgeReport, actionPlan, rubric: IDEA_RUBRIC }));
 }

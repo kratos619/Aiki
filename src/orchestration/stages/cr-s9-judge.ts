@@ -92,7 +92,7 @@ export async function s9ReviewJudge(ctx: RunCtx, map: ReviewMap): Promise<JudgeR
     dissent = ['(none produced — flagged synthesis_suspect)'];
   }
 
-  const final: JudgeReportT = { ...report, adjudications: inScope, dissent };
+  const final: JudgeReportT = { ...report, adjudications: inScope, dissent, recommendation: undefined, conditions: undefined };
   await ctx.writer.writeJson('judge-report', final);
   return final;
 }

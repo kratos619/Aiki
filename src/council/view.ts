@@ -2,7 +2,10 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { DISPLAY_NAME, type ProviderId } from '../providers/types.js';
 import type { WorkflowId } from '../orchestration/context.js';
-import type { AnnotatedFinding, DisagreementMap, JudgeReport, ReviewMap, RoleOutput, RunMeta } from '../schemas/index.js';
+import type { ActionPlan, AnnotatedFinding, DisagreementMap, JudgeReport, Recommendation, ReviewMap, RoleOutput, RunMeta } from '../schemas/index.js';
+import { deriveAudit, deriveScorecard, mergeOpenQuestions, type AuditRow, type ScorecardRow } from '../orchestration/stages/s10-render.js';
+import type { SeatOutput } from '../orchestration/stages/s4-analyze.js';
+import { IDEA_RUBRIC } from '../workflows/idea-refinement.js';
 import { listArtifacts, readJsonArtifact } from '../storage/runs-read.js';
 
 type Column = { provider: string; title: string; lines: string[] };
@@ -22,6 +25,7 @@ export interface RiskItem { assumption: string; severity: string; challenge: str
 /** A dispute the judge REJECTED → the objection was dismissed → the idea holds up here. */
 export interface DefendedItem { assumption: string; challenge: string; reasoning: string; }
 export interface Agreement { statement: string; providers: ProviderId[]; }
+export interface DebateItem { claim: string; claimantProviders: ProviderId[]; attackerProviders: ProviderId[]; challenge: string; chair: string; reasoning: string; }
 
 export interface CouncilView {
   runId: string;
@@ -46,6 +50,14 @@ export interface CouncilView {
   nextSteps?: string[];
   biggestRisk?: string;
   bestNextStep?: string;
+  recommendation?: Recommendation;
+  conditions?: string[];
+  scorecard?: ScorecardRow[];
+  audit?: AuditRow[];
+  debates?: DebateItem[];
+  actionPlan?: ActionPlan;
+  openQuestions?: string[];
+  receipt?: string[];
 }
 
 function providerName(id: string): string {
@@ -137,6 +149,71 @@ function computeSignal(riskCount: number, agreeCount: number): Signal {
   return { tone, label: agreeCount ? 'Feasible — with real caveats' : 'Proceed with caution' };
 }
 
+function recommendationTone(r: Recommendation | undefined, fallback: Tone): Tone {
+  if (r === 'PROCEED') return 'good';
+  if (r === 'STOP') return 'risk';
+  if (r === 'PIVOT' || r === 'PROCEED_WITH_CONDITIONS') return 'caution';
+  return fallback;
+}
+
+function recommendationLabel(r: Recommendation | undefined, fallback: string): string {
+  if (!r) return fallback;
+  return r === 'PROCEED_WITH_CONDITIONS' ? 'Proceed with conditions' : r.charAt(0) + r.slice(1).toLowerCase();
+}
+
+function chairPhrase(ruling: string | undefined): string {
+  if (ruling === 'UPHOLD') return 'the objection stands';
+  if (ruling === 'REJECT') return 'the idea holds here';
+  return 'left to you';
+}
+
+function ideaDebates(map: DisagreementMap, judge: JudgeReport | null): DebateItem[] {
+  const claims = new Map([...map.consensus, ...map.unique].map((c) => [c.id, c]));
+  const adj = new Map((judge?.adjudications ?? []).map((a) => [a.id, a]));
+  return map.contradictions.map((d) => {
+    const a = adj.get(d.id);
+    const claimantProviders = [...new Set(d.claim_ids.flatMap((id) => claims.get(id)?.providers ?? []))];
+    const attackerProviders = [...new Set(d.attacks.map((x) => x.provider))];
+    return {
+      claim: d.claim_ids.map((id) => claims.get(id)?.statement ?? id).join(' / '),
+      claimantProviders,
+      attackerProviders,
+      challenge: d.attacks.map((x) => `${providerName(x.provider)}: ${x.argument}`).join('\n\n'),
+      chair: chairPhrase(a?.ruling),
+      reasoning: a?.reasoning ?? '',
+    };
+  });
+}
+
+function ideaSeatOutputs(roles: Array<{ provider: string; role: RoleOutput }>): SeatOutput[] {
+  return roles
+    .filter((r): r is { provider: ProviderId; role: Extract<RoleOutput, { workflow: 'idea-refinement' }> } =>
+      r.role.workflow === 'idea-refinement' && r.provider in DISPLAY_NAME,
+    )
+    .map((r) => ({ provider: r.provider, output: r.role }));
+}
+
+function receiptLines(meta: RunMeta): string[] {
+  const calls = meta.calls ?? [];
+  const byProvider = new Map<ProviderId, number>();
+  let ms = 0;
+  for (const c of calls) {
+    byProvider.set(c.provider, (byProvider.get(c.provider) ?? 0) + 1);
+    ms += c.durationMs;
+  }
+  const providerCounts = [...byProvider.entries()].map(([p, n]) => `${providerName(p)} ${n}`).join(', ') || 'none';
+  const profiles = Object.values(meta.flag_profiles ?? {})
+    .map((p) => `${providerName(p.id)}: ${'model' in p && p.model ? p.model : 'default model'}`)
+    .join(' · ');
+  return [
+    `Calls: ${meta.call_count ?? calls.length}/${meta.budget?.limit ?? '?'}`,
+    `Per-provider: ${providerCounts}`,
+    `Recorded model time: ${(ms / 1000).toFixed(1)}s`,
+    profiles ? `Models: ${profiles}` : '',
+    meta.flags?.length ? `Flags: ${meta.flags.join(', ')}` : '',
+  ].filter(Boolean);
+}
+
 /** Turn the idea disagreement map + judge report into the human decision story. Deterministic. */
 function ideaNarrative(map: DisagreementMap, judge: JudgeReport | null): Partial<CouncilView> {
   const claims = new Map<string, string>();
@@ -195,8 +272,9 @@ async function loadRoleOutputs(dir: string): Promise<Array<{ provider: string; r
 export async function loadCouncilView(runId: string, dir: string): Promise<CouncilView | null> {
   const meta = await readJsonArtifact<RunMeta>(dir, 'meta.json');
   if (!meta) return null;
-  const [judge, roles, intent] = await Promise.all([
+  const [judge, actionPlan, roles, intent] = await Promise.all([
     readJsonArtifact<JudgeReport>(dir, '09-judge-report.json'),
+    readJsonArtifact<ActionPlan>(dir, '09b-action-plan.json'),
     loadRoleOutputs(dir),
     readJsonArtifact<{ task?: string }>(dir, '01-intent-contract.json'),
   ]);
@@ -226,6 +304,22 @@ export async function loadCouncilView(runId: string, dir: string): Promise<Counc
         `${map.blind_spots.length} blind spots`,
       ];
       narrative = ideaNarrative(map, judge);
+      const reportV3 = Boolean(judge?.recommendation || actionPlan);
+      if (actionPlan) narrative.nextSteps = actionPlan.actions.map((a) => a.action);
+      if (reportV3) {
+        const ideaSeats = ideaSeatOutputs(roles);
+        narrative = {
+          ...narrative,
+          recommendation: judge?.recommendation,
+          conditions: judge?.conditions,
+          scorecard: deriveScorecard(IDEA_RUBRIC, map),
+          audit: judge ? deriveAudit(map, judge) : [],
+          debates: ideaDebates(map, judge),
+          actionPlan: actionPlan ?? undefined,
+          openQuestions: mergeOpenQuestions(ideaSeats),
+          receipt: receiptLines(meta),
+        };
+      }
     }
   }
   const moderator = meta.roles?.judge ? providerName(meta.roles.judge) : undefined;
@@ -287,7 +381,7 @@ function section(index: string, title: string, inner: string, delay: number, not
   </section>`;
 }
 
-function renderIdeaBody(view: CouncilView): string {
+function renderLegacyIdeaBody(view: CouncilView): string {
   const risks = view.risks ?? [];
   const agreements = view.agreements ?? [];
   const blindSpots = view.blindSpots ?? [];
@@ -377,20 +471,145 @@ function renderIdeaBody(view: CouncilView): string {
   `;
 }
 
+function renderIdeaBody(view: CouncilView): string {
+  if (!view.recommendation && !view.actionPlan) return renderLegacyIdeaBody(view);
+
+  const risks = view.risks ?? [];
+  const agreements = view.agreements ?? [];
+  const blindSpots = view.blindSpots ?? [];
+  const signal = view.signal ?? { label: 'Reviewed', tone: 'caution' as Tone };
+  const tone = recommendationTone(view.recommendation, signal.tone);
+  const label = recommendationLabel(view.recommendation, signal.label);
+  const conditions = view.conditions?.length
+    ? `<div class="conditions"><span class="fk">Conditions</span><ul>${view.conditions.map((c) => `<li>${escapeHtml(c)}</li>`).join('')}</ul></div>`
+    : '';
+
+  const glance = `
+    <div class="glance">
+      <div class="stat good"><span class="n">${agreements.length}</span><span class="k">agreed on</span></div>
+      <div class="stat risk"><span class="n">${risks.length}</span><span class="k">risks that stand</span></div>
+      <div class="stat caution"><span class="n">${blindSpots.length}</span><span class="k">not examined</span></div>
+    </div>`;
+
+  const hero = `
+  <section class="verdict tone-${tone} reveal" style="animation-delay:60ms">
+    <span class="pill">${escapeHtml(label)}</span>
+    <p class="verdict-text">${escapeHtml(view.verdict)}</p>
+    ${conditions}
+    ${glance}
+  </section>`;
+
+  const chairman = view.keyPoints?.length
+    ? section('01', "Chairman's reasoning", `<ul class="reasons">${view.keyPoints.map((p) => `<li>${escapeHtml(p)}</li>`).join('')}</ul>`, 100)
+    : '';
+
+  const scorecard = view.scorecard?.length
+    ? `<div class="score-grid">${view.scorecard.map((s) => `<div class="score ${s.status}"><span>${escapeHtml(s.label)}</span><strong>${escapeHtml(s.status)}</strong></div>`).join('')}</div>`
+    : '';
+
+  const audit = view.audit?.length
+    ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Statement</th><th>Status</th><th>Confidence</th><th>Analysts</th></tr></thead><tbody>
+        ${view.audit.map((r) => `<tr><td>${escapeHtml(r.statement)}</td><td>${escapeHtml(r.status)}</td><td>${escapeHtml(r.confidence)}</td><td>${escapeHtml(r.providers.map(providerName).join(' · '))}</td></tr>`).join('')}
+      </tbody></table></div>`
+    : '';
+
+  const riskCards = risks.length
+    ? risks.map((r) => `
+      <article class="card risk-card">
+        <div class="card-top"><span class="chip ${sevClass(r.severity)}">${escapeHtml(sevLabel(r.severity))}</span>${providerDots(r.providers)}</div>
+        <h3>${escapeHtml(r.assumption)}</h3>
+        <div class="field"><span class="fk">The challenge</span>${paras(r.challenge)}</div>
+        ${r.reasoning ? `<div class="field"><span class="fk">Why it stands</span><p>${escapeHtml(r.reasoning)}</p></div>` : ''}
+      </article>`).join('')
+    : '<p class="muted">No assumption failed scrutiny — the council did not sustain any objection.</p>';
+
+  const debate = view.debates?.length
+    ? view.debates.map((d) => `
+      <article class="card debate-card">
+        <p>${providerDots(d.claimantProviders)} <strong>claimed</strong> ${escapeHtml(d.claim)}.</p>
+        <div class="field"><span class="fk">Counter</span>${providerDots(d.attackerProviders)}${paras(d.challenge)}</div>
+        <div class="field"><span class="fk">Chair</span><p>${escapeHtml(d.chair)}${d.reasoning ? ` — ${escapeHtml(d.reasoning)}` : ''}</p></div>
+      </article>`).join('')
+    : '<p class="muted">No contradictions reached the chair.</p>';
+
+  const plan = view.actionPlan
+    ? `<div class="table-wrap"><table class="data-table plan-table"><thead><tr><th>#</th><th>Action</th><th>Why</th><th>Validates</th><th>Effort</th><th>Kill signal</th></tr></thead><tbody>
+        ${view.actionPlan.actions.map((a) => `<tr><td>${a.order}</td><td>${escapeHtml(a.action)}</td><td>${escapeHtml(a.why)}</td><td><code>${escapeHtml(a.validates)}</code></td><td>${escapeHtml(a.effort)}</td><td>${escapeHtml(a.kill_signal)}</td></tr>`).join('')}
+      </tbody></table><p class="lede">${escapeHtml(view.actionPlan.sequencing_note)}</p></div>`
+    : '<p class="muted">No validation plan artifact recorded.</p>';
+
+  const questions = view.openQuestions?.length
+    ? `<ul class="checks">${view.openQuestions.map((q) => `<li>${escapeHtml(q)}</li>`).join('')}</ul>`
+    : '<p class="muted">No verdict-flipping open questions recorded.</p>';
+
+  const redTeam = `
+    <div class="redteam">
+      <div><span class="fk">Strongest counter-argument</span><ul>${view.dissent.map((d) => `<li>${escapeHtml(d)}</li>`).join('')}</ul></div>
+      <div><span class="fk">Confidence</span><p>${escapeHtml(view.confidence || 'None recorded.')}</p></div>
+    </div>`;
+
+  const receipt = view.receipt?.length
+    ? `<div class="receipt">${view.receipt.map((r) => `<span>${escapeHtml(r)}</span>`).join('')}</div>`
+    : '';
+
+  const modelCards = view.columns.length
+    ? view.columns.map((c) => `
+      <article class="card model-card">
+        <h3>${escapeHtml(c.title)}</h3>
+        ${c.lines.length ? `<ul class="model-lines">${c.lines.slice(0, 10).map((l) => `<li>${escapeHtml(l)}</li>`).join('')}</ul>` : '<p class="muted">No output recorded.</p>'}
+      </article>`).join('')
+    : '<p class="muted">No per-model output recorded.</p>';
+
+  return `
+    ${hero}
+    ${chairman}
+    ${scorecard ? section('02', 'Dimension scorecard', scorecard, 140, 'Best-effort keyword coverage across the 12 idea-vetting dimensions.') : ''}
+    ${audit ? section('03', 'Assumption audit', audit, 180, 'Held, failed, or unverified assumptions derived from the disagreement map and chair rulings.') : ''}
+    ${section('04', 'Risks that held up', riskCards, 220, 'Assumptions your idea depends on that the council challenged — and the challenge stuck.')}
+    ${section('05', 'The debate', debate, 260, 'Who claimed what, who objected, and how the chair ruled.')}
+    ${section('06', 'Validation plan', plan, 300, 'Ordered checks with kill signals, anchored to risks, blind spots, or open questions.')}
+    ${section('07', 'Open questions that flip the verdict', questions, 340)}
+    ${section('08', 'Red-team note', redTeam, 380)}
+    ${receipt ? section('09', 'Receipt', receipt, 420) : ''}
+    ${section('10', 'How each model saw it', `<div class="model-grid">${modelCards}</div>`, 460)}
+    ${renderTechnical(view)}
+  `;
+}
+
 /** Serialize a council view to clean Markdown — for the HTML "Copy" button (paste into a coding assistant). */
 function councilMarkdown(view: CouncilView): string {
   const isIdea = view.workflow !== 'code-review';
+  const reportV3 = isIdea && Boolean(view.recommendation || view.actionPlan);
   const L: string[] = [];
   L.push(`# ${isIdea && view.topic ? cleanTopic(view.topic) : isIdea ? 'Idea refinement' : 'Code review'}`, '');
   const panel = view.columns.map((c) => c.title).join(', ');
   if (panel) L.push(`Panel: ${panel}${view.moderator ? ` · Chair: ${view.moderator}` : ''}`, '');
-  L.push('## Verdict', '', view.verdict, '');
+  if (view.recommendation) {
+    L.push('## Bottom line', '', `**${recommendationLabel(view.recommendation, '')}** — ${view.verdict}`, '');
+    if (view.conditions?.length) {
+      L.push('Conditions:');
+      for (const c of view.conditions) L.push(`- ${c}`);
+      L.push('');
+    }
+  } else {
+    L.push('## Verdict', '', view.verdict, '');
+  }
   if (view.keyPoints?.length) {
     L.push("## Chairman's reasoning", '');
     for (const p of view.keyPoints) L.push(`- ${p}`);
     L.push('');
   }
   if (isIdea) {
+    if (reportV3 && view.scorecard?.length) {
+      L.push('## Dimension scorecard (best-effort)', '');
+      for (const s of view.scorecard) L.push(`- ${s.label}: ${s.status}`);
+      L.push('');
+    }
+    if (reportV3 && view.audit?.length) {
+      L.push('## Assumption audit', '');
+      for (const a of view.audit) L.push(`- ${a.status}/${a.confidence}: ${a.statement} (${a.providers.map(providerName).join(', ')})`);
+      L.push('');
+    }
     if (view.risks?.length) {
       L.push('## Risks that held up', '');
       for (const r of view.risks) {
@@ -399,6 +618,29 @@ function councilMarkdown(view: CouncilView): string {
         if (r.reasoning) L.push(`- Why it stands: ${r.reasoning}`);
         L.push('');
       }
+    }
+    if (reportV3 && view.debates?.length) {
+      L.push('## The debate', '');
+      for (const d of view.debates) {
+        L.push(`- ${d.claimantProviders.map(providerName).join(', ')} claimed ${d.claim}. ${d.attackerProviders.map(providerName).join(', ')} countered: ${d.challenge.replace(/\s*\n+\s*/g, ' ')}. Chair: ${d.chair}${d.reasoning ? ` — ${d.reasoning}` : ''}.`);
+      }
+      L.push('');
+    }
+    if (reportV3 && view.actionPlan) {
+      L.push('## Validation plan', '');
+      for (const a of view.actionPlan.actions) {
+        L.push(`${a.order}. ${a.action}`);
+        L.push(`   - Why: ${a.why}`);
+        L.push(`   - Validates: ${a.validates}`);
+        L.push(`   - Effort: ${a.effort}`);
+        L.push(`   - Kill signal: ${a.kill_signal}`);
+      }
+      L.push('', view.actionPlan.sequencing_note, '');
+    }
+    if (reportV3 && view.openQuestions?.length) {
+      L.push('## Open questions that flip the verdict', '');
+      for (const q of view.openQuestions) L.push(`- ${q}`);
+      L.push('');
     }
     if (view.columns.length) {
       L.push('## How each model saw it', '');
@@ -418,9 +660,14 @@ function councilMarkdown(view: CouncilView): string {
       for (const a of view.agreements) L.push(`- ${a.statement}`);
       L.push('');
     }
-    if (view.nextSteps?.length) {
+    if (!reportV3 && view.nextSteps?.length) {
       L.push('## Recommended next steps', '');
       view.nextSteps.forEach((s, i) => L.push(`${i + 1}. ${s}`));
+      L.push('');
+    }
+    if (reportV3 && view.receipt?.length) {
+      L.push('## Receipt', '');
+      for (const r of view.receipt) L.push(`- ${r}`);
       L.push('');
     }
   } else if (view.rows.length) {
@@ -624,6 +871,28 @@ p{margin:0 0 .6em;}
 .steps li:last-child{border-bottom:0;}
 .steps li::before{content:counter(s);position:absolute;left:0;top:11px;width:28px;height:28px;border-radius:50%;border:1.5px solid var(--accent);color:var(--accent);font-family:var(--mono);font-size:13px;font-weight:600;display:grid;place-items:center;}
 
+/* report v3 */
+.conditions{margin-top:16px;background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:12px 14px;}
+.conditions ul{margin:4px 0 0;padding-left:18px;}
+.conditions li{font-size:14px;margin-bottom:4px;}
+.score-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;}
+.score{border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:12px 14px;min-height:74px;display:flex;flex-direction:column;justify-content:space-between;gap:8px;}
+.score span{font-size:13.5px;color:var(--ink);}
+.score strong{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;}
+.score.contested{border-left:4px solid var(--caution);} .score.examined{border-left:4px solid var(--good);} .score.unexamined{border-left:4px solid var(--risk);}
+.table-wrap{overflow-x:auto;}
+.data-table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;font-size:13.5px;}
+.data-table th,.data-table td{text-align:left;vertical-align:top;border-bottom:1px solid var(--line);padding:9px 10px;}
+.data-table th{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--soft);background:var(--paper);}
+.data-table tr:last-child td{border-bottom:0;}
+.data-table code{font-family:var(--mono);font-size:12px;color:var(--accent);}
+.debate-card p{margin-bottom:8px;}
+.redteam{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.redteam>div{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;}
+.redteam ul{margin:4px 0 0;padding-left:18px;}
+.receipt{display:flex;flex-wrap:wrap;gap:8px;}
+.receipt span{font-family:var(--mono);font-size:11.5px;border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:4px 10px;color:var(--soft);}
+
 /* folds */
 .fold{margin:24px 0;background:var(--panel);border:1px solid var(--line);border-radius:12px;}
 .fold > summary{cursor:pointer;list-style:none;padding:16px 20px;font-family:var(--mono);font-size:12.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--soft);display:flex;align-items:center;gap:10px;}
@@ -648,7 +917,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-fa
 @keyframes rise{to{opacity:1;transform:none;}}
 @media (max-width:640px){
   main{padding:34px 16px 60px;}
-  .glance,.bottomline,.checks{grid-template-columns:1fr;}
+  .glance,.bottomline,.checks,.redteam{grid-template-columns:1fr;}
 }
 @media (prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none;animation:none;}}
 @media print{.reveal{opacity:1;transform:none;animation:none;}.fold[open]{break-inside:avoid;}}

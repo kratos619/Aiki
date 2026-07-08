@@ -10,7 +10,7 @@
 // - Full audit (§15): every call's exact prompt and raw output are written under `raw/`.
 
 import { randomBytes } from 'node:crypto';
-import type { CallRecord, RunMeta } from '../schemas/index.js';
+import type { CallRecord, GrillAnswer, RunBriefDraft, RunMeta } from '../schemas/index.js';
 import type { Adapter, FlagProfile, ProviderId, ReadOnlyFlag, RunResultAdapter } from '../providers/types.js';
 import { PROVIDER_IDS } from '../providers/types.js';
 import { ADAPTERS } from '../providers/adapters.js';
@@ -24,8 +24,8 @@ export type WorkflowId = 'idea-refinement' | 'code-review';
 
 /**
  * Optional observation/interaction seam for the TUI (T8). Entirely additive: headless runs pass no
- * `events`, so the engine behaves exactly as without it. `clarify` is the one interactive point —
- * present only in the TUI; when absent, S2 falls back to the majority cluster (headless).
+ * `events`, so the engine does not block on user input. `grill` and `clarify` are the interactive
+ * points; when absent, S0 uses best-judgment answers and S2 falls back to the majority cluster.
  */
 /** The user's answer to an S2 clarification: pick one reading, combine them all, or type their own. */
 export type ClarifyChoice =
@@ -37,6 +37,8 @@ export interface RunEvents {
   onStart?(runId: string, dir: string): void;
   onStageStart?(id: string): void;
   onStageEnd?(id: string, status: 'done' | 'failed' | 'skipped'): void;
+  /** Ask the user to answer the S0 contextual grill before the expensive council stages run. */
+  grill?(brief: RunBriefDraft): Promise<GrillAnswer[]>;
   /** Ask the user to resolve diverging S2 interpretations (pick / combine / type their own). */
   clarify?(question: string, options: string[]): Promise<ClarifyChoice>;
 }
@@ -63,10 +65,10 @@ export async function runStage<T>(ctx: RunCtx, id: string, fn: () => Promise<T>)
   }
 }
 
-export const DEFAULT_BUDGET = 12; // §19 said 9, but that never summed: full idea-refinement pipeline is
-// S1(1)+S2(3)+S3(1)+S4(2)+S7-grouping(1)+S8(1)+S9(1) = 10 min, 11 with S8's 2nd pass, 11–12 with the
-// routine agy-S2 §14 repair. 9 aborts right before the judge. 12 = full run + 1 repair, still a real
-// cap (a repair-storm fails gracefully + flagged). Overridable via `--budget` / config (T9). (T7 decision.)
+export const DEFAULT_BUDGET = 18; // full idea pipeline min = S0(1)+S1(1)+S2(3)+S3(1)+S4(2)+S7-group(1)+
+// S8(1)+S9(1)+S9b(1) = 12. But S2 runs 3 providers that EACH can repair, plus S9 + S9b anchor repairs —
+// a live run spent 3 repairs and died at 13 before S9b. 18 = 12 + ~6 repair headroom so the validation
+// plan actually renders; a true repair-storm still fails gracefully. Overridable via `--budget`/config.
 // §19 was 10 min; raised to 20 (user-authorized 2026-07-06). Evidence: a real Opus judge (S9) on a
 // 9-dispute idea ran ~360s and the whole run was ~14 min → the 10-min wall-clock aborted a legitimate run.
 export const DEFAULT_DEADLINE_MS = 20 * 60 * 1000; // wall-clock cap

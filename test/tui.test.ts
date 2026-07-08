@@ -32,12 +32,14 @@ describe('timeline: provider resolution + skeleton', () => {
     expect(stageProviders(null, roles, [...available])).toEqual([]);
   });
 
-  it('builds the 10-row skeleton all pending, providers resolved (S7 = judge, S5 = —)', () => {
+  it('builds the 12-row skeleton all pending, providers resolved (S0/S1 = analyst, S7/S9b = judge, S5 = —)', () => {
     const rows = initTimeline(IDEA_STAGES, roles, [...available]);
-    expect(rows).toHaveLength(10);
+    expect(rows).toHaveLength(12);
     expect(rows.every((r) => r.status === 'pending')).toBe(true);
+    expect(rows.find((r) => r.id === 'S0')!.providers).toEqual(['agy']);
     expect(rows.find((r) => r.id === 'S1')!.providers).toEqual(['agy']);
     expect(rows.find((r) => r.id === 'S7')!.providers).toEqual(['claude']); // makes the grouping call
+    expect(rows.find((r) => r.id === 'S9b')!.providers).toEqual(['claude']);
     expect(rows.find((r) => r.id === 'S5')!.providers).toEqual([]);
   });
 });
@@ -145,6 +147,14 @@ describe('run-screen life: phrases + progress + total time (V10)', () => {
 
   it('runningPhrase falls back for an unknown stage', () => {
     expect(runningPhrase('S99', 0)).toBe('working');
+  });
+
+  it('runningPhrase covers the action planner stage', () => {
+    expect(runningPhrase('S9b', 0)).toBe('planning decisive validation');
+  });
+
+  it('runningPhrase covers the intent preflight stage', () => {
+    expect(runningPhrase('S0', 0)).toBe('grilling the intent');
   });
 
   it('progressBar counts done/failed/skipped as finished', () => {

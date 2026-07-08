@@ -304,9 +304,22 @@ describe('show / resolve / config (cwd-based)', () => {
           { id: 'D2', ruling: 'REJECT', reasoning: 'Attacks a reading the claim never asserts.', evidence_cited: 'y' },
         ],
         verdict: 'Feasible only as a scoped, niche product.',
+        recommendation: 'PROCEED_WITH_CONDITIONS',
+        conditions: ['Validate that users accept lower quality for offline privacy.'],
         key_points: ['The frontier-quality promise does not survive on-device constraints.', 'agy and codex split on what "best" means; the chair sided with the scoped reading.'],
         dissent: ['Might be too pessimistic for high-end devices.'],
         confidence_notes: 'D1 HIGH; D2 HIGH.',
+      }),
+      '09b-action-plan.json': JSON.stringify({
+        actions: [{
+          order: 1,
+          action: 'Run a device-quality acceptance test with 10 target users.',
+          why: 'The chair upheld user acceptance as the main behavioral risk.',
+          validates: 'D1',
+          effort: 'S',
+          kill_signal: 'Most users reject the offline output as too low quality.',
+        }],
+        sequencing_note: 'Test acceptance before pricing or build depth.',
       }),
       'final-report.md': '# Report',
     });
@@ -320,13 +333,38 @@ describe('show / resolve / config (cwd-based)', () => {
     expect(html).toContain('Chair: Claude'); // judge attributed (chairman of the panel)
     expect(html).toContain("Chairman's reasoning"); // the deeper bulleted verdict reasoning
     expect(html).toContain('the chair sided with the scoped reading.'); // a key_point renders
+    expect(html).toContain('Proceed with conditions'); // explicit BLUF badge
+    expect(html).toContain('Dimension scorecard'); // v3 scorecard surfaced
+    expect(html).toContain('Assumption audit'); // derived audit table surfaced
+    expect(html).toContain('The debate'); // deterministic who-vs-who narrative
+    expect(html).toContain('Validation plan'); // planner artifact surfaced
+    expect(html).toContain('Run a device-quality acceptance test'); // anchored action
+    expect(html).toContain('Receipt'); // call/provider receipt surfaced
     expect(html).toContain('How each model saw it'); // per-model section surfaced, not folded
     expect(html).toContain('Copy report (Markdown)'); // copy-to-clipboard control
     expect(html).toContain('const REPORT_MD ='); // the embedded markdown for the copy button
-    // The upheld dispute is a REJECT/UPHOLD-free story above the fold; raw rulings live only in <details>.
+    // The upheld dispute is a REJECT/UPHOLD-free story above the fold; raw ids are absent from the debate
+    // narrative, though the validation plan later shows anchors such as D1.
     const mainBody = html.slice(0, html.indexOf('<details'));
     expect(mainBody).not.toContain('UPHOLD');
-    expect(mainBody).not.toContain('>D1<');
+    const beforePlan = html.slice(0, html.indexOf('Validation plan'));
+    expect(beforePlan).not.toContain('>D1<');
+  });
+
+  it('show --html (idea): old runs without recommendation or plan keep the legacy body', async () => {
+    await mkRun(aiki, 'idea-old-html', {
+      'meta.json': JSON.stringify({ workflow: 'idea-refinement', exit_status: 'ok', aborted: false, call_count: 8, budget: { limit: 12, used: 8 }, roles: { judge: 'claude' } }),
+      '04-role-outputs/agy.json': JSON.stringify({ workflow: 'idea-refinement', task_echo: 't', strongest_version: 'Scoped, it works.', assumptions: [], attacks: [], open_questions: [] }),
+      '07-disagreement-map.json': JSON.stringify({ consensus: [], contradictions: [], unique: [], blind_spots: ['pricing'] }),
+      '09-judge-report.json': JSON.stringify({ adjudications: [], verdict: 'Old verdict.', dissent: ['x'], confidence_notes: 'n' }),
+      'final-report.md': '# Report',
+    });
+    const { code, out } = await capture(() => show('idea-old-html', { html: true }));
+    expect(code).toBe(0);
+    const html = await readFile(out.trim(), 'utf8');
+    expect(html).toContain('Recommended next steps');
+    expect(html).not.toContain('Validation plan');
+    expect(html).not.toContain('Dimension scorecard');
   });
 
   it('show: no matching run → exit 1', async () => {

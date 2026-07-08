@@ -32,11 +32,12 @@ import { CR_STAGES, runCodeReview } from '../workflows/code-review.js';
 import { computeDiff, computeWorkingTreeDiff, detectRepoStatus, type RepoStatus } from '../orchestration/git.js';
 import { loadCouncilView, type CouncilView } from '../council/view.js';
 import { openCouncilHtml } from '../council/open.js';
+import type { GrillAnswer, RunBriefDraft } from '../schemas/index.js';
 import { GLYPH, displayNames, elapsedLabel, initTimeline, markEnd, markStart, progressBar, runningPhrase, totalElapsed, type StageRow } from './timeline.js';
 import { formatCompletion, formatError, type CompletionView, type ErrorView } from './format.js';
 import { COMMANDS, PRODUCT_LINE, filterCommands, parseCommand, routeInput, scopeRedirect, suggestCommand, type ParsedCommand, type QuickAction } from './smart-entry.js';
 
-type Phase = 'detecting' | 'input' | 'running' | 'clarify' | 'finished';
+type Phase = 'detecting' | 'input' | 'running' | 'grill' | 'clarify' | 'finished';
 type WorkflowRunner = (ctx: RunCtx, input: string) => Promise<void>;
 
 async function loadCompletion(dir: string): Promise<CompletionView | null> {
@@ -73,6 +74,9 @@ export function App(props: AppProps): React.JSX.Element {
   const [now, setNow] = useState(Date.now());
   const [budget, setBudget] = useState(0);
   const [dir, setDir] = useState('');
+  const [grill, setGrill] = useState<{ brief: RunBriefDraft; index: number; answers: GrillAnswer[]; resolve: (a: GrillAnswer[]) => void } | null>(null);
+  const [grillTyping, setGrillTyping] = useState(false);
+  const [grillText, setGrillText] = useState('');
   const [clarify, setClarify] = useState<{ question: string; options: string[]; resolve: (c: ClarifyChoice) => void } | null>(null);
   const [clarifyTyping, setClarifyTyping] = useState(false); // "type your own" sub-mode
   const [clarifyText, setClarifyText] = useState('');
@@ -110,7 +114,7 @@ export function App(props: AppProps): React.JSX.Element {
 
   // Live clock for elapsed labels while running.
   useEffect(() => {
-    if (phase !== 'running') return;
+    if (phase !== 'running' && phase !== 'grill' && phase !== 'clarify') return;
     const t = setInterval(() => setNow(Date.now()), 500);
     return () => clearInterval(t);
   }, [phase]);
@@ -119,9 +123,35 @@ export function App(props: AppProps): React.JSX.Element {
   const paletteMatches = phase === 'input' && pendingIdea === null ? filterCommands(idea) : [];
   const selIdx = Math.min(sel, Math.max(paletteMatches.length - 1, 0));
 
+  const fallbackGrillAnswers = (brief: RunBriefDraft): GrillAnswer[] =>
+    brief.questions.map((q) => ({ question_id: q.id, answer: 'Use best judgment from the supplied prompt.', source: 'default' }));
+
+  const submitGrillAnswer = (answer: string, source: GrillAnswer['source']): void => {
+    if (!grill) return;
+    const q = grill.brief.questions[grill.index];
+    if (!q) return;
+    const next = [...grill.answers, { question_id: q.id, answer: answer.trim(), source }];
+    setGrillTyping(false);
+    setGrillText('');
+    if (next.length >= grill.brief.questions.length) {
+      const resolveGrill = grill.resolve;
+      setGrill(null);
+      setPhase('running');
+      resolveGrill(next);
+      return;
+    }
+    setGrill({ ...grill, index: grill.index + 1, answers: next });
+  };
+
   useInput((input, key) => {
     if (key.ctrl && input === 'c') {
       abortRef.current?.abort();
+      if (grill) {
+        grill.resolve(fallbackGrillAnswers(grill.brief)); // unblock S0 so the run reaches its abort guard
+        setGrill(null);
+        setGrillTyping(false);
+        setGrillText('');
+      }
       if (clarify) clarify.resolve({ kind: 'pick', index: 0 }); // unblock S2 so the run reaches its abort guard
       if (phase === 'detecting' || phase === 'input' || phase === 'finished') exit();
       return;
@@ -157,6 +187,19 @@ export function App(props: AppProps): React.JSX.Element {
         return;
       }
     }
+    // S0 grill key handling — the "type your own" sub-mode lets TextInput capture keys instead.
+    if (phase === 'grill' && grill && !grillTyping) {
+      const q = grill.brief.questions[grill.index];
+      if (!q) return;
+      const n = Number.parseInt(input, 10);
+      const N = q.suggested_answers.length;
+      if (!Number.isNaN(n)) {
+        if (n >= 1 && n <= N) submitGrillAnswer(q.suggested_answers[n - 1]!, 'suggested');
+        else if (n === N + 1) setGrillTyping(true);
+        else if (n === N + 2) submitGrillAnswer('Use best judgment from the supplied prompt.', 'default');
+      }
+      return;
+    }
     // Clarify key handling — the "type your own" sub-mode lets TextInput capture keys instead.
     if (phase === 'clarify' && clarify && !clarifyTyping) {
       const n = Number.parseInt(input, 10);
@@ -184,6 +227,22 @@ export function App(props: AppProps): React.JSX.Element {
     const events: RunEvents = {
       onStageStart: (id) => setRows((r) => markStart(r, id, Date.now())),
       onStageEnd: (id, st) => setRows((r) => markEnd(r, id, st, Date.now())),
+      grill: (brief) =>
+        new Promise<GrillAnswer[]>((res) => {
+          setGrill({
+            brief,
+            index: 0,
+            answers: [],
+            resolve: (answers) => {
+              setGrill(null);
+              setGrillTyping(false);
+              setGrillText('');
+              setPhase('running');
+              res(answers);
+            },
+          });
+          setPhase('grill');
+        }),
       clarify: (question, options) =>
         new Promise<ClarifyChoice>((res) => {
           setClarify({
@@ -387,7 +446,7 @@ export function App(props: AppProps): React.JSX.Element {
         </Text>
       )}
 
-      {(phase === 'input' || phase === 'running' || phase === 'clarify' || phase === 'finished') && handles.length > 0 && (
+      {(phase === 'input' || phase === 'running' || phase === 'grill' || phase === 'clarify' || phase === 'finished') && handles.length > 0 && (
         <Box flexDirection="column" marginTop={1}>
           {repo && (
             <Text>
@@ -439,7 +498,7 @@ export function App(props: AppProps): React.JSX.Element {
             <Box flexDirection="column" borderStyle="round" paddingX={1}>
               <Text>Run the idea council on:</Text>
               <Text color="cyan">  “{pendingIdea.length > 100 ? `${pendingIdea.slice(0, 97)}…` : pendingIdea}”</Text>
-              <Text dimColor>  10-stage pipeline · up to {budgetOverride ?? DEFAULT_BUDGET} model calls · Ctrl+C aborts mid-run</Text>
+              <Text dimColor>  12-stage pipeline · up to {budgetOverride ?? DEFAULT_BUDGET} model calls · Ctrl+C aborts mid-run</Text>
               <Text>
                 <Text color="green">enter</Text> run  ·  <Text color="yellow">esc</Text> cancel
               </Text>
@@ -482,7 +541,7 @@ export function App(props: AppProps): React.JSX.Element {
         </Box>
       )}
 
-      {(phase === 'running' || phase === 'clarify' || phase === 'finished') && rows.length > 0 && (
+      {(phase === 'running' || phase === 'grill' || phase === 'clarify' || phase === 'finished') && rows.length > 0 && (
         <Box flexDirection="column" marginTop={1}>
           {rows.map((r) => {
             const color = r.status === 'done' ? 'green' : r.status === 'failed' ? 'red' : r.status === 'running' ? 'yellow' : 'gray';
@@ -518,6 +577,45 @@ export function App(props: AppProps): React.JSX.Element {
             })()}
         </Box>
       )}
+
+      {phase === 'grill' && grill &&
+        (() => {
+          const q = grill.brief.questions[grill.index];
+          if (!q) return null;
+          return (
+            <Box flexDirection="column" marginTop={1} borderStyle="round" paddingX={1}>
+              <Text bold>Intent preflight {grill.index + 1}/{grill.brief.questions.length}</Text>
+              <Text>{q.question}</Text>
+              <Text dimColor>{q.why_it_matters}</Text>
+              {q.suggested_answers.map((o, i) => (
+                <Text key={i}>
+                  {'  '}
+                  <Text color="cyan">{i + 1}</Text>. {o}
+                </Text>
+              ))}
+              <Text>
+                {'  '}
+                <Text color="cyan">{q.suggested_answers.length + 1}</Text>. other - type your own
+              </Text>
+              <Text>
+                {'  '}
+                <Text color="cyan">{q.suggested_answers.length + 2}</Text>. skip - use best judgment
+              </Text>
+              {grillTyping ? (
+                <Box borderStyle="round" paddingX={1} marginTop={1}>
+                  <Text>▸ </Text>
+                  <TextInput
+                    value={grillText}
+                    onChange={(v) => setGrillText(v.replace(/\s*[\r\n]+\s*/g, ' '))}
+                    onSubmit={() => grillText.trim() && submitGrillAnswer(grillText, 'user')}
+                  />
+                </Box>
+              ) : (
+                <Text dimColor>press 1-{q.suggested_answers.length + 2} to choose</Text>
+              )}
+            </Box>
+          );
+        })()}
 
       {phase === 'clarify' && clarify && (
         <Box flexDirection="column" marginTop={1} borderStyle="round" paddingX={1}>

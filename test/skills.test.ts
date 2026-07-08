@@ -4,6 +4,7 @@ import { describe, it, expect } from 'vitest';
 import { loadSkill, lintSkill } from '../src/orchestration/skills.js';
 import { buildReviewerPrompt } from '../src/workflows/code-review.js';
 import { buildJudgePrompt } from '../src/orchestration/stages/cr-s9-judge.js';
+import { buildActionPlannerPrompt } from '../src/orchestration/stages/s9b-plan.js';
 import { buildAnalystTemplate } from '../src/workflows/idea-refinement.js';
 
 const path = '/repo/.aiki/runs/x/inputs/diff.patch';
@@ -27,6 +28,12 @@ describe('loadSkill', () => {
     expect(skill).toContain('MANDATORY coverage');
   });
 
+  it('loads the idea-refinement planner playbook', () => {
+    const skill = loadSkill('idea-refinement', 'planner');
+    expect(skill.length).toBeGreaterThan(0);
+    expect(skill).toContain('decisive validation');
+  });
+
   it('returns empty string for a missing playbook (backward-compatible)', () => {
     expect(loadSkill('code-review', 'does-not-exist')).toBe('');
   });
@@ -34,6 +41,7 @@ describe('loadSkill', () => {
   it('the shipped playbooks pass the §19 exfil lint (else loadSkill would silently drop them)', () => {
     expect(lintSkill(loadSkill('code-review', 'reviewer'))).toBeNull();
     expect(lintSkill(loadSkill('code-review', 'judge'))).toBeNull();
+    expect(lintSkill(loadSkill('idea-refinement', 'planner'))).toBeNull();
   });
 });
 
@@ -107,5 +115,21 @@ describe('buildAnalystTemplate (idea S4, resolved before S3)', () => {
     const t = buildAnalystTemplate('');
     expect(t).not.toContain('{{SKILL}}');
     expect(t).toContain('read the file at {{INPUT_PATH}}\n\nProduce ONLY JSON');
+  });
+});
+
+describe('buildActionPlannerPrompt', () => {
+  const input = { task: 'test an idea', recommendation: 'PROCEED', conditions: [], upheld_risks: [], blind_spots: ['pricing'], open_questions: ['who pays?'] };
+
+  it('embeds context and injects planner skill when present', () => {
+    const prompt = buildActionPlannerPrompt(input, 'PLAN-RULES');
+    expect(prompt).toContain('"task": "test an idea"');
+    expect(prompt).toContain('PLAN-RULES');
+  });
+
+  it('empty skill collapses the slot', () => {
+    const prompt = buildActionPlannerPrompt(input, '');
+    expect(prompt).not.toContain('{{SKILL}}');
+    expect(prompt).toContain('CONTEXT:');
   });
 });

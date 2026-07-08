@@ -44,6 +44,86 @@ export const Interpretation = z
   })
   .strict();
 
+// ── S0: RunBrief / contextual grill ─────────────────────────────────────────
+
+export const GrillQuestionAxis = z.enum([
+  'decision_frame',
+  'evaluation_lens',
+  'target_user',
+  'success_bar',
+  'non_negotiables',
+  'risk_context',
+  'evidence',
+  'alternatives',
+  'scope',
+]);
+
+export const RunBriefQuestion = z
+  .object({
+    id: z.string().min(1),
+    axis: GrillQuestionAxis,
+    question: z.string().min(1),
+    why_it_matters: z.string().min(1),
+    suggested_answers: z.array(z.string().min(1)).min(2).max(5),
+  })
+  .strict();
+
+const RunBriefDraftBase = z
+  .object({
+    subject: z.string().min(1),
+    decision_frame: z.string().min(1).nullable(),
+    evaluation_lens: z.string().min(1).nullable(),
+    target_user: z.string().min(1).nullable(),
+    constraints: z.array(z.string().min(1)).max(10),
+    claims_to_test: z.array(z.string().min(1)).max(8),
+    evidence_supplied: z.array(z.string().min(1)).max(8),
+    missing_axes: z.array(z.string().min(1)).max(8),
+    questions: z.array(RunBriefQuestion).min(3).max(4),
+  })
+  .strict();
+
+function checkQuestionIds(questions: { id: string }[], ctx: z.RefinementCtx): void {
+  const seen = new Set<string>();
+  for (const q of questions) {
+    if (seen.has(q.id)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['questions'], message: `duplicate question id: ${q.id}` });
+    }
+    seen.add(q.id);
+  }
+}
+
+export const RunBriefDraft = RunBriefDraftBase.superRefine((brief, ctx) => checkQuestionIds(brief.questions, ctx));
+
+export const GrillAnswer = z
+  .object({
+    question_id: z.string().min(1),
+    answer: z.string().min(1),
+    source: z.enum(['user', 'suggested', 'default']),
+  })
+  .strict();
+
+export const RunBrief = RunBriefDraftBase.extend({
+  answers: z.array(GrillAnswer).min(3).max(4),
+}).superRefine((brief, ctx) => {
+  checkQuestionIds(brief.questions, ctx);
+  const questionIds = new Set(brief.questions.map((q) => q.id));
+  const answerIds = new Set<string>();
+  for (const answer of brief.answers) {
+    if (!questionIds.has(answer.question_id)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['answers'], message: `answer for unknown question id: ${answer.question_id}` });
+    }
+    if (answerIds.has(answer.question_id)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['answers'], message: `duplicate answer for question id: ${answer.question_id}` });
+    }
+    answerIds.add(answer.question_id);
+  }
+  for (const q of brief.questions) {
+    if (!answerIds.has(q.id)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['answers'], message: `missing answer for question id: ${q.id}` });
+    }
+  }
+});
+
 // ── S4: RoleOutput — workflow-discriminated union (§12, §13) ─────────────────
 //
 // The model output (§13) does NOT carry a `workflow` field; the engine injects the discriminator
@@ -251,22 +331,68 @@ const Adjudication = z
   })
   .strict();
 
-export const JudgeReport = z
+export const Recommendation = z.enum(['PROCEED', 'PROCEED_WITH_CONDITIONS', 'PIVOT', 'STOP']);
+
+const JudgeReportBase = z
   .object({
     adjudications: z.array(Adjudication),
     verdict: z.string().min(1), // the recommendation + core reason (idea: 2-5 sentences; grounded in adjudicated + consensus claims)
+    recommendation: Recommendation.optional(), // idea workflow; code-review omits it
+    conditions: z.array(z.string().min(1)).max(6).optional(), // present only for PROCEED_WITH_CONDITIONS
     key_points: z.array(z.string()).max(10).optional(), // chairman's bulleted reasoning (idea workflow); code-review omits it
     dissent: z.array(z.string()).min(1), // ≥1 — empty dissent is invalid (§9); strongest counter-argument
     confidence_notes: z.string().min(1), // which conclusions are HIGH/MEDIUM/LOW and why
   })
   .strict();
 
+export const JudgeReport = JudgeReportBase.superRefine((r, ctx) => {
+  const hasConditions = (r.conditions?.length ?? 0) > 0;
+  if (r.recommendation === 'PROCEED_WITH_CONDITIONS' && !hasConditions) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['conditions'],
+      message: 'conditions are required when recommendation is PROCEED_WITH_CONDITIONS',
+    });
+  }
+  if (hasConditions && r.recommendation !== 'PROCEED_WITH_CONDITIONS') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['conditions'],
+      message: 'conditions are only valid for PROCEED_WITH_CONDITIONS',
+    });
+  }
+});
+
 /** S9 call-time variant: `dissent` relaxed to min-0 so an empty dissent does NOT auto-throw inside
  *  jsonCall. S9 enforces the non-empty rule itself (one re-ask → else flag `synthesis_suspect` +
- *  inject a placeholder) so it can salvage the rest of the report instead of failing the run (§260). */
-export const JudgeReportModel = JudgeReport.extend({
+ *  inject a placeholder) so it can salvage the rest of the report instead of failing the run (§260).
+ *  Recommendation/condition consistency is also enforced inside idea S9, not by this relaxed schema. */
+export const JudgeReportModel = JudgeReportBase.extend({
   dissent: z.array(z.string()),
 });
+
+// ── S9b: ActionPlan (idea-refinement report v3) ─────────────────────────────
+
+export const ActionPlan = z
+  .object({
+    actions: z
+      .array(
+        z
+          .object({
+            order: z.number().int().min(1),
+            action: z.string().min(1),
+            why: z.string().min(1),
+            validates: z.string().min(1),
+            effort: z.enum(['S', 'M', 'L']),
+            kill_signal: z.string().min(1),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(7),
+    sequencing_note: z.string().min(1),
+  })
+  .strict();
 
 // ── RunMeta (§15, §16) ──────────────────────────────────────────────────────
 //
@@ -288,6 +414,7 @@ const FlagProfileSchema = z.object({
   id: ProviderIdSchema,
   jsonOutput: z.boolean(),
   readOnlyFlag: ReadOnlyFlagSchema,
+  model: z.string().optional(),
 });
 
 export const RunMeta = z.object({
@@ -303,13 +430,18 @@ export const RunMeta = z.object({
   exit_status: z.enum(['ok', 'failed', 'aborted', 'partial']),
   aborted: z.boolean(), // §16: Ctrl+C finalizes meta with aborted:true
   // §16 report-header flags; absent = none.
-  flags: z.array(z.enum(['synthesis_suspect', 'low_diversity'])).optional(),
+  flags: z.array(z.enum(['synthesis_suspect', 'low_diversity', 'plan_skipped', 'plan_fallback'])).optional(),
 });
 
 // ── Inferred types ──────────────────────────────────────────────────────────
 
 export type IntentContract = z.infer<typeof IntentContract>;
 export type Interpretation = z.infer<typeof Interpretation>;
+export type GrillQuestionAxis = z.infer<typeof GrillQuestionAxis>;
+export type RunBriefQuestion = z.infer<typeof RunBriefQuestion>;
+export type RunBriefDraft = z.infer<typeof RunBriefDraft>;
+export type GrillAnswer = z.infer<typeof GrillAnswer>;
+export type RunBrief = z.infer<typeof RunBrief>;
 export type StagePrompts = z.infer<typeof StagePrompts>;
 export type RoleOutput = z.infer<typeof RoleOutput>;
 export type IdeaRoleOutput = z.infer<typeof IdeaRoleOutput>;
@@ -327,7 +459,9 @@ export type VerificationSet = z.infer<typeof VerificationSet>;
 export type Claim = z.infer<typeof Claim>;
 export type Contradiction = z.infer<typeof Contradiction>;
 export type DisagreementMap = z.infer<typeof DisagreementMap>;
+export type Recommendation = z.infer<typeof Recommendation>;
 export type JudgeReport = z.infer<typeof JudgeReport>;
 export type JudgeReportModel = z.infer<typeof JudgeReportModel>;
+export type ActionPlan = z.infer<typeof ActionPlan>;
 export type RunMeta = z.infer<typeof RunMeta>;
 export type CallRecord = z.infer<typeof CallRecord>;
