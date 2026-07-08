@@ -1,0 +1,8 @@
+{
+  "bugs": [
+    { "id": "B1", "file": "comments-controller.js", "line_start": 14, "line_end": 16, "category": "PERF", "class": "N+1 (User.findById per comment inside the loop)" },
+    { "id": "B2", "file": "comments-controller.js", "line_start": 12, "line_end": 12, "category": "CORRECTNESS", "class": "off-by-one (limit(perPage + 1) returns 26 rows instead of 25)" },
+    { "id": "B3", "file": "comments-controller.js", "line_start": 22, "line_end": 24, "category": "SECURITY", "class": "auth-gap (delete authenticates but never checks ownership; any user deletes any comment)" },
+    { "id": "B4", "file": "comments-controller.js", "line_start": 15, "line_end": 16, "category": "ERROR_HANDLING", "class": "null-deref (author of a deleted user is null; author.name then throws)" }
+  ]
+}

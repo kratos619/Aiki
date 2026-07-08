@@ -1,0 +1,8 @@
+{
+  "bugs": [
+    { "id": "B1", "file": "user-controller.js", "line_start": 10, "line_end": 10, "category": "CORRECTNESS", "class": "off-by-one (page*perPage skips the first page; should be (page-1)*perPage)" },
+    { "id": "B2", "file": "user-controller.js", "line_start": 12, "line_end": 14, "category": "PERF", "class": "N+1 (Post.find per user inside the loop)" },
+    { "id": "B3", "file": "user-controller.js", "line_start": 20, "line_end": 22, "category": "ERROR_HANDLING", "class": "unhandled-rejection (await findById with no try/catch; invalid id throws)" },
+    { "id": "B4", "file": "user-controller.js", "line_start": 25, "line_end": 28, "category": "SECURITY", "class": "auth-gap (delete has no ownership check: req.user.id vs req.params.id)" }
+  ]
+}

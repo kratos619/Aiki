@@ -54,14 +54,14 @@ describe('loadConfig / effectiveConfig', () => {
 
   it('missing file → defaults (empty config, no throw)', async () => {
     expect(await loadConfig(aiki)).toEqual({});
-    expect(effectiveConfig({})).toEqual({ budget: DEFAULT_BUDGET, deadlineMs: DEFAULT_DEADLINE_MS, roles: {} });
+    expect(effectiveConfig({})).toEqual({ budget: DEFAULT_BUDGET, deadlineMs: DEFAULT_DEADLINE_MS, roles: {}, models: {} });
   });
 
   it('valid config parses roles + budget; effective merges over defaults', async () => {
     await writeFile(join(aiki, 'config.json'), JSON.stringify({ roles: { judge: 'agy' }, budget: 5 }));
     const cfg = await loadConfig(aiki);
     expect(cfg).toEqual({ roles: { judge: 'agy' }, budget: 5 });
-    expect(effectiveConfig(cfg)).toEqual({ budget: 5, deadlineMs: DEFAULT_DEADLINE_MS, roles: { judge: 'agy' } });
+    expect(effectiveConfig(cfg)).toEqual({ budget: 5, deadlineMs: DEFAULT_DEADLINE_MS, roles: { judge: 'agy' }, models: {} });
   });
 
   it('invalid JSON → ConfigError naming the file', async () => {
@@ -220,15 +220,20 @@ describe('show / resolve / config (cwd-based)', () => {
   let root: string;
   let aiki: string;
   let cwd: string;
+  let prevHome: string | undefined;
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), 'aiki-cmd-'));
     aiki = join(root, '.aiki');
     await mkdir(aiki, { recursive: true });
     cwd = process.cwd();
     process.chdir(root);
+    prevHome = process.env.AIKI_HOME; // isolate the global (~/.aiki) layer for `aiki config`
+    process.env.AIKI_HOME = join(root, '.home-aiki');
   });
   afterEach(async () => {
     process.chdir(cwd);
+    if (prevHome === undefined) delete process.env.AIKI_HOME;
+    else process.env.AIKI_HOME = prevHome;
     await rm(root, { recursive: true, force: true });
   });
 
@@ -254,6 +259,112 @@ describe('show / resolve / config (cwd-based)', () => {
     expect(code).toBe(0);
     expect(out).toContain('final-report.md');
     expect(out).toContain(join('raw', 's4-agy.out'));
+  });
+
+  it('show --html: writes a council-view HTML artifact with providers, disputes, verdict', async () => {
+    const finding = { id: 'F1', file: 'src/pay.ts', line_start: 10, line_end: 10, severity: 'P1', category: 'SECURITY', claim: 'missing auth', evidence: 'no guard', suggested_fix: 'add guard', self_confidence: 0.9 };
+    await mkRun(aiki, 'cr-html', {
+      'meta.json': JSON.stringify({ workflow: 'code-review', exit_status: 'ok', aborted: false, call_count: 5, budget: { limit: 12, used: 5 } }),
+      '04-role-outputs/claude.json': JSON.stringify({ workflow: 'code-review', task_echo: 'review', findings: [finding] }),
+      '04-role-outputs/codex.json': JSON.stringify({ workflow: 'code-review', task_echo: 'review', findings: [] }),
+      '07-review-map.json': JSON.stringify({ consensus: [], disputed: [{ finding, reviewers: ['claude'], cross_verdict: 'REFUTE', refutation: 'codex disputes it' }], single_reviewer: [], per_reviewer: [] }),
+      '09-judge-report.json': JSON.stringify({ adjudications: [{ id: 'F1', ruling: 'UPHOLD', reasoning: 'auth is required', evidence_cited: 'src/pay.ts' }], verdict: 'Fix the auth gap before shipping.', dissent: ['Scope is small.'], confidence_notes: 'High confidence.' }),
+      'final-report.md': '# Report',
+    });
+    const { code, out } = await capture(() => show('cr-html', { html: true }));
+    expect(code).toBe(0);
+    const html = await readFile(out.trim(), 'utf8');
+    expect(html).toContain('Claude');
+    expect(html).toContain('Codex');
+    expect(html).toContain('1 disputed');
+    expect(html).toContain('Fix the auth gap before shipping.');
+  });
+
+  it('show --html (idea): promotes blind spots, resolves disputed assumptions, keeps raw ids out of the main body', async () => {
+    await mkRun(aiki, 'idea-html', {
+      'meta.json': JSON.stringify({ workflow: 'idea-refinement', exit_status: 'ok', aborted: false, call_count: 8, budget: { limit: 12, used: 8 }, roles: { judge: 'claude', s4_1: 'codex', s4_2: 'agy' } }),
+      '01-intent-contract.json': JSON.stringify({ task: 'Can I run a top LLM fully offline on a phone?' }),
+      '04-role-outputs/codex.json': JSON.stringify({ workflow: 'idea-refinement', task_echo: 't', strongest_version: 'Scoped, it works.', assumptions: [], attacks: [], open_questions: [] }),
+      '04-role-outputs/agy.json': JSON.stringify({ workflow: 'idea-refinement', task_echo: 't', strongest_version: 'Only on high-end devices.', assumptions: [], attacks: [], open_questions: [] }),
+      '07-disagreement-map.json': JSON.stringify({
+        consensus: [{ id: 'C1', statement: 'Quantization can shrink models to fit phones.', type: 'VERIFIABLE', providers: ['codex', 'agy'] }],
+        contradictions: [
+          { id: 'D1', claim_ids: ['C2'], attacks: [{ provider: 'agy', argument: 'Users expect GPT-4 quality and will reject a smaller local model.', severity: 'HIGH' }] },
+          { id: 'D2', claim_ids: ['C3'], attacks: [{ provider: 'codex', argument: 'This only defeats the absolute-best reading, not a scoped one.', severity: 'MED' }] },
+        ],
+        unique: [
+          { id: 'C2', statement: 'Users will accept lower quality than cloud models.', type: 'JUDGMENT', providers: ['agy'] },
+          { id: 'C3', statement: '"Best" can mean best-that-fits-the-device.', type: 'JUDGMENT', providers: ['codex'] },
+        ],
+        blind_spots: ['business model / monetization', 'existing alternatives / competition'],
+      }),
+      '09-judge-report.json': JSON.stringify({
+        adjudications: [
+          { id: 'D1', ruling: 'UPHOLD', reasoning: 'Acceptance is an unvalidated behavioral assumption.', evidence_cited: 'x' },
+          { id: 'D2', ruling: 'REJECT', reasoning: 'Attacks a reading the claim never asserts.', evidence_cited: 'y' },
+        ],
+        verdict: 'Feasible only as a scoped, niche product.',
+        recommendation: 'PROCEED_WITH_CONDITIONS',
+        conditions: ['Validate that users accept lower quality for offline privacy.'],
+        key_points: ['The frontier-quality promise does not survive on-device constraints.', 'agy and codex split on what "best" means; the chair sided with the scoped reading.'],
+        dissent: ['Might be too pessimistic for high-end devices.'],
+        confidence_notes: 'D1 HIGH; D2 HIGH.',
+      }),
+      '09b-action-plan.json': JSON.stringify({
+        actions: [{
+          order: 1,
+          action: 'Run a device-quality acceptance test with 10 target users.',
+          why: 'The chair upheld user acceptance as the main behavioral risk.',
+          validates: 'D1',
+          effort: 'S',
+          kill_signal: 'Most users reject the offline output as too low quality.',
+        }],
+        sequencing_note: 'Test acceptance before pricing or build depth.',
+      }),
+      'final-report.md': '# Report',
+    });
+    const { code, out } = await capture(() => show('idea-html', { html: true }));
+    expect(code).toBe(0);
+    const html = await readFile(out.trim(), 'utf8');
+    expect(html).toContain('Feasible only as a scoped, niche product.'); // verdict
+    expect(html).toContain('business model / monetization'); // blind spot is RENDERED, not just counted
+    expect(html).toContain('Users will accept lower quality than cloud models.'); // D1 upheld → risk shows the resolved assumption, not "D1"
+    expect(html).toContain('risks that stand'); // honest glance stat
+    expect(html).toContain('Chair: Claude'); // judge attributed (chairman of the panel)
+    expect(html).toContain("Chairman's reasoning"); // the deeper bulleted verdict reasoning
+    expect(html).toContain('the chair sided with the scoped reading.'); // a key_point renders
+    expect(html).toContain('Proceed with conditions'); // explicit BLUF badge
+    expect(html).toContain('Dimension scorecard'); // v3 scorecard surfaced
+    expect(html).toContain('Assumption audit'); // derived audit table surfaced
+    expect(html).toContain('The debate'); // deterministic who-vs-who narrative
+    expect(html).toContain('Validation plan'); // planner artifact surfaced
+    expect(html).toContain('Run a device-quality acceptance test'); // anchored action
+    expect(html).toContain('Receipt'); // call/provider receipt surfaced
+    expect(html).toContain('How each model saw it'); // per-model section surfaced, not folded
+    expect(html).toContain('Copy report (Markdown)'); // copy-to-clipboard control
+    expect(html).toContain('const REPORT_MD ='); // the embedded markdown for the copy button
+    // The upheld dispute is a REJECT/UPHOLD-free story above the fold; raw ids are absent from the debate
+    // narrative, though the validation plan later shows anchors such as D1.
+    const mainBody = html.slice(0, html.indexOf('<details'));
+    expect(mainBody).not.toContain('UPHOLD');
+    const beforePlan = html.slice(0, html.indexOf('Validation plan'));
+    expect(beforePlan).not.toContain('>D1<');
+  });
+
+  it('show --html (idea): old runs without recommendation or plan keep the legacy body', async () => {
+    await mkRun(aiki, 'idea-old-html', {
+      'meta.json': JSON.stringify({ workflow: 'idea-refinement', exit_status: 'ok', aborted: false, call_count: 8, budget: { limit: 12, used: 8 }, roles: { judge: 'claude' } }),
+      '04-role-outputs/agy.json': JSON.stringify({ workflow: 'idea-refinement', task_echo: 't', strongest_version: 'Scoped, it works.', assumptions: [], attacks: [], open_questions: [] }),
+      '07-disagreement-map.json': JSON.stringify({ consensus: [], contradictions: [], unique: [], blind_spots: ['pricing'] }),
+      '09-judge-report.json': JSON.stringify({ adjudications: [], verdict: 'Old verdict.', dissent: ['x'], confidence_notes: 'n' }),
+      'final-report.md': '# Report',
+    });
+    const { code, out } = await capture(() => show('idea-old-html', { html: true }));
+    expect(code).toBe(0);
+    const html = await readFile(out.trim(), 'utf8');
+    expect(html).toContain('Recommended next steps');
+    expect(html).not.toContain('Validation plan');
+    expect(html).not.toContain('Dimension scorecard');
   });
 
   it('show: no matching run → exit 1', async () => {
@@ -292,7 +403,7 @@ describe('show / resolve / config (cwd-based)', () => {
     await mkRun(aiki, 'r6', { '09-judge-report.json': JUDGE, '07-disagreement-map.json': MAP, 'meta.json': META });
     const { code, err } = await capture(() => resolve('r6', { verdict: ['D9=correct'] }));
     expect(code).toBe(1);
-    expect(err).toMatch(/no adjudicated item/);
+    expect(err).toMatch(/no adjudication "D9"/);
   });
 
   it('resolve: run with no adjudications → exit 0, nothing written', async () => {
@@ -305,7 +416,7 @@ describe('show / resolve / config (cwd-based)', () => {
   it('config: prints effective config with defaults filled', async () => {
     const { code, out } = await capture(() => config());
     expect(code).toBe(0);
-    expect(JSON.parse(out)).toEqual({ budget: DEFAULT_BUDGET, deadlineMs: DEFAULT_DEADLINE_MS, roles: {} });
+    expect(JSON.parse(out)).toEqual({ budget: DEFAULT_BUDGET, deadlineMs: DEFAULT_DEADLINE_MS, roles: {}, models: {} });
   });
 
   it('config: invalid config → exit 1', async () => {

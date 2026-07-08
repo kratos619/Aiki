@@ -1,0 +1,19 @@
+const express = require('express');
+const router = express.Router();
+const User = require('../models/User');
+
+// PUT /users/:id — update a user's profile
+router.put('/users/:id', authenticate, async (req, res) => {
+  const user = await User.findByIdAndUpdate(req.params.id, req.body, { new: true });
+  res.json(user);
+});
+
+// POST /users — register a new account
+router.post('/users', async (req, res) => {
+  const existing = await User.findOne({ email: req.body.email });
+  if (existing) return res.status(409).json({ error: 'email taken' });
+  const user = await User.create({ email: req.body.email, password: req.body.password, role: 'user' });
+  res.json(user);
+});
+
+module.exports = router;

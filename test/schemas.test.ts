@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
+  ActionPlan,
   DisagreementMap,
+  RunBrief,
+  RunBriefDraft,
   IntentContract,
   Interpretation,
   JudgeReport,
@@ -39,6 +42,57 @@ describe('Interpretation', () => {
 
   it('rejects more than 2 misreadings (top-2 cap §13)', () => {
     expect(() => Interpretation.parse({ my_interpretation: 'x', plausible_misreadings: ['a', 'b', 'c'] })).toThrow();
+  });
+});
+
+describe('RunBrief preflight', () => {
+  const draft = {
+    subject: 'local multi-model orchestration CLI',
+    decision_frame: 'decide whether this is worth building',
+    evaluation_lens: 'developer tool viability',
+    target_user: 'developers already paying for multiple AI CLIs',
+    constraints: ['no API keys', 'read-only'],
+    claims_to_test: ['1.3x bug-catch rate'],
+    evidence_supplied: ['held-out benchmark claim'],
+    missing_axes: ['pricing'],
+    questions: [
+      {
+        id: 'Q1',
+        axis: 'decision_frame' as const,
+        question: 'What decision should the council help you make?',
+        why_it_matters: 'The verdict depends on whether you want a build/no-build call or positioning feedback.',
+        suggested_answers: ['Decide build/no-build', 'Find the biggest risks'],
+      },
+      {
+        id: 'Q2',
+        axis: 'target_user' as const,
+        question: 'Who should be treated as the first target user?',
+        why_it_matters: 'A tool for solo developers is judged differently than a team governance tool.',
+        suggested_answers: ['Solo senior developers', 'Small engineering teams'],
+      },
+      {
+        id: 'Q3',
+        axis: 'success_bar' as const,
+        question: 'What would make this worth pursuing?',
+        why_it_matters: 'The judge needs a concrete success bar.',
+        suggested_answers: ['Clear wedge and risk plan', 'Evidence it beats one strong model'],
+      },
+    ],
+  };
+
+  it('accepts a strict 3-question draft from the preflight model', () => {
+    expect(RunBriefDraft.parse(draft)).toEqual(draft);
+  });
+
+  it('rejects fewer than 3 questions and unknown keys', () => {
+    expect(() => RunBriefDraft.parse({ ...draft, questions: draft.questions.slice(0, 2) })).toThrow();
+    expect(() => RunBriefDraft.parse({ ...draft, extra: true })).toThrow();
+  });
+
+  it('accepts the persisted brief only when every question has an answer', () => {
+    const answers = draft.questions.map((q) => ({ question_id: q.id, answer: 'Use the supplied prompt.', source: 'user' as const }));
+    expect(RunBrief.parse({ ...draft, answers })).toMatchObject({ answers });
+    expect(() => RunBrief.parse({ ...draft, answers: answers.slice(0, 2) })).toThrow();
   });
 });
 
@@ -137,6 +191,38 @@ describe('JudgeReport', () => {
 
   it('rejects empty dissent (§9 mandatory non-empty)', () => {
     expect(() => JudgeReport.parse({ ...valid, dissent: [] })).toThrow();
+  });
+
+  it('requires conditions only for PROCEED_WITH_CONDITIONS', () => {
+    expect(JudgeReport.parse({ ...valid, recommendation: 'PROCEED' })).toMatchObject({ recommendation: 'PROCEED' });
+    expect(() => JudgeReport.parse({ ...valid, recommendation: 'PROCEED_WITH_CONDITIONS' })).toThrow();
+    expect(() => JudgeReport.parse({ ...valid, recommendation: 'STOP', conditions: ['check'] })).toThrow();
+    expect(JudgeReport.parse({ ...valid, recommendation: 'PROCEED_WITH_CONDITIONS', conditions: ['check'] })).toMatchObject({ conditions: ['check'] });
+  });
+});
+
+describe('ActionPlan', () => {
+  const valid = {
+    actions: [{
+      order: 1,
+      action: 'Interview 5 target users about the pain.',
+      why: 'Validates the load-bearing demand risk.',
+      validates: 'D1',
+      effort: 'S' as const,
+      kill_signal: 'Fewer than 2 users describe the pain unprompted.',
+    }],
+    sequencing_note: 'Start with demand because it can kill the idea cheapest.',
+  };
+
+  it('accepts a valid strict plan', () => {
+    expect(ActionPlan.parse(valid)).toEqual(valid);
+  });
+
+  it('rejects bad effort, empty actions, too many actions, and unknown keys', () => {
+    expect(() => ActionPlan.parse({ ...valid, actions: [] })).toThrow();
+    expect(() => ActionPlan.parse({ ...valid, actions: Array.from({ length: 8 }, (_, i) => ({ ...valid.actions[0], order: i + 1 })) })).toThrow();
+    expect(() => ActionPlan.parse({ ...valid, actions: [{ ...valid.actions[0], effort: 'XL' }] })).toThrow();
+    expect(() => ActionPlan.parse({ ...valid, extra: true })).toThrow();
   });
 });
 

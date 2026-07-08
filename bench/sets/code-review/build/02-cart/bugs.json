@@ -1,0 +1,8 @@
+{
+  "bugs": [
+    { "id": "B1", "file": "cart-service.js", "line_start": 6, "line_end": 6, "category": "CORRECTNESS", "class": "off-by-one (loop uses <= items.length; reads items[length] which is undefined)" },
+    { "id": "B2", "file": "cart-service.js", "line_start": 16, "line_end": 16, "category": "CORRECTNESS", "class": "divide-by-zero (total/units returns NaN for an empty cart)" },
+    { "id": "B3", "file": "cart-service.js", "line_start": 21, "line_end": 22, "category": "ERROR_HANDLING", "class": "null-deref (findOne can return null; cart.items then throws)" },
+    { "id": "B4", "file": "cart-service.js", "line_start": 23, "line_end": 28, "category": "CONCURRENCY", "class": "race (read-modify-write of the cart doc; concurrent adds lose updates)" }
+  ]
+}

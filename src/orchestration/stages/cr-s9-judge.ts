@@ -12,19 +12,28 @@ import { JudgeReportModel } from '../../schemas/index.js';
 import { isFatal, type RunCtx } from '../context.js';
 import { jsonCall } from '../jsonStage.js';
 import { adjudicationScopeViolations } from './s9-judge.js';
+import { loadSkill } from '../skills.js';
 
 const S9_PROMPT = `ROLE: Judge on a code review. Two independent reviewers disagreed on the findings below:
 one reviewer reported each as a defect; another flagged it as a likely FALSE POSITIVE (see "refutation").
 For EACH disputed finding, rule from the evidence and refutation given (you have findings text only):
 - UPHOLD = it IS a genuine defect (keep it),
 - REJECT = it is a false positive (drop it),
-- UNRESOLVED = genuinely undecided.
+- UNRESOLVED = genuinely undecided.{{SKILL}}
 Output ONLY JSON matching the judge schema:
 - adjudications: for EACH disputed id → {id, ruling: UPHOLD|REJECT|UNRESOLVED, reasoning ≤3 sentences, evidence_cited}.
 - verdict: ≤80 words — overall assessment of the change (roughly how many real defects, worst severity).
 - dissent: ≥1 item — the strongest argument against your own verdict. Empty dissent is invalid.
 - confidence_notes: which findings you hold HIGH/MEDIUM/LOW and why.
 DISPUTED FINDINGS: {{DISPUTED_JSON}}`;
+
+/**
+ * Fill the judge template: {{DISPUTED_JSON}} → the disputes, {{SKILL}} → the judge playbook (or nothing).
+ * An empty skill collapses the slot, so the prompt is byte-for-byte the pre-skill baseline.
+ */
+export function buildJudgePrompt(disputes: unknown, skill: string): string {
+  return S9_PROMPT.replace('{{DISPUTED_JSON}}', JSON.stringify(disputes, null, 2)).replace('{{SKILL}}', skill ? `\n\n${skill}` : '');
+}
 
 export async function s9ReviewJudge(ctx: RunCtx, map: ReviewMap): Promise<JudgeReportT> {
   const disputeIds = map.disputed.map((d) => d.finding.id);
@@ -52,7 +61,7 @@ export async function s9ReviewJudge(ctx: RunCtx, map: ReviewMap): Promise<JudgeR
     evidence: d.finding.evidence,
     refutation: d.refutation ?? '',
   }));
-  const basePrompt = S9_PROMPT.replace('{{DISPUTED_JSON}}', JSON.stringify(disputes, null, 2));
+  const basePrompt = buildJudgePrompt(disputes, loadSkill('code-review', 'judge'));
 
   // Judge runs on cwd = run dir (NOT the repo) — sidesteps agy's unverified sandbox.
   const judge = ctx.handle(ctx.roles.judge);
@@ -83,7 +92,7 @@ export async function s9ReviewJudge(ctx: RunCtx, map: ReviewMap): Promise<JudgeR
     dissent = ['(none produced — flagged synthesis_suspect)'];
   }
 
-  const final: JudgeReportT = { ...report, adjudications: inScope, dissent };
+  const final: JudgeReportT = { ...report, adjudications: inScope, dissent, recommendation: undefined, conditions: undefined };
   await ctx.writer.writeJson('judge-report', final);
   return final;
 }

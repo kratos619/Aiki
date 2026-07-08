@@ -10,27 +10,37 @@
 // - Full audit (§15): every call's exact prompt and raw output are written under `raw/`.
 
 import { randomBytes } from 'node:crypto';
-import type { CallRecord, RunMeta } from '../schemas/index.js';
+import type { CallRecord, GrillAnswer, RunBriefDraft, RunMeta } from '../schemas/index.js';
 import type { Adapter, FlagProfile, ProviderId, ReadOnlyFlag, RunResultAdapter } from '../providers/types.js';
 import { PROVIDER_IDS } from '../providers/types.js';
 import { ADAPTERS } from '../providers/adapters.js';
+import { extractJson } from '../providers/adapter-core.js';
 import { detect } from '../providers/detect.js';
 import { probeFlags } from '../providers/probe.js';
 import type { RunWriter } from '../storage/runs.js';
+import { replayKey } from '../storage/replay.js';
 
 export type WorkflowId = 'idea-refinement' | 'code-review';
 
 /**
  * Optional observation/interaction seam for the TUI (T8). Entirely additive: headless runs pass no
- * `events`, so the engine behaves exactly as without it. `clarify` is the one interactive point —
- * present only in the TUI; when absent, S2 falls back to the majority cluster (headless).
+ * `events`, so the engine does not block on user input. `grill` and `clarify` are the interactive
+ * points; when absent, S0 uses best-judgment answers and S2 falls back to the majority cluster.
  */
+/** The user's answer to an S2 clarification: pick one reading, combine them all, or type their own. */
+export type ClarifyChoice =
+  | { kind: 'pick'; index: number }
+  | { kind: 'both' }
+  | { kind: 'text'; text: string };
+
 export interface RunEvents {
   onStart?(runId: string, dir: string): void;
   onStageStart?(id: string): void;
   onStageEnd?(id: string, status: 'done' | 'failed' | 'skipped'): void;
-  /** Ask the user to pick among diverging S2 interpretations; resolves to the chosen option index. */
-  clarify?(question: string, options: string[]): Promise<number>;
+  /** Ask the user to answer the S0 contextual grill before the expensive council stages run. */
+  grill?(brief: RunBriefDraft): Promise<GrillAnswer[]>;
+  /** Ask the user to resolve diverging S2 interpretations (pick / combine / type their own). */
+  clarify?(question: string, options: string[]): Promise<ClarifyChoice>;
 }
 
 /** Declarative timeline row for a workflow's stages (T8). The TUI renders the pending skeleton from
@@ -55,12 +65,17 @@ export async function runStage<T>(ctx: RunCtx, id: string, fn: () => Promise<T>)
   }
 }
 
-export const DEFAULT_BUDGET = 12; // §19 said 9, but that never summed: full idea-refinement pipeline is
-// S1(1)+S2(3)+S3(1)+S4(2)+S7-grouping(1)+S8(1)+S9(1) = 10 min, 11 with S8's 2nd pass, 11–12 with the
-// routine agy-S2 §14 repair. 9 aborts right before the judge. 12 = full run + 1 repair, still a real
-// cap (a repair-storm fails gracefully + flagged). Overridable via `--budget` / config (T9). (T7 decision.)
-export const DEFAULT_DEADLINE_MS = 10 * 60 * 1000; // §19: 10 minutes
-const DEFAULT_CALL_TIMEOUT_MS = 180_000; // §7.1
+export const DEFAULT_BUDGET = 18; // full idea pipeline min = S0(1)+S1(1)+S2(3)+S3(1)+S4(2)+S7-group(1)+
+// S8(1)+S9(1)+S9b(1) = 12. But S2 runs 3 providers that EACH can repair, plus S9 + S9b anchor repairs —
+// a live run spent 3 repairs and died at 13 before S9b. 18 = 12 + ~6 repair headroom so the validation
+// plan actually renders; a true repair-storm still fails gracefully. Overridable via `--budget`/config.
+// §19 was 10 min; raised to 20 (user-authorized 2026-07-06). Evidence: a real Opus judge (S9) on a
+// 9-dispute idea ran ~360s and the whole run was ~14 min → the 10-min wall-clock aborted a legitimate run.
+export const DEFAULT_DEADLINE_MS = 20 * 60 * 1000; // wall-clock cap
+// §7.1 was 180s; raised to 300 (user-authorized 2026-07-06). The adapter retries a TIMEOUT once, so 180s
+// gave a 360s ceiling and the deep-reasoning judge blew it (observed exactly 360.1s → TIMEOUT). 300s per
+// attempt covers the Opus judge; the wall-clock deadline above remains the outer bound.
+const DEFAULT_CALL_TIMEOUT_MS = 300_000;
 
 export class BudgetExceeded extends Error {
   constructor(limit: number) {
@@ -118,6 +133,7 @@ export interface RunCtxOpts {
   signal?: AbortSignal;
   events?: RunEvents; // TUI observation/interaction seam (T8); absent = headless
   now?: () => number; // injectable clock (tests)
+  replay?: Map<string, string>; // resume (V6.3): (provider,prompt)→prior output; matched calls skip the model
 }
 
 export class RunCtx {
@@ -138,6 +154,8 @@ export class RunCtx {
   private readonly deadlineMs: number;
   private readonly deadlineAt: number;
   private readonly now: () => number;
+  private readonly replay?: Map<string, string>; // resume replay cache (V6.3)
+  private seq = 0; // monotonic per-call counter for raw/ filenames (== budget.used on a fresh run)
 
   constructor(opts: RunCtxOpts) {
     this.runId = opts.runId;
@@ -152,6 +170,7 @@ export class RunCtx {
     this.deadlineMs = opts.deadlineMs ?? DEFAULT_DEADLINE_MS;
     this.now = opts.now ?? Date.now;
     this.deadlineAt = this.now() + this.deadlineMs;
+    this.replay = opts.replay;
   }
 
   /** Provider ids available this run (READY at setup). */
@@ -192,30 +211,39 @@ export class RunCtx {
     stage: string,
   ): Promise<RunResultAdapter> {
     this.guard();
-    if (this.budget.used + 1 > this.budget.limit) throw new BudgetExceeded(this.budget.limit);
-    this.budget.used++;
-
-    const seq = this.budget.used;
+    const seq = ++this.seq;
     await this.writer.writeRaw(`${stage}-${handle.id}-${seq}.prompt.txt`, req.prompt);
 
-    const res = await handle.adapter.run(
-      {
-        prompt: req.prompt,
-        cwd: req.cwd ?? this.cwd,
-        timeoutMs: req.timeoutMs ?? DEFAULT_CALL_TIMEOUT_MS,
-        expectJson: req.expectJson,
-        readOnly: true,
-        signal: this.signal, // Ctrl+C kills the in-flight child (T8); undefined headless
-      },
-      handle.flags,
-    );
+    // Resume (V6.3): if this exact (provider, prompt) already succeeded in the run we're resuming,
+    // replay its output — no real call, no budget spend. Only never-completed calls hit the model.
+    const cachedOut = this.replay?.get(replayKey(handle.id, req.prompt));
+    let res: RunResultAdapter;
+    if (cachedOut !== undefined) {
+      res = { ok: true, text: cachedOut, json: req.expectJson ? extractJson(cachedOut) : undefined, durationMs: 0 };
+    } else {
+      if (this.budget.used + 1 > this.budget.limit) throw new BudgetExceeded(this.budget.limit);
+      this.budget.used++;
+      res = await handle.adapter.run(
+        {
+          prompt: req.prompt,
+          cwd: req.cwd ?? this.cwd,
+          timeoutMs: req.timeoutMs ?? DEFAULT_CALL_TIMEOUT_MS,
+          expectJson: req.expectJson,
+          readOnly: true,
+          signal: this.signal, // Ctrl+C kills the in-flight child (T8); undefined headless
+        },
+        handle.flags,
+      );
+      // Only REAL calls count toward the ledger/budget; a replayed call is free and already recorded in
+      // the run it came from. raw/ below still logs the replayed prompt+output for a full audit.
+      this.calls.push({
+        provider: handle.id,
+        stage,
+        durationMs: res.durationMs,
+        ...(res.ok ? {} : { error: res.error }),
+      });
+    }
 
-    this.calls.push({
-      provider: handle.id,
-      stage,
-      durationMs: res.durationMs,
-      ...(res.ok ? {} : { error: res.error }),
-    });
     await this.writer.writeRaw(
       `${stage}-${handle.id}-${seq}.out`,
       res.ok ? res.text : `[${res.error}]\n${res.stderrTail}`,
@@ -274,12 +302,14 @@ const READONLY_FROM_FLAG = (f: FlagProfile): ReadOnlyFlag => f.readOnlyFlag;
  * Build handles for every provider that is READY (detect + flag probe; no model calls). Providers
  * that aren't installed are simply omitted; quorum (§8) is checked by the caller.
  */
-export async function setupProviders(): Promise<ProviderHandle[]> {
+export async function setupProviders(models?: Partial<Record<ProviderId, string>>): Promise<ProviderHandle[]> {
   const handles: ProviderHandle[] = [];
   for (const id of PROVIDER_IDS) {
     const det = await detect(id);
     if (det.status !== 'READY') continue;
-    const flags = await probeFlags(id);
+    const probed = await probeFlags(id);
+    const model = models?.[id]; // V8: user-chosen model → passed to the CLI as `--model <id>`
+    const flags = model ? { ...probed, model } : probed;
     handles.push({ id, adapter: ADAPTERS[id], flags, readOnly: READONLY_FROM_FLAG(flags), version: det.version ?? null });
   }
   return handles;

@@ -1,0 +1,32 @@
+const express = require('express');
+const router = express.Router();
+const Order = require('../models/Order');
+const Coupon = require('../models/Coupon');
+const gateway = require('../lib/gateway');
+
+// POST /checkout — charge the cart total and create an order
+router.post('/checkout', async (req, res) => {
+  const { userId, items, couponCode } = req.body;
+  let total = 0;
+  for (let i = 0; i <= items.length; i++) {
+    total += items[i].price * items[i].qty;
+  }
+  if (couponCode) {
+    const coupon = await Coupon.findOne({ code: couponCode });
+    total = total - coupon.discount;
+  }
+  const charge = await gateway.charge(userId, total);
+  const order = await Order.create({ userId, items, total, chargeId: charge.id });
+  res.json(order);
+});
+
+// POST /refund/:orderId — refund a placed order
+router.post('/refund/:orderId', async (req, res) => {
+  const order = await Order.findById(req.params.orderId);
+  await gateway.refund(order.chargeId, order.total);
+  order.status = 'refunded';
+  await order.save();
+  res.json({ ok: true });
+});
+
+module.exports = router;

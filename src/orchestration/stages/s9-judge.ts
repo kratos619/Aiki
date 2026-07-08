@@ -8,7 +8,7 @@
 // Confidence is NOT taken from the judge here — the held/failed/unverified audit + HIGH/MED/LOW labels
 // are derived deterministically at S10 (§624: confidence from cross-model confirmation, not self-report).
 
-import type { DisagreementMap, IntentContract, JudgeReport as JudgeReportT, VerificationSet } from '../../schemas/index.js';
+import type { DisagreementMap, IntentContract, JudgeReport as JudgeReportT, Recommendation, VerificationSet } from '../../schemas/index.js';
 import { JudgeReportModel } from '../../schemas/index.js';
 import type { ProviderId } from '../../providers/types.js';
 import { isFatal, type RunCtx } from '../context.js';
@@ -21,10 +21,21 @@ const S9_PROMPT = `ROLE: Judge. You adjudicate ONLY the disputed items below. Co
 settled; do not restate, edit, re-litigate, or reference them in your adjudications.
 Apply this rubric strictly: {{RUBRIC_JSON}}
 
+You are the CHAIRMAN of the panel. Write for a decision-maker who did not see the debate — be clear,
+specific, and professional. No hedging mush, no restating the question back.
+
 Output ONLY JSON matching the judge schema:
 - adjudications: for EACH disputed id → {id, ruling: UPHOLD|REJECT|UNRESOLVED, reasoning ≤3 sentences, evidence_cited}.
   UPHOLD = the argument defeats the claim; REJECT = the claim survives; UNRESOLVED = genuinely undecided.
-- verdict: ≤80 words, grounded ONLY in adjudicated + consensus claims.
+- verdict: 2-5 sentences — your clear recommendation (proceed / proceed-if / don't) and the single most
+  important reason. Grounded ONLY in adjudicated + consensus claims.
+- recommendation: one of PROCEED, PROCEED_WITH_CONDITIONS, PIVOT, STOP.
+  PIVOT = the core idea is unsound but an adjacent version may work. STOP = load-bearing assumptions failed
+  with no credible repair. PROCEED_WITH_CONDITIONS means the idea is viable only if specific checks pass.
+- conditions: required ONLY for PROCEED_WITH_CONDITIONS; each condition must be checkable, not a vibe.
+- key_points: 4-8 bullets — the reasoning a decision-maker needs, in plain language. Cover: what decided
+  it, the decisive trade-offs, where the analysts DISAGREED and whose side you took and why, and the one
+  thing that would most change the verdict. Each bullet a full standalone point, not a fragment.
 - dissent: ≥1 item — the strongest argument AGAINST your own verdict. Empty dissent is invalid.
 - confidence_notes: which conclusions are HIGH/MEDIUM/LOW and why.
 DISPUTED ITEMS + VERIFICATION: {{DISPUTES_JSON}}
@@ -35,6 +46,21 @@ CONSENSUS (context only, read-only): {{CONSENSUS_JSON}}`;
 export function adjudicationScopeViolations(report: { adjudications: Array<{ id: string }> }, disputeIds: Iterable<string>): string[] {
   const allowed = new Set(disputeIds);
   return report.adjudications.map((a) => a.id).filter((id) => !allowed.has(id));
+}
+
+/** Idea S9 semantic guard: the model-facing schema permits missing recommendation fields so S9 can
+ *  re-ask once instead of losing a usable judge report to one absent enum. */
+export function recommendationIssues(report: { recommendation?: Recommendation; conditions?: string[] }): string[] {
+  const issues: string[] = [];
+  const hasConditions = (report.conditions?.length ?? 0) > 0;
+  if (!report.recommendation) issues.push('recommendation is required');
+  if (report.recommendation === 'PROCEED_WITH_CONDITIONS' && !hasConditions) {
+    issues.push('conditions are required for PROCEED_WITH_CONDITIONS');
+  }
+  if (hasConditions && report.recommendation !== 'PROCEED_WITH_CONDITIONS') {
+    issues.push('conditions are only valid with PROCEED_WITH_CONDITIONS');
+  }
+  return issues;
 }
 
 /** §272 2-provider demotion (pure). When the judge is also an S4 author (only happens with 2
@@ -53,6 +79,22 @@ export function demoteSelfAuthored(adjudications: Adjudication[], map: Disagreem
     });
     return soleJudge && a.ruling !== 'UNRESOLVED' ? { ...a, ruling: 'UNRESOLVED' as const } : a;
   });
+}
+
+const sevRank = (s: string): number => (s === 'HIGH' ? 0 : s === 'MED' ? 1 : 2);
+
+function fallbackConditions(map: DisagreementMap, adjudications: Adjudication[]): string[] {
+  const claimById = new Map([...map.consensus, ...map.unique].map((c) => [c.id, c.statement]));
+  const rulingById = new Map(adjudications.map((a) => [a.id, a.ruling]));
+  const riskConditions = map.contradictions
+    .filter((d) => rulingById.get(d.id) === 'UPHOLD')
+    .sort((a, b) => Math.min(...a.attacks.map((x) => sevRank(x.severity))) - Math.min(...b.attacks.map((x) => sevRank(x.severity))))
+    .map((d) => {
+      const claim = d.claim_ids.map((id) => claimById.get(id) ?? id).join(' / ');
+      return `Proceed only if you can validate that ${claim}.`;
+    });
+  const blindSpotConditions = map.blind_spots.map((b) => `Proceed only after examining the ${b} gap.`);
+  return [...riskConditions, ...blindSpotConditions, 'Proceed only after one cheap test confirms the core user need.'].slice(0, 6);
 }
 
 export async function s9Judge(
@@ -86,15 +128,18 @@ export async function s9Judge(
 
   // Semantic guards beyond the schema → one targeted re-ask.
   let violations = adjudicationScopeViolations(report, disputeIds);
-  if (violations.length || report.dissent.length === 0) {
+  let recIssues = recommendationIssues(report);
+  if (violations.length || report.dissent.length === 0 || recIssues.length) {
     const fix =
       `${basePrompt}\n\n---\nYour previous output had problems:\n` +
       (violations.length ? `- adjudications must reference ONLY these disputed ids [${disputeIds.join(', ')}]; not: ${violations.join(', ')}\n` : '') +
       (report.dissent.length === 0 ? `- dissent must contain at least one item.\n` : '') +
+      (recIssues.length ? `- recommendation/conditions problem: ${recIssues.join('; ')}.\n` : '') +
       `Output ONLY the corrected JSON.`;
     try {
       report = await jsonCall(ctx, judge, 'S9-repair', fix, JudgeReportModel);
       violations = adjudicationScopeViolations(report, disputeIds);
+      recIssues = recommendationIssues(report);
     } catch (e) {
       if (isFatal(e)) throw e; // keep the first report on a non-fatal repair failure
     }
@@ -110,8 +155,17 @@ export async function s9Judge(
     ctx.addFlag('synthesis_suspect');
     dissent = ['(none produced — flagged synthesis_suspect)'];
   }
+  let recommendation = report.recommendation;
+  let conditions = report.conditions;
+  if (recIssues.length) {
+    ctx.addFlag('synthesis_suspect');
+    recommendation = 'PROCEED_WITH_CONDITIONS';
+    conditions = fallbackConditions(map, adjudications);
+  } else if (recommendation !== 'PROCEED_WITH_CONDITIONS') {
+    conditions = undefined;
+  }
 
-  const final: JudgeReportT = { ...report, adjudications, dissent };
+  const final: JudgeReportT = { ...report, adjudications, dissent, recommendation, conditions };
   await ctx.writer.writeJson('judge-report', final);
   return final;
 }

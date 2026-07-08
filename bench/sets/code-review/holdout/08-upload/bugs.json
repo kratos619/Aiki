@@ -1,0 +1,8 @@
+{
+  "bugs": [
+    { "id": "B1", "file": "upload-controller.js", "line_start": 10, "line_end": 11, "category": "SECURITY", "class": "path-traversal (user filename joined into UPLOAD_DIR; ../ escapes the upload root on write)" },
+    { "id": "B2", "file": "upload-controller.js", "line_start": 18, "line_end": 19, "category": "SECURITY", "class": "path-traversal (req.query.name joined into UPLOAD_DIR; ../ reads arbitrary files on download)" },
+    { "id": "B3", "file": "upload-controller.js", "line_start": 12, "line_end": 12, "category": "ERROR_HANDLING", "class": "unhandled-rejection (fs.writeFile unguarded; disk/permission errors reject with no handler)" },
+    { "id": "B4", "file": "upload-controller.js", "line_start": 26, "line_end": 26, "category": "CORRECTNESS", "class": "off-by-one (parts[parts.length] is undefined; should be parts.length-1)" }
+  ]
+}

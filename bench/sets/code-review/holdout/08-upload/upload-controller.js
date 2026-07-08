@@ -1,0 +1,29 @@
+const express = require('express');
+const router = express.Router();
+const fs = require('fs/promises');
+const path = require('path');
+
+const UPLOAD_DIR = '/var/app/uploads';
+
+// POST /upload — save an uploaded file to disk
+router.post('/upload', authenticate, async (req, res) => {
+  const { filename, content } = req.body;
+  const dest = path.join(UPLOAD_DIR, filename);
+  await fs.writeFile(dest, Buffer.from(content, 'base64'));
+  res.json({ path: dest });
+});
+
+// GET /download?name=foo.pdf — stream a stored file back
+router.get('/download', authenticate, async (req, res) => {
+  const file = path.join(UPLOAD_DIR, req.query.name);
+  const data = await fs.readFile(file);
+  res.send(data);
+});
+
+// Return the extension label shown in the UI
+function extLabel(name) {
+  const parts = name.split('.');
+  return parts[parts.length].toUpperCase();
+}
+
+module.exports = { router, extLabel };

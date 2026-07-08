@@ -35,7 +35,7 @@ ORIGINAL TEXT:
 export interface MisunderstandingGuard {
   interpretations: Array<{ provider: ProviderId } & Interpretation>;
   clusters: Cluster[];
-  chosen: { my_interpretation: string; cluster_index: number; how: 'single-cluster' | 'majority-cluster' | 'user-selected' };
+  chosen: { my_interpretation: string; cluster_index: number; how: 'single-cluster' | 'majority-cluster' | 'user-selected' | 'user-combined' | 'user-typed' };
   dropped: Array<{ provider: ProviderId; error: string }>;
 }
 
@@ -64,23 +64,26 @@ export async function s2Misread(ctx: RunCtx, contract: IntentContract, rawInput:
 
   const clusters = clusterInterpretations(interpretations.map((x) => ({ key: x.provider, text: x.my_interpretation })));
 
-  // One cluster → proceed. Multiple → the TUI asks a single clarification (§4.2); headless (no
-  // `clarify`) falls back to the majority cluster, logged in `how` (§115).
-  let idx = majorityClusterIndex(clusters);
-  let how: MisunderstandingGuard['chosen']['how'];
+  // One cluster → proceed. Multiple → the TUI asks a single clarification (§4.2): pick one reading,
+  // combine them all, or type your own. Headless (no `clarify`) falls back to the majority cluster (§115).
+  const reps = clusters.map((c) => c.representative);
+  let chosen: MisunderstandingGuard['chosen'];
   if (clusters.length === 1) {
-    how = 'single-cluster';
+    chosen = { my_interpretation: reps[0]!, cluster_index: 0, how: 'single-cluster' };
   } else if (ctx.events?.clarify) {
-    const picked = await ctx.events.clarify(
-      'Which reading matches your intent?',
-      clusters.map((c) => c.representative),
-    );
-    idx = picked >= 0 && picked < clusters.length ? picked : majorityClusterIndex(clusters);
-    how = 'user-selected';
+    const choice = await ctx.events.clarify('Which reading matches your intent?', reps);
+    if (choice.kind === 'text' && choice.text.trim()) {
+      chosen = { my_interpretation: choice.text.trim(), cluster_index: -1, how: 'user-typed' };
+    } else if (choice.kind === 'both') {
+      chosen = { my_interpretation: reps.join(' AND ALSO: '), cluster_index: -1, how: 'user-combined' };
+    } else {
+      const idx = choice.kind === 'pick' && choice.index >= 0 && choice.index < clusters.length ? choice.index : majorityClusterIndex(clusters);
+      chosen = { my_interpretation: reps[idx]!, cluster_index: idx, how: 'user-selected' };
+    }
   } else {
-    how = 'majority-cluster';
+    const idx = majorityClusterIndex(clusters);
+    chosen = { my_interpretation: reps[idx]!, cluster_index: idx, how: 'majority-cluster' };
   }
-  const chosen = { my_interpretation: clusters[idx]!.representative, cluster_index: idx, how };
 
   const guard: MisunderstandingGuard = { interpretations, clusters, chosen, dropped };
   await ctx.writer.writeJson('misunderstanding-guard', guard);

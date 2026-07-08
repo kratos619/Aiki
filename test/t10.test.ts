@@ -8,7 +8,7 @@ import { resolveRoles, makeRunId, RunCtx, type ProviderHandle } from '../src/orc
 import { executeRun } from '../src/orchestration/engine.js';
 import { runCodeReview } from '../src/workflows/code-review.js';
 import { RunWriter } from '../src/storage/runs.js';
-import { parseDiffFiles, computeDiff, repoToplevel } from '../src/orchestration/git.js';
+import { changedFilesSinceDefault, chooseDefaultBranch, computeDiff, computeWorkingTreeDiff, detectDefaultBranch, parseDiffFiles, repoToplevel } from '../src/orchestration/git.js';
 import { filterValidFindings, type ReviewerFindings } from '../src/orchestration/stages/cr-s4-review.js';
 import { sameFinding, buildReviewMap } from '../src/orchestration/stages/cr-map.js';
 import { scoreFindings, renderReviewReport } from '../src/orchestration/stages/cr-report.js';
@@ -157,6 +157,22 @@ describe('git diff (real temp repo, three-dot)', () => {
     const diff = await computeDiff('main', 'feature', dir);
     expect(diff).toContain('B-CHANGED');
     expect(parseDiffFiles(diff)).toEqual(['src/foo.ts']);
+  });
+
+  it('default-branch detection falls back to main/master and working-tree diff includes uncommitted edits', async () => {
+    expect(chooseDefaultBranch('origin/main', ['main'])).toBe('origin/main');
+    expect(chooseDefaultBranch(null, ['feature', 'master'])).toBe('master');
+    expect(await detectDefaultBranch(dir)).toBe('main');
+
+    await writeFile(join(dir, 'src', 'bar.ts'), 'uncommitted\n');
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'pipe' });
+    git('add', '.');
+    await writeFile(join(dir, 'src', 'baz.ts'), 'untracked\n');
+    const diff = await computeWorkingTreeDiff('main', dir);
+    expect(diff).toContain('B-CHANGED');
+    expect(diff).toContain('bar.ts');
+    expect(diff).toContain('baz.ts');
+    expect(await changedFilesSinceDefault('main', dir)).toBe(3);
   });
 });
 
