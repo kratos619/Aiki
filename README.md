@@ -1,11 +1,26 @@
-# aiki
+<p align="center">
+  <img src="docs/hero.png" alt="aiki — a local model council" width="640">
+</p>
 
-A local **model council** for judgment work — code review and idea stress-testing — that drives the AI
-CLIs you already have installed and logged in (Claude Code, Codex, Antigravity/Gemini). It runs them as a
-panel that can genuinely **disagree**, then adjudicates and hands you a decision brief.
+<h1 align="center">aiki</h1>
 
-aiki is **not** a general assistant. Trivia and chat get routed away, not answered — a council adds cost,
-not accuracy, when there's one right answer.
+<p align="center"><em>A local <strong>model council</strong> for code review and idea stress-testing — driven by the AI CLIs you already have.</em></p>
+
+<p align="center">
+  <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg">
+  <img alt="Node ≥ 20" src="https://img.shields.io/badge/node-%E2%89%A5%2020-brightgreen.svg">
+  <img alt="Local-first, no API keys" src="https://img.shields.io/badge/local--first-no%20API%20keys-informational.svg">
+  <img alt="Read-only orchestration" src="https://img.shields.io/badge/orchestration-read--only-success.svg">
+</p>
+
+---
+
+aiki drives the AI CLIs you already have installed and logged in (Claude Code, Codex, Antigravity/Gemini)
+as a panel that can genuinely **disagree**, then adjudicates and hands you a decision brief. It is **not**
+a general assistant — trivia and chat get routed away, not answered; a council adds cost, not accuracy,
+when there's one right answer.
+
+**Jump to:** [Why](#why) · [Benchmark](#what-the-benchmark-actually-shows) · [Requirements](#requirements) · [Install](#install) · [Quickstart](#quickstart) · [Choosing models](#choosing-models) · [Safety](#safety-model) · [How it works](#how-it-works)
 
 ## Why
 
