@@ -15,7 +15,23 @@ function fakeAdapter(id: ProviderId): Adapter {
     run: async (req): Promise<RunResultAdapter> => {
       const p = req.prompt;
       let obj: unknown;
-      if (p.includes('intake analyst')) {
+      if (p.includes('intent preflight analyst')) {
+        obj = {
+          subject: 'local multi-model orchestration CLI',
+          decision_frame: 'decide whether to build the tool as specified',
+          evaluation_lens: 'developer-tool viability and risk',
+          target_user: 'developers already paying for multiple AI subscriptions',
+          constraints: ['no API keys', 'read-only'],
+          claims_to_test: ['1.3x bug-catch rate'],
+          evidence_supplied: [],
+          missing_axes: ['pricing'],
+          questions: [
+            { id: 'Q1', axis: 'decision_frame', question: 'What decision should the council help you make?', why_it_matters: 'The verdict needs a decision frame.', suggested_answers: ['Build/no-build', 'Risk list'] },
+            { id: 'Q2', axis: 'target_user', question: 'Who is the first target user?', why_it_matters: 'The audience changes the critique.', suggested_answers: ['Solo developers', 'Teams'] },
+            { id: 'Q3', axis: 'success_bar', question: 'What success bar should be used?', why_it_matters: 'The judge needs a bar.', suggested_answers: ['Beat one strong model', 'Find fatal risks'] },
+          ],
+        };
+      } else if (p.includes('intake analyst')) {
         obj = { task: 'build a local multi-model orchestration CLI', task_type: 'idea-refinement', constraints: [], unknowns: ['target user'], success_criteria: ['a verdict'] };
       } else if (p.includes('their request could be misread')) {
         obj = { my_interpretation: 'build a local multi model orchestration cli', plausible_misreadings: ['a cloud chat product'] };
@@ -41,8 +57,23 @@ function fakeAdapter(id: ProviderId): Adapter {
         obj = {
           adjudications: [{ id: 'D1', ruling: 'REJECT', reasoning: 'the drift risk is mitigated by the flag probe', evidence_cited: 'S1 probe' }],
           verdict: 'Viable as a local orchestration layer; ship behind a provider-probe guard.',
+          recommendation: 'PROCEED_WITH_CONDITIONS',
+          conditions: ['Proceed only if provider output probing stays stable across versions.'],
+          key_points: ['The provider-probe guard addresses the main dispute.'],
           dissent: ['May not beat a single strong model on subjective synthesis.'],
           confidence_notes: 'HIGH on the consensus claims; MEDIUM on the contested one.',
+        };
+      } else if (p.includes('ROLE: Validation planner')) {
+        obj = {
+          actions: [{
+            order: 1,
+            action: 'Interview five target developers about local CLI orchestration pain.',
+            why: 'The target user is still an open question.',
+            validates: 'Q:who is the target user?',
+            effort: 'S',
+            kill_signal: 'Fewer than two developers describe the pain unprompted.',
+          }],
+          sequencing_note: 'Resolve target-user demand before deeper implementation.',
         };
       } else {
         obj = {};
@@ -96,10 +127,14 @@ describe('executeRun happy path (§24 T7: artifacts 00–10, end-to-end)', () =>
     const outcome = await executeRun(ctx, INPUT, runIdeaRefinement);
 
     expect(outcome.ok).toBe(true);
-    expect(outcome.callCount).toBe(10); // S1(1)+S2(3)+S3(1)+S4(2)+S7group(1)+S8(1)+S9(1)
+    expect(outcome.callCount).toBe(12); // S0(1)+S1(1)+S2(3)+S3(1)+S4(2)+S7group(1)+S8(1)+S9(1)+S9b(1)
 
     const dir = ctx.writer.dir;
     expect(await readFile(join(dir, '00-original.md'), 'utf8')).toBe(INPUT);
+
+    const brief = JSON.parse(await readFile(join(dir, '00b-run-brief.json'), 'utf8'));
+    expect(brief.questions).toHaveLength(3);
+    expect(brief.answers.every((a: { source: string }) => a.source === 'default')).toBe(true);
 
     const contract = JSON.parse(await readFile(join(dir, '01-intent-contract.json'), 'utf8'));
     expect(contract.task_type).toBe('idea-refinement');
@@ -141,24 +176,29 @@ describe('executeRun happy path (§24 T7: artifacts 00–10, end-to-end)', () =>
     const judge = JSON.parse(await readFile(join(dir, '09-judge-report.json'), 'utf8'));
     expect(judge.adjudications).toHaveLength(1);
     expect(judge.adjudications[0]).toMatchObject({ id: 'D1', ruling: 'REJECT' });
+    expect(judge.recommendation).toBe('PROCEED_WITH_CONDITIONS');
     expect(judge.dissent.length).toBeGreaterThan(0);
+
+    const plan = JSON.parse(await readFile(join(dir, '09b-action-plan.json'), 'utf8'));
+    expect(plan.actions[0]).toMatchObject({ validates: 'Q:who is the target user?' });
 
     // S10: final decision brief rendered, with the code-derived audit + display names.
     const report = await readFile(join(dir, 'final-report.md'), 'utf8');
     expect(report).toContain('# Decision Brief');
+    expect(report).toContain('## Validation plan');
     expect(report).toContain('## Assumption audit');
     expect(report).toContain('Gemini'); // agy shown as its DISPLAY_NAME (user-facing)
 
     const meta = JSON.parse(await readFile(join(dir, 'meta.json'), 'utf8'));
     expect(meta.exit_status).toBe('ok');
-    expect(meta.call_count).toBe(10);
+    expect(meta.call_count).toBe(12);
     expect(meta.roles).toMatchObject({ analyst: 'agy', judge: 'claude', s4_1: 'agy', s4_2: 'codex' });
   });
 });
 
 describe('executeRun budget breach (§24 T5: aborts gracefully)', () => {
   it('fails gracefully with partial, valid artifacts + finalized meta', async () => {
-    const ctx = makeCtx(1); // S1 uses the only call; S2 fan-out breaches
+    const ctx = makeCtx(1); // S0 uses the only call; S1 breaches
     const outcome = await executeRun(ctx, INPUT, runIdeaRefinement);
 
     expect(outcome.ok).toBe(false);
@@ -166,7 +206,8 @@ describe('executeRun budget breach (§24 T5: aborts gracefully)', () => {
 
     const dir = ctx.writer.dir;
     const entries = await readdir(dir);
-    expect(entries).toContain('01-intent-contract.json'); // S1 landed before the breach
+    expect(entries).toContain('00b-run-brief.json'); // S0 landed before the breach
+    expect(entries).not.toContain('01-intent-contract.json'); // S1 never completed
     expect(entries).not.toContain('02-misunderstanding-guard.json'); // S2 never completed
     expect(entries.some((e) => e.endsWith('.tmp'))).toBe(false); // no half-written files
 

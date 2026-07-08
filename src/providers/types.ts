@@ -47,6 +47,7 @@ export interface FlagProfile {
   id: ProviderId;
   jsonOutput: boolean; // has a structured JSON-output flag (claude: --output-format json)
   readOnlyFlag: ReadOnlyFlag;
+  model?: string; // V8: user-chosen model id from config; passed to the CLI as `--model <id>`. Absent = CLI default.
 }
 
 // ── Adapter run() layer (§7.1) ──────────────────────────────────────────────

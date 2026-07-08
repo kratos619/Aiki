@@ -18,9 +18,14 @@ Wherever the plan says "gemini", it means `agy`.
   JSON (`-p` output *is* the JSON we ask for → §14 whole-parse succeeds immediately).
 - **No JSON-output flag** (no `--output-format`/`-o json`). `jsonOutput: false`; rely on §14.
 - **Read-only:** `--sandbox` (boolean, "terminal restrictions"). Mapped to `readOnlyFlag:
-  'sandbox'`. **UNVERIFIED whether it blocks file writes** — verify at T10 (code-review) with
-  a prompt that attempts a write; if it doesn't block, fall back to a temp-copy cwd and record
-  the enforcement level in meta.json. NEVER pass `--dangerously-skip-permissions` (§19).
+  'sandbox'`. **VERIFIED 2026-07-05 (agy 1.0.16): `--sandbox` DOES block file writes.** Probed via
+  the real adapter (`agy.run`, cwd = fresh temp dir): with `--sandbox`, a prompt explicitly asking to
+  write `PROBE_WROTE.txt` produced NO file on disk (agy even reported "successfully created" — its
+  self-reported success is unreliable, but the write was blocked); the no-sandbox control DID write the
+  file, confirming the test is valid. So agy is safe at repo cwd as a reviewer *when invoked with
+  `--sandbox`* (as the adapter does). CAVEAT: a bare terminal `agy -p ...` goes interactive/hangs and
+  does NOT reliably apply the sandbox — only trust the adapter path (spawnCapture, stdin redirected).
+  NEVER pass `--dangerously-skip-permissions` (§19).
 - **Role rationale flip (revisit at T5, §10):** the plan chose gemini as the *cheap/free*
   analyst to protect metered quotas. `agy` is Gemini 3.1 Pro — **strong + metered**. The §10
   default role assignment (gemini = analyst/prompt-builder for high-frequency cheap calls) no
@@ -70,4 +75,8 @@ Antigravity binary. Command/binary references in fixes (e.g. "run `agy`") keep t
 | 2026-07-02 | claude | 2.1.198 | envelope shape (verified live) | `{type, subtype, is_error, result, session_id, total_cost_usd, usage}`; model text in `.result` | extract `.result`; `is_error:true`→CRASH; cost→providerMeta | — |
 | 2026-07-02 | ~~gemini~~ → agy | 1.0.15 | gemini CLI discontinued | replaced by Antigravity `agy` (Gemini 3.1 Pro) | new adapter agy.ts | see migration note above |
 | 2026-07-02 | agy | 1.0.15 | (was gemini `-o json`) | no JSON flag; `-p` returns raw text | `jsonOutput:false`, §14 extraction | — |
-| 2026-07-02 | agy | 1.0.15 | (was gemini `--approval-mode plan`) | `--sandbox` (boolean, terminal restrictions) | `readOnlyFlag:'sandbox'` | ⚠ write-blocking UNVERIFIED, pin at T10 |
+| 2026-07-02 | agy | 1.0.15 | (was gemini `--approval-mode plan`) | `--sandbox` (boolean, terminal restrictions) | `readOnlyFlag:'sandbox'` | ✔ write-blocking **VERIFIED 2026-07-05** (agy 1.0.16, adapter probe): `--sandbox` blocks disk writes; no-sandbox control writes. Safe at repo cwd via adapter. (Bare terminal `agy -p` hangs interactive — sandbox only reliable through spawnCapture.) |
+| 2026-07-04 | codex | 0.135.0→**0.142.5** | (user upgrade after install break) | `--help` probe: `exec` + `-s/--sandbox read-only` + `--cd` unchanged | none needed | ✔ smoke PASSED on 0.142.5 (`doctor` 2026-07-04, 9.1s) — stdout/stderr split works. NOTE: the 2026-07-04 22:16 codex CRASH was NOT quota/flags — install was broken (`Missing optional dependency @openai/codex-darwin-arm64`), fixed by reinstall |
+| 2026-07-06 | claude | 2.1.201 | model selection (V8) | `--model <alias\|fullname>` (Model for the session). No "list models" command. | adapter buildArgs adds `--model` when config sets it; `aiki models` → free-text | user-configurable model ✔ |
+| 2026-07-06 | codex | 0.142.5 | model selection (V8) | `-m, --model <MODEL>` (also on `codex exec`, must precede the prompt). No list command. | adapter buildArgs adds `--model` before the prompt; free-text | ✔ |
+| 2026-07-06 | agy | 1.0.16 | model selection (V8) | `--model <id>` AND `agy models` LISTS available (e.g. "Gemini 3.1 Pro (High)", "Claude Opus 4.6 (Thinking)", "GPT-OSS 120B (Medium)" — ids have spaces/parens, pass as one argv elem) | adapter `--model`; `aiki models` runs `agy models` | ✔ only CLI that enumerates |

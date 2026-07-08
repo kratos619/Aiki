@@ -27,6 +27,31 @@ export async function repoToplevel(cwd: string): Promise<string | null> {
   }
 }
 
+async function gitStdout(args: string[], cwd: string): Promise<string | null> {
+  try {
+    const { stdout } = await exec('git', args, { cwd, maxBuffer: 32 * 1024 * 1024 });
+    return stdout.trim();
+  } catch {
+    return null;
+  }
+}
+
+export function chooseDefaultBranch(originHead: string | null, refs: string[]): string | null {
+  const trimmed = originHead?.trim();
+  if (trimmed) return trimmed;
+  for (const name of ['main', 'master']) {
+    if (refs.includes(name)) return name;
+    if (refs.includes(`origin/${name}`)) return `origin/${name}`;
+  }
+  return null;
+}
+
+export async function detectDefaultBranch(cwd: string): Promise<string | null> {
+  const originHead = await gitStdout(['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'], cwd);
+  const refsRaw = await gitStdout(['for-each-ref', '--format=%(refname:short)', 'refs/heads', 'refs/remotes'], cwd);
+  return chooseDefaultBranch(originHead, refsRaw ? refsRaw.split('\n').filter(Boolean) : []);
+}
+
 /** Compute the unified diff to review: `git diff --unified=3 <base>...<head>` (three-dot merge-base). */
 export async function computeDiff(base: string, head: string, cwd: string): Promise<string> {
   try {
@@ -35,6 +60,67 @@ export async function computeDiff(base: string, head: string, cwd: string): Prom
   } catch (e) {
     throw new GitError(`git diff ${base}...${head} failed: ${(e as Error).message.split('\n')[0]}`);
   }
+}
+
+async function mergeBase(base: string, head: string, cwd: string): Promise<string> {
+  const mb = await gitStdout(['merge-base', base, head], cwd);
+  if (!mb) throw new GitError(`git merge-base ${base} ${head} failed`);
+  return mb;
+}
+
+async function untrackedFiles(cwd: string): Promise<string[]> {
+  const raw = await gitStdout(['ls-files', '--others', '--exclude-standard'], cwd);
+  return raw ? raw.split('\n').filter(Boolean) : [];
+}
+
+async function diffUntrackedFile(file: string, cwd: string): Promise<string> {
+  try {
+    const { stdout } = await exec('git', ['diff', '--no-index', '--', '/dev/null', file], { cwd, maxBuffer: 32 * 1024 * 1024 });
+    return stdout;
+  } catch (e) {
+    const err = e as Error & { stdout?: string };
+    if (err.stdout) return err.stdout;
+    throw e;
+  }
+}
+
+/** Diff from the merge-base to the current working tree, including staged, unstaged, and untracked files. */
+export async function computeWorkingTreeDiff(base: string, cwd: string): Promise<string> {
+  try {
+    const mb = await mergeBase(base, 'HEAD', cwd);
+    const { stdout } = await exec('git', ['diff', '--unified=3', mb], { cwd, maxBuffer: 32 * 1024 * 1024 });
+    const extra = await Promise.all((await untrackedFiles(cwd)).map((f) => diffUntrackedFile(f, cwd)));
+    return [stdout, ...extra].filter(Boolean).join('\n');
+  } catch (e) {
+    if (e instanceof GitError) throw e;
+    throw new GitError(`git diff working tree against ${base} failed: ${(e as Error).message.split('\n')[0]}`);
+  }
+}
+
+export async function changedFilesSinceDefault(base: string, cwd: string): Promise<number> {
+  try {
+    const mb = await mergeBase(base, 'HEAD', cwd);
+    const { stdout } = await exec('git', ['diff', '--name-only', mb], { cwd, maxBuffer: 32 * 1024 * 1024 });
+    const files = new Set([...stdout.split('\n').filter(Boolean), ...await untrackedFiles(cwd)]);
+    return files.size;
+  } catch {
+    return 0;
+  }
+}
+
+export interface RepoStatus {
+  root: string;
+  name: string;
+  defaultBranch: string | null;
+  changedFiles: number;
+}
+
+export async function detectRepoStatus(cwd: string): Promise<RepoStatus | null> {
+  const root = await repoToplevel(cwd);
+  if (!root) return null;
+  const defaultBranch = await detectDefaultBranch(root);
+  const changedFiles = defaultBranch ? await changedFilesSinceDefault(defaultBranch, root) : 0;
+  return { root, name: root.split('/').filter(Boolean).at(-1) ?? root, defaultBranch, changedFiles };
 }
 
 /**

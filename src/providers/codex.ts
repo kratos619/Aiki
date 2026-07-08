@@ -21,6 +21,7 @@ const codexSpec: AdapterSpec = {
   buildArgs(req: RunRequest, flags: FlagProfile): string[] {
     const args = ['exec'];
     if (req.readOnly !== false && flags.readOnlyFlag === 'sandbox') args.push('-s', 'read-only');
+    if (flags.model) args.push('--model', flags.model); // V8: verified `codex exec --model <id>` (before the prompt)
     args.push(req.prompt);
     return args;
   },

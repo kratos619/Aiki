@@ -1,0 +1,8 @@
+{
+  "bugs": [
+    { "id": "B1", "file": "orders-repo.js", "line_start": 10, "line_end": 12, "category": "PERF", "class": "N+1 (Product.findById per product id inside the nested loop)" },
+    { "id": "B2", "file": "orders-repo.js", "line_start": 8, "line_end": 9, "category": "ERROR_HANDLING", "class": "null-deref (findById can return null; order.products then throws)" },
+    { "id": "B3", "file": "orders-repo.js", "line_start": 20, "line_end": 20, "category": "SECURITY", "class": "injection ($where with interpolated name = NoSQL/JS injection)" },
+    { "id": "B4", "file": "orders-repo.js", "line_start": 26, "line_end": 26, "category": "CORRECTNESS", "class": "off-by-one (slice(0, n+1) returns n+1 items instead of n)" }
+  ]
+}

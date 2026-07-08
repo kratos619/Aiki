@@ -2,10 +2,13 @@
 // code-review computes a git diff from --base/--head (or reads --diff) and reviews it at the repo root.
 
 import { readFile } from 'node:fs/promises';
+import { createInterface } from 'node:readline';
 import { run as runEngine } from '../orchestration/engine.js';
-import type { WorkflowId } from '../orchestration/context.js';
-import { ConfigError, loadConfig } from '../config/config.js';
-import { computeDiff, GitError, repoToplevel } from '../orchestration/git.js';
+import type { RoleMap, WorkflowId } from '../orchestration/context.js';
+import { ConfigError, loadLayeredConfig } from '../config/config.js';
+import { computeDiff, detectDefaultBranch, GitError, repoToplevel } from '../orchestration/git.js';
+import { resolveRunsRoot } from '../storage/paths.js';
+import { openCouncilHtml } from '../council/open.js';
 
 const WORKFLOWS: WorkflowId[] = ['idea-refinement', 'code-review'];
 
@@ -14,6 +17,26 @@ export interface RunFlags {
   base?: string;
   head?: string;
   diff?: string; // path to a patch file (alternative to --base/--head)
+  cheap?: boolean; // code-review: agy+codex reviewers, claude judge (Opus-thrift; experimental — bench Arm E)
+  yes?: boolean; // skip the run-cost confirmation (also skipped when non-interactive)
+}
+
+/** Rough provider-call estimate for the run-cost preview (V5). Approximate — the real count varies with
+ *  §14 repairs, cross-exam skips, and quorum. `opus` = the Claude/Opus subset (the metered-cost driver). */
+export function estimateRun(workflow: WorkflowId, opts: { cheap?: boolean } = {}): { calls: number; opus: number } {
+  if (workflow === 'code-review') return { calls: 5, opus: opts.cheap ? 1 : 2 };
+  return { calls: 12, opus: 4 }; // idea-refinement (S0/S1/S3 on agy; S2 has claude; S7 + S9 + S9b run on the claude judge)
+}
+
+/** Thin y/N prompt (default yes). Only used on an interactive TTY. */
+function confirm(question: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    rl.question(question, (a) => {
+      rl.close();
+      resolve(!/^n/i.test(a.trim()));
+    });
+  });
 }
 
 /** Resolve an idea-refinement input: an existing file path → its contents, else the arg as inline text. */
@@ -39,16 +62,17 @@ async function resolveCodeReview(opts: RunFlags): Promise<{ text: string; cwd: s
       return { done: 1 };
     }
   } else {
-    if (!opts.base) {
-      process.stderr.write('code-review needs --base <ref> (--head defaults to HEAD), or --diff <file>\n');
-      return { done: 1 };
-    }
     if (!repoRoot) {
       process.stderr.write('not inside a git repository — pass --diff <file> instead\n');
       return { done: 1 };
     }
+    const base = opts.base ?? await detectDefaultBranch(repoRoot);
+    if (!base) {
+      process.stderr.write('cannot detect default branch — pass --base <ref>, or --diff <file>\n');
+      return { done: 1 };
+    }
     try {
-      diff = await computeDiff(opts.base, opts.head ?? 'HEAD', repoRoot);
+      diff = await computeDiff(base, opts.head ?? 'HEAD', repoRoot);
     } catch (e) {
       process.stderr.write(`${e instanceof GitError ? e.message : String(e)}\n`);
       return { done: 1 };
@@ -82,10 +106,11 @@ export async function runCommand(workflow: string, input: string | undefined, op
     text = resolved;
   }
 
-  // Precedence (§10/T9): --budget flag > config.budget > built-in default. roles/deadline are config-only.
+  // Precedence (§10/T9): --budget flag > config.budget > built-in default. roles/deadline/models are
+  // config-only (layered: global ~/.aiki base, project .aiki override).
   let cfg;
   try {
-    cfg = await loadConfig();
+    cfg = await loadLayeredConfig();
   } catch (e) {
     if (e instanceof ConfigError) {
       process.stderr.write(`${e.message}\n`);
@@ -94,15 +119,43 @@ export async function runCommand(workflow: string, input: string | undefined, op
     throw e;
   }
 
+  // --cheap = bench Arm E's Opus-thrift role swap (agy+codex reviewers, claude judge). code-review only;
+  // takes precedence over config roles for those two seats. Experimental — see BENCHMARK.md amendment E1.
+  let roleOverrides: Partial<RoleMap> | undefined = cfg.roles;
+  if (opts.cheap) {
+    if (workflow === 'code-review') roleOverrides = { ...cfg.roles, s4: ['agy', 'codex'], judge: 'claude' };
+    else process.stderr.write('--cheap only applies to code-review; ignoring for this workflow.\n');
+  }
+
+  // Run-cost preview (V5): show the estimate; confirm interactively unless --yes or non-interactive.
+  const est = estimateRun(workflow as WorkflowId, { cheap: opts.cheap });
+  const note = `  ≈${est.calls} provider call(s), ~${est.opus} on Claude/Opus (the metered part).`;
+  if (!opts.yes && process.stdin.isTTY && process.stdout.isTTY) {
+    if (!(await confirm(`${note}\n  Continue? [Y/n] `))) {
+      process.stdout.write('  cancelled.\n');
+      return 0;
+    }
+  } else {
+    process.stdout.write(`${note}\n`);
+  }
+
   const outcome = await runEngine(workflow as WorkflowId, text, {
     budget: opts.budget ?? cfg.budget,
     deadlineMs: cfg.deadlineMs,
-    roleOverrides: cfg.roles,
+    roleOverrides,
     cwd, // code-review: repo root; idea-refinement: undefined → run dir
+    runsRoot: await resolveRunsRoot(), // hybrid: repo .aiki when in a repo, else ~/.aiki
+    providerModels: cfg.models, // V8: per-provider model → CLI --model
   });
 
   if (outcome.ok) {
-    process.stdout.write(`\n  ✔ run ${outcome.runId} complete — ${outcome.callCount} provider call(s)\n  artifacts: ${outcome.dir}\n\n`);
+    process.stdout.write(`\n  ✔ run ${outcome.runId} complete — ${outcome.callCount} provider call(s)\n  artifacts: ${outcome.dir}\n`);
+    // Auto-open the readable report in the browser (interactive terminals only; skipped in pipes/CI).
+    if (process.stdout.isTTY) {
+      const html = await openCouncilHtml(outcome.runId, outcome.dir);
+      if (html) process.stdout.write(`  report: ${html} — opening in your browser…\n`);
+    }
+    process.stdout.write('\n');
     return 0;
   }
   process.stderr.write(

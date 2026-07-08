@@ -1,0 +1,9 @@
+{
+  "bugs": [
+    { "id": "B1", "file": "analytics-repo.js", "line_start": 10, "line_end": 10, "category": "CORRECTNESS", "class": "off-by-one (d <= days iterates days+1 buckets; one extra day)" },
+    { "id": "B2", "file": "analytics-repo.js", "line_start": 10, "line_end": 13, "category": "PERF", "class": "N+1 (one Order.find query per day inside the loop; should be a single aggregation)" },
+    { "id": "B3", "file": "analytics-repo.js", "line_start": 20, "line_end": 21, "category": "SECURITY", "class": "injection (caller-provided expr passed to $where = NoSQL/JS injection)" },
+    { "id": "B4", "file": "analytics-repo.js", "line_start": 26, "line_end": 27, "category": "CONCURRENCY", "class": "race (read-modify-write of the view counter; concurrent bumps lose increments; should be $inc)" },
+    { "id": "B5", "file": "analytics-repo.js", "line_start": 26, "line_end": 26, "category": "ERROR_HANDLING", "class": "null-deref (Widget.findById can return null; w.views then throws)" }
+  ]
+}

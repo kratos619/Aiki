@@ -1,0 +1,8 @@
+{
+  "bugs": [
+    { "id": "B1", "file": "session-middleware.js", "line_start": 9, "line_end": 9, "category": "SECURITY", "class": "auth-gap (jwt.decode does NOT verify the signature; forged tokens are accepted)" },
+    { "id": "B2", "file": "session-middleware.js", "line_start": 10, "line_end": 10, "category": "ERROR_HANDLING", "class": "null-deref (payload from decode can be null; payload.sid throws, and the await is unguarded)" },
+    { "id": "B3", "file": "session-middleware.js", "line_start": 20, "line_end": 20, "category": "CORRECTNESS", "class": "wrong-arithmetic (days*24*60*1000 computes minutes not ms; sessions expire ~60x too soon)" },
+    { "id": "B4", "file": "session-middleware.js", "line_start": 27, "line_end": 27, "category": "SECURITY", "class": "timing (=== on the CSRF token is not constant-time; leaks via timing)" }
+  ]
+}

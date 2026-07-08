@@ -16,6 +16,7 @@ const agySpec: AdapterSpec = {
   buildArgs(req: RunRequest, flags: FlagProfile): string[] {
     const args = ['-p', req.prompt];
     if (req.readOnly !== false && flags.readOnlyFlag === 'sandbox') args.push('--sandbox');
+    if (flags.model) args.push('--model', flags.model); // V8: verified `agy --model <id>` (ids may contain spaces — one argv elem)
     return args;
   },
   extractText(stdout: string): string {

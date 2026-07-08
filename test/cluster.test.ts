@@ -3,17 +3,22 @@ import { clusterInterpretations, majorityClusterIndex, overlap, tokenize } from 
 
 describe('tokenize / overlap', () => {
   it('is case- and punctuation-insensitive on a token SET', () => {
-    expect([...tokenize('Build a Local CLI!')].sort()).toEqual(['a', 'build', 'cli', 'local']);
+    expect([...tokenize('Build Local CLI!')].sort()).toEqual(['build', 'cli', 'local']);
+  });
+
+  it('drops stopwords + restatement framing so only content words remain (V7)', () => {
+    // "The user wants to build a local CLI" → framing words gone, content kept.
+    expect([...tokenize('The user wants to build a local CLI')].sort()).toEqual(['build', 'cli', 'local']);
   });
 
   it('Jaccard: identical sets = 1, disjoint = 0', () => {
-    expect(overlap(tokenize('a b c'), tokenize('a b c'))).toBe(1);
-    expect(overlap(tokenize('a b'), tokenize('x y'))).toBe(0);
+    expect(overlap(tokenize('p q r'), tokenize('p q r'))).toBe(1);
+    expect(overlap(tokenize('p q'), tokenize('x y'))).toBe(0);
   });
 
   it('partial overlap is between 0 and 1', () => {
-    // {a,b,c} vs {a,b,d}: inter 2, union 4 → 0.5
-    expect(overlap(tokenize('a b c'), tokenize('a b d'))).toBeCloseTo(0.5);
+    // {p,q,r} vs {p,q,s}: inter 2, union 4 → 0.5
+    expect(overlap(tokenize('p q r'), tokenize('p q s'))).toBeCloseTo(0.5);
   });
 });
 
@@ -41,11 +46,27 @@ describe('clusterInterpretations', () => {
 
   it('honors the threshold (higher threshold splits more)', () => {
     const items = [
-      { key: 'a', text: 'a b c d e' },
-      { key: 'b', text: 'a b c x y' }, // overlap-coefficient = 3/min(5,5) = 0.6
+      { key: 'a', text: 'p b c d e' },
+      { key: 'b', text: 'p b c x y' }, // overlap-coefficient = 3/min(5,5) = 0.6
     ];
     expect(clusterInterpretations(items, 0.5)).toHaveLength(1); // 0.6 ≥ 0.5 → same cluster
     expect(clusterInterpretations(items, 0.7)).toHaveLength(2); // 0.6 < 0.7 → split
+  });
+
+  it('V7: same-meaning readings that only differ in framing words now merge (stopword strip)', () => {
+    const clusters = clusterInterpretations([
+      { key: 'agy', text: 'The user wants to build a local orchestration CLI for developers' },
+      { key: 'codex', text: 'Build a local orchestration CLI aimed at developers' },
+    ]);
+    expect(clusters).toHaveLength(1);
+  });
+
+  it('V7: genuinely different readings still split even after stopword strip', () => {
+    const clusters = clusterInterpretations([
+      { key: 'agy', text: 'The user wants a local orchestration CLI for developers' },
+      { key: 'codex', text: 'The user wants a cloud hosted chat product for consumers' },
+    ]);
+    expect(clusters).toHaveLength(2);
   });
 
   it('clusters same-meaning readings that differ in length/filler (S2 fix — Jaccard false-split)', () => {
