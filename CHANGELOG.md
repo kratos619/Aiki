@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Contextual intent preflight** — idea-refinement now starts with an S0 run brief: the analyst generates
+  3-4 context-specific questions, the TUI asks them before the main council work, and the answers are
+  persisted in `00b-run-brief.json` and included in downstream prompts.
+- **Idea report v3** — idea-refinement reports now emit an explicit BLUF recommendation
+  (`PROCEED`, `PROCEED_WITH_CONDITIONS`, `PIVOT`, `STOP`), conditions when needed, a best-effort
+  12-dimension scorecard, assumption audit table in HTML, deterministic debate narrative, anchored
+  validation plan with kill signals (`09b-action-plan.json`), open questions, red-team note, and a
+  call/provider receipt. The Markdown copy button includes the expanded brief.
+
+### Changed
+- Idea-refinement run estimate is now ~12 provider calls / ~4 Claude-Opus calls because S0 writes the
+  intent preflight and the judge seat also writes the validation plan. The default budget is now 13 so
+  a normal run still has room for one repair without skipping the validation plan.
+
 ## 0.2.0 — 2026-07-06 — v2 product round
 
 ### Added

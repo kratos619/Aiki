@@ -3,8 +3,8 @@
 
 import { describe, it, expect } from 'vitest';
 import { applyGroups } from '../src/orchestration/stages/s7-disagreement.js';
-import { adjudicationScopeViolations, demoteSelfAuthored } from '../src/orchestration/stages/s9-judge.js';
-import { deriveAudit } from '../src/orchestration/stages/s10-render.js';
+import { adjudicationScopeViolations, demoteSelfAuthored, recommendationIssues } from '../src/orchestration/stages/s9-judge.js';
+import { deriveAudit, deriveScorecard } from '../src/orchestration/stages/s10-render.js';
 import type { ClaimSet } from '../src/orchestration/stages/s6-claims.js';
 import type { DisagreementMap, JudgeReport } from '../src/schemas/index.js';
 
@@ -79,6 +79,15 @@ describe('S9 demoteSelfAuthored (§272 2-provider judge-as-author guard)', () =>
   });
 });
 
+describe('S9 recommendationIssues', () => {
+  it('requires a recommendation and conditions only for proceed-with-conditions', () => {
+    expect(recommendationIssues({})).toContain('recommendation is required');
+    expect(recommendationIssues({ recommendation: 'PROCEED_WITH_CONDITIONS' })).toContain('conditions are required for PROCEED_WITH_CONDITIONS');
+    expect(recommendationIssues({ recommendation: 'STOP', conditions: ['check'] })).toContain('conditions are only valid with PROCEED_WITH_CONDITIONS');
+    expect(recommendationIssues({ recommendation: 'PROCEED_WITH_CONDITIONS', conditions: ['check'] })).toEqual([]);
+  });
+});
+
 describe('S10 deriveAudit (code-derived held/failed/unverified + confidence)', () => {
   const map: DisagreementMap = {
     consensus: [{ id: 'C1', statement: 'consensus claim', type: 'JUDGMENT', providers: ['agy', 'codex'] }],
@@ -106,5 +115,27 @@ describe('S10 deriveAudit (code-derived held/failed/unverified + confidence)', (
     expect(deriveAudit(map, judge('UPHOLD')).find((r) => r.id === 'C2')).toMatchObject({ status: 'failed', confidence: 'LOW' });
     expect(deriveAudit(map, judge('REJECT')).find((r) => r.id === 'C2')).toMatchObject({ status: 'held', confidence: 'MEDIUM' });
     expect(deriveAudit(map, judge('UNRESOLVED')).find((r) => r.id === 'C2')).toMatchObject({ status: 'unverified', confidence: 'LOW' });
+  });
+});
+
+describe('S10 deriveScorecard (best-effort 3-state rubric coverage)', () => {
+  const map: DisagreementMap = {
+    consensus: [{ id: 'C1', statement: 'users will pay for the workflow', type: 'JUDGMENT', providers: ['agy', 'codex'] }],
+    unique: [{ id: 'C2', statement: 'pricing risk may block adoption', type: 'JUDGMENT', providers: ['agy'] }],
+    contradictions: [{ id: 'D1', claim_ids: ['C2'], attacks: [{ provider: 'codex', argument: 'unproven', severity: 'HIGH' }] }],
+    blind_spots: ['legal risk'],
+  };
+  const rubric = [
+    { id: 'R1', label: 'pricing', keywords: ['pricing'] },
+    { id: 'R2', label: 'target user', keywords: ['target user'] },
+    { id: 'R3', label: 'legal risk', keywords: ['legal'] },
+  ];
+
+  it('labels contested, examined, and unexamined without throwing', () => {
+    expect(deriveScorecard(rubric, map)).toEqual([
+      { id: 'R1', label: 'pricing', status: 'contested' },
+      { id: 'R2', label: 'target user', status: 'examined' },
+      { id: 'R3', label: 'legal risk', status: 'unexamined' },
+    ]);
   });
 });

@@ -23,7 +23,23 @@ function scriptAdapter(id: ProviderId, counter: { n: number }, opts: { judgeFail
         return { ok: false, error: 'TIMEOUT', stderrTail: 'judge timed out', durationMs: 1 };
       }
       let obj: unknown;
-      if (p.includes('intake analyst')) {
+      if (p.includes('intent preflight analyst')) {
+        obj = {
+          subject: 'local multi-model orchestration CLI',
+          decision_frame: 'decide whether to build the tool as specified',
+          evaluation_lens: 'developer-tool viability and risk',
+          target_user: 'developers already paying for multiple AI subscriptions',
+          constraints: ['no API keys', 'read-only'],
+          claims_to_test: ['1.3x bug-catch rate'],
+          evidence_supplied: [],
+          missing_axes: ['pricing'],
+          questions: [
+            { id: 'Q1', axis: 'decision_frame', question: 'What decision should the council help you make?', why_it_matters: 'The verdict needs a decision frame.', suggested_answers: ['Build/no-build', 'Risk list'] },
+            { id: 'Q2', axis: 'target_user', question: 'Who is the first target user?', why_it_matters: 'The audience changes the critique.', suggested_answers: ['Solo developers', 'Teams'] },
+            { id: 'Q3', axis: 'success_bar', question: 'What success bar should be used?', why_it_matters: 'The judge needs a bar.', suggested_answers: ['Beat one strong model', 'Find fatal risks'] },
+          ],
+        };
+      } else if (p.includes('intake analyst')) {
         obj = { task: 'build a local multi-model orchestration CLI', task_type: 'idea-refinement', constraints: [], unknowns: ['target user'], success_criteria: ['a verdict'] };
       } else if (p.includes('their request could be misread')) {
         obj = { my_interpretation: 'build a local multi model orchestration cli', plausible_misreadings: ['a cloud chat product'] };
@@ -48,8 +64,23 @@ function scriptAdapter(id: ProviderId, counter: { n: number }, opts: { judgeFail
         obj = {
           adjudications: [{ id: 'D1', ruling: 'REJECT', reasoning: 'the drift risk is mitigated by the flag probe', evidence_cited: 'S1 probe' }],
           verdict: 'Viable as a local orchestration layer; ship behind a provider-probe guard.',
+          recommendation: 'PROCEED_WITH_CONDITIONS',
+          conditions: ['Proceed only if provider output probing stays stable across versions.'],
+          key_points: ['The provider-probe guard addresses the main dispute.'],
           dissent: ['May not beat a single strong model on subjective synthesis.'],
           confidence_notes: 'HIGH on the consensus claims; MEDIUM on the contested one.',
+        };
+      } else if (p.includes('ROLE: Validation planner')) {
+        obj = {
+          actions: [{
+            order: 1,
+            action: 'Interview five target developers about local CLI orchestration pain.',
+            why: 'The target user is still an open question.',
+            validates: 'Q:who is the target user?',
+            effort: 'S',
+            kill_signal: 'Fewer than two developers describe the pain unprompted.',
+          }],
+          sequencing_note: 'Resolve target-user demand before deeper implementation.',
         };
       } else {
         obj = {};
@@ -87,10 +118,10 @@ describe('resume: call replay', () => {
     const c1 = { n: 0 };
     const first = await executeRun(makeCtx(c1), INPUT, runIdeaRefinement);
     expect(first.ok).toBe(true);
-    expect(c1.n).toBe(10); // full run made 10 real calls
+    expect(c1.n).toBe(12); // full run made 12 real calls
 
     const cache = await buildReplayCache(first.dir);
-    expect(cache.size).toBe(10);
+    expect(cache.size).toBe(12);
 
     // Resume: a NEW run (different id/dir) with the cache — nothing should reach a model.
     const c2 = { n: 0 };
@@ -107,12 +138,12 @@ describe('resume: call replay', () => {
     expect(first.ok).toBe(false); // judge timed out
 
     const cache = await buildReplayCache(first.dir);
-    expect(cache.size).toBe(9); // S1–S8 cached; the failed judge output ([TIMEOUT]) is skipped
+    expect(cache.size).toBe(10); // S0–S8 cached; the failed judge output ([TIMEOUT]) is skipped
 
     const c2 = { n: 0 };
     const resumed = await executeRun(makeCtx(c2, { replay: cache }), INPUT, runIdeaRefinement);
     expect(resumed.ok).toBe(true);
-    expect(c2.n).toBe(1); // only the judge re-called; everything before it replayed
+    expect(c2.n).toBe(2); // judge + action planner re-called; everything before them replayed
     await expect(readFile(join(resumed.dir, 'final-report.md'), 'utf8')).resolves.toContain('# Decision Brief');
   });
 });

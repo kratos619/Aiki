@@ -44,6 +44,26 @@ describe('RunWriter ordering', () => {
 
   it('allows forward-in-order writes and forward skips', async () => {
     await w.writeText('original', 'raw input'); // ord 0
+    await w.writeJson('run-brief', {
+      subject: 'x',
+      decision_frame: null,
+      evaluation_lens: null,
+      target_user: null,
+      constraints: [],
+      claims_to_test: [],
+      evidence_supplied: [],
+      missing_axes: [],
+      questions: [
+        { id: 'Q1', axis: 'decision_frame', question: 'decision?', why_it_matters: 'matters', suggested_answers: ['a', 'b'] },
+        { id: 'Q2', axis: 'target_user', question: 'user?', why_it_matters: 'matters', suggested_answers: ['a', 'b'] },
+        { id: 'Q3', axis: 'success_bar', question: 'bar?', why_it_matters: 'matters', suggested_answers: ['a', 'b'] },
+      ],
+      answers: [
+        { question_id: 'Q1', answer: 'a', source: 'user' },
+        { question_id: 'Q2', answer: 'b', source: 'suggested' },
+        { question_id: 'Q3', answer: 'c', source: 'default' },
+      ],
+    }); // ord 0.5
     await w.writeJson('intent-contract', contract); // ord 1
     await w.writeJson('judge-report', {
       adjudications: [],
@@ -51,6 +71,27 @@ describe('RunWriter ordering', () => {
       dissent: ['d'],
       confidence_notes: 'n',
     }); // ord 9 (skips 2..8) — legal
+  });
+
+  it('allows the action-plan slot between judge-report and final-report', async () => {
+    await w.writeJson('judge-report', {
+      adjudications: [],
+      verdict: 'v',
+      dissent: ['d'],
+      confidence_notes: 'n',
+    });
+    await w.writeJson('action-plan', {
+      actions: [{
+        order: 1,
+        action: 'Interview users.',
+        why: 'Validates demand.',
+        validates: 'Q:demand',
+        effort: 'S',
+        kill_signal: 'No one has the problem.',
+      }],
+      sequencing_note: 'Demand first.',
+    });
+    await w.writeText('final-report', '# done');
   });
 
   it('allows multiple entries in a dir slot but not a duplicate filename', async () => {

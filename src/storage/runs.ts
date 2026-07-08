@@ -14,7 +14,7 @@
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { z } from 'zod';
-import { DisagreementMap, IntentContract, JudgeReport, ReviewMap, RoleOutput, RunMeta, VerificationSet } from '../schemas/index.js';
+import { ActionPlan, DisagreementMap, IntentContract, JudgeReport, ReviewMap, RoleOutput, RunBrief, RunMeta, VerificationSet } from '../schemas/index.js';
 
 export class OutOfOrderWriteError extends Error {
   constructor(slot: string, ord: number, maxOrd: number) {
@@ -40,6 +40,7 @@ interface SlotDef {
 /** JSON stage slots. Composites without a T4 core schema (misunderstanding-guard, drift, claims)
  *  are written as-is; their schemas land with S2/S5/S6 (T5–T6). */
 const JSON_SLOTS = {
+  'run-brief': { ord: 0.5, path: '00b-run-brief.json', schema: RunBrief },
   'intent-contract': { ord: 1, path: '01-intent-contract.json', schema: IntentContract },
   'misunderstanding-guard': { ord: 2, path: '02-misunderstanding-guard.json', schema: null },
   'drift-report': { ord: 5, path: '05-drift-report.json', schema: null },
@@ -50,6 +51,7 @@ const JSON_SLOTS = {
   'review-map': { ord: 7, path: '07-review-map.json', schema: ReviewMap },
   verifications: { ord: 8, path: '08-verifications.json', schema: VerificationSet },
   'judge-report': { ord: 9, path: '09-judge-report.json', schema: JudgeReport },
+  'action-plan': { ord: 9.5, path: '09b-action-plan.json', schema: ActionPlan },
 } satisfies Record<string, SlotDef>;
 
 /** Text (markdown) stage slots (§15). */

@@ -79,6 +79,8 @@ aiki show <run-id> --html --open            # open the shareable decision brief 
 ```
 
 `aiki run` shows a run-cost estimate and asks to confirm (skip with `--yes` or in a non-interactive shell).
+With the default roles, idea refinement is about **12 provider calls** (~4 Claude/Opus calls); code review is
+about **5 provider calls**.
 
 ## Choosing models
 
@@ -138,7 +140,9 @@ boundary. A run leaves a full audit trail (each stage's prompt + raw output + th
 under its run directory.
 
 - **idea-refinement:** intent contract → misunderstanding guard (you resolve any ambiguity) → parallel
-  analysis → disagreement map → verifier → judge → decision brief.
+  analysis → disagreement map → verifier → judge → validation planner → decision brief. The report includes
+  a BLUF recommendation, conditions, scorecard, assumption audit, debate narrative, anchored validation plan
+  with kill signals, and a call receipt.
 - **code-review:** parallel blind review → file:line validation → mutual adversarial cross-examination →
   consensus/dispute map → judge adjudicates disputes → report.
 
