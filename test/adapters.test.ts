@@ -112,12 +112,12 @@ describe('agy adapter', () => {
 describe('codex adapter', () => {
   const CODEX_FLAGS: FlagProfile = { id: 'codex', jsonOutput: true, readOnlyFlag: 'sandbox' };
 
-  it('builds `exec -s read-only <prompt>`; parses clean stdout', async () => {
+  it('builds `exec --skip-git-repo-check -s read-only <prompt>`; parses clean stdout', async () => {
     const { fn, calls } = scriptedSpawn([raw({ stdout: '{"ok":true,"echo":"c"}' })]);
     const res = await codex.run(req(), CODEX_FLAGS, { spawn: fn });
     expect(res.ok).toBe(true);
     if (res.ok) expect(res.json).toEqual({ ok: true, echo: 'c' });
-    expect(calls[0]!.args).toEqual(['exec', '-s', 'read-only', 'hi']);
+    expect(calls[0]!.args).toEqual(['exec', '--skip-git-repo-check', '-s', 'read-only', 'hi']);
   });
 
   it('succeeds despite auth-looking words in the stderr transcript', async () => {

@@ -104,16 +104,12 @@ n = 10 cases, single run per arm — directional, not a p-value. Full method and
 aiki doctor          # lists each provider: version, ready/not, read-only mode
 ```
 
-Run `aiki doctor` from the project folder you want Aiki to inspect, not from `~`. If Codex reports
-`Not inside a trusted directory`, open Codex in that project once and approve the folder:
+`aiki doctor` is safe to run from any folder. For Codex, Aiki passes `--skip-git-repo-check` while
+keeping the read-only sandbox enabled, so non-git folders do not crash the provider smoke:
 
 ```bash
-cd /path/to/your/project
-codex                 # approve/trust this folder if Codex asks
 aiki doctor --fresh
 ```
-
-Aiki does not bypass Codex's trusted-directory check; approve the folder explicitly.
 
 ## Install
 

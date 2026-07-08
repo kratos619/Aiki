@@ -3,7 +3,7 @@ import { runAdapter } from './adapter-core.js';
 
 /**
  * Codex CLI (`codex`). Invocation (verified live, T3):
- *   codex exec [-s read-only] "<prompt>"   (cwd set via spawn's cwd option)
+ *   codex exec --skip-git-repo-check [-s read-only] "<prompt>"   (cwd set via spawn's cwd option)
  *
  * Output split (verified): stdout carries ONLY the model's final message; the full session
  * transcript (session id, echoed prompt, "tokens used") goes to stderr. So stdout *is* the
@@ -13,13 +13,13 @@ import { runAdapter } from './adapter-core.js';
  * Because codex mirrors the prompt + result into stderr, error classification must not scan
  * stderr on success — adapter-core.classify short-circuits on exit 0 for exactly this reason.
  *
- * T10 note: `codex exec` may need a git-repo/writable-cwd check for arbitrary review dirs;
- * verify when wiring code-review. NEVER pass --dangerously-bypass-approvals-and-sandbox (§19).
+ * `--skip-git-repo-check` is safe here: it only permits arbitrary cwd for run-anywhere
+ * support and does not bypass approvals or the read-only sandbox.
  */
 const codexSpec: AdapterSpec = {
   id: 'codex',
   buildArgs(req: RunRequest, flags: FlagProfile): string[] {
-    const args = ['exec'];
+    const args = ['exec', '--skip-git-repo-check'];
     if (req.readOnly !== false && flags.readOnlyFlag === 'sandbox') args.push('-s', 'read-only');
     if (flags.model) args.push('--model', flags.model); // V8: verified `codex exec --model <id>` (before the prompt)
     args.push(req.prompt);
