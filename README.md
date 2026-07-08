@@ -104,11 +104,24 @@ n = 10 cases, single run per arm — directional, not a p-value. Full method and
 aiki doctor          # lists each provider: version, ready/not, read-only mode
 ```
 
+Run `aiki doctor` from the project folder you want Aiki to inspect, not from `~`. If Codex reports
+`Not inside a trusted directory`, open Codex in that project once and approve the folder:
+
+```bash
+cd /path/to/your/project
+codex                 # approve/trust this folder if Codex asks
+aiki doctor --fresh
+```
+
+Aiki does not bypass Codex's trusted-directory check; approve the folder explicitly.
+
 ## Install
 
 ```bash
-npm install -g @gaurav_pal/aiki
+npm install -g aiki-cli
 ```
+
+The package is `aiki-cli`; it installs the `aiki` command.
 
 From source:
 
@@ -123,8 +136,23 @@ npm link             # puts `aiki` on your PATH   (or run directly: node dist/cl
 ## Quickstart
 
 ```bash
+cd /path/to/your/project
 aiki                 # opens the interactive home screen
 ```
+
+## Use Aiki For
+
+- Code review: "review this branch", "check this patch", "find bugs in this diff".
+- Idea stress-testing: "pressure-test this product idea", "find risks in this plan", "what must be validated first?"
+- Decisions where disagreement helps: multiple models analyze independently, cross-examine, then a judge writes the brief.
+
+## Do Not Use Aiki For
+
+- Chatting, trivia, writing emails, summaries, or general Q&A.
+- Questions with one straightforward answer, like "what is Docker?" or "explain React hooks".
+- Asking it to edit files, run commands, or act like an autonomous coding agent.
+
+If you want chat, use your normal assistant. Aiki is for expensive council-style review and idea pressure-testing.
 
 Type a command, or just describe an idea and press Enter:
 
