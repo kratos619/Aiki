@@ -7,18 +7,20 @@
 <p align="center"><em>A local <strong>model council</strong> for code review and idea stress-testing — driven by the AI CLIs you already have.</em></p>
 
 <p align="center">
+  <a href="https://www.npmjs.com/package/aiki-cli"><img alt="npm: aiki-cli" src="https://img.shields.io/npm/v/aiki-cli.svg"></a>
   <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg">
   <img alt="Node ≥ 20" src="https://img.shields.io/badge/node-%E2%89%A5%2020-brightgreen.svg">
   <img alt="Local-first, no API keys" src="https://img.shields.io/badge/local--first-no%20API%20keys-informational.svg">
   <img alt="Read-only orchestration" src="https://img.shields.io/badge/orchestration-read--only-success.svg">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-261%20passing-success.svg">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-262%20passing-success.svg">
 </p>
 
 ---
 
-**aiki** runs the AI coding CLIs you already have installed and logged in (Claude Code, Codex, Antigravity/Gemini)
-as a **panel that can genuinely disagree** — they review independently, cross-examine each other, a judge
-adjudicates the disputes, and you get a clear decision brief.
+**aiki** is a local-first AI model council. It does **not** use hosted Aiki APIs, ask for API keys, or ship
+model weights. Instead, it runs the AI coding CLIs you already have installed and logged in — Claude Code,
+Codex, and Antigravity/Gemini — as a **panel that can genuinely disagree**. They review independently,
+cross-examine each other, a judge adjudicates the disputes, and you get a clear decision brief.
 
 It does two jobs, well:
 
@@ -28,7 +30,7 @@ It does two jobs, well:
 aiki is **not** a general assistant. Trivia and chat are routed away, not answered — a council adds cost, not
 accuracy, when there's one right answer.
 
-**Jump to:** [Why](#why) · [Benchmark](#benchmark) · [Requirements](#requirements) · [Install](#install) · [Quickstart](#quickstart) · [The two workflows](#the-two-workflows) · [Example](#example-a-real-idea-run) · [Configuration](#configuration) · [Sessions & resume](#sessions--resume) · [Safety](#safety-model) · [Costs & limits](#costs--limits) · [How it works](#how-it-works)
+**Jump to:** [Why](#why) · [How it works](#how-aiki-works-no-apis) · [Benchmark](#benchmark) · [Requirements](#requirements) · [Install](#install) · [Quickstart](#quickstart) · [The two workflows](#the-two-workflows) · [Example](#example-a-real-idea-run) · [Configuration](#configuration) · [Sessions & resume](#sessions--resume) · [Safety](#safety-model) · [Costs & limits](#costs--limits)
 
 ---
 
@@ -42,6 +44,20 @@ stop copy-pasting between them by hand.
 <p align="center">
   <img src="docs/Three.png" alt="One model's field of view lets bugs slip past; three overlapping fields catch them all" width="820">
 </p>
+
+## How Aiki works (no APIs)
+
+Aiki is orchestration, not a hosted AI service:
+
+1. You install and sign in to three provider CLIs: Claude Code (`claude`), Codex (`codex`), and
+   Antigravity/Gemini (`agy`).
+2. Aiki starts those CLIs as local child processes with read-only/sandbox flags.
+3. Each model gets the same task independently, returns structured JSON, and never sees another model's
+   answer until the cross-exam stage.
+4. Aiki validates every stage with zod, stores the audit trail under `.aiki/` or `~/.aiki/`, and renders the
+   final decision brief.
+5. Your existing provider logins/subscriptions handle model access. Aiki never asks for API keys and never
+   reads credential folders.
 
 ## Benchmark
 
@@ -87,18 +103,23 @@ n = 10 cases, single run per arm — directional, not a p-value. Full method and
 
 ## Requirements
 
-> ⚠️ **aiki drives your existing CLIs — it does not ship or host any model.** You must have the provider CLIs
-> **installed and already logged in.** aiki never sees, stores, or transmits your credentials.
+> ⚠️ **aiki drives your existing CLIs — it does not ship or host any model.** You should install and log in to
+> all three provider CLIs before judging results. aiki never sees, stores, or transmits your credentials.
 
 - **Node ≥ 20.** (Node 16/18 will crash at startup — this is a hard requirement.)
 - **macOS or Linux** (WSL2 works).
 - The provider CLIs on your `PATH`, **each already authenticated**:
-  | CLI | Command | Shown in aiki as |
-  |---|---|---|
-  | Claude Code | `claude` | Claude |
-  | Codex | `codex` | Codex |
-  | Antigravity | `agy` | Gemini |
-- **At least 2 of the 3** must be ready (a council needs a panel). Check anytime with `aiki doctor`.
+
+  | Provider CLI | Command Aiki runs | Shown in Aiki as | Check |
+  |---|---|---|---|
+  | Claude Code | `claude` | Claude | `claude --version` |
+  | Codex | `codex` | Codex | `codex --version` |
+  | Antigravity | `agy` | Gemini | `agy --version` |
+
+- **Recommended: 3/3 providers ready.** Aiki can start with 2/3, but full council behavior and benchmarked
+  code-review quality expect Claude Code, Codex, and Antigravity/Gemini together.
+
+Check anytime with `aiki doctor`:
 
 ```bash
 aiki doctor          # lists each provider: version, ready/not, read-only mode
@@ -287,7 +308,7 @@ This is the part that makes aiki trustworthy to point at a real repo:
 - Anywhere else → `~/.aiki/`. `$AIKI_HOME` overrides the global home.
 - The global session registry always lives in `~/.aiki/`.
 
-## How it works
+## Implementation notes
 
 Every stage is a small, independently-testable unit with a zod-validated output contract. Model text lives in
 bounded, capped fields slotted into deterministic report structure — so the output is a briefing, not a chat

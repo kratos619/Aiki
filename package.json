@@ -1,7 +1,7 @@
 {
   "name": "aiki-cli",
   "version": "0.2.2",
-  "description": "Local-first orchestration CLI binding your installed AI coding CLIs into schema-validated multi-model workflows.",
+  "description": "Local-first AI model council for code review and idea stress-testing using Claude Code, Codex, and Gemini/Antigravity CLIs. No API keys.",
   "type": "module",
   "license": "MIT",
   "author": "Gaurav Palaspagar",
@@ -15,14 +15,22 @@
   },
   "keywords": [
     "cli",
+    "ai",
     "llm",
     "orchestration",
+    "model-council",
+    "developer-tools",
     "code-review",
+    "ai-code-review",
     "multi-model",
     "claude",
+    "claude-code",
     "codex",
     "gemini",
-    "local-first"
+    "antigravity",
+    "local-first",
+    "no-api-keys",
+    "typescript"
   ],
   "bin": {
     "aiki": "dist/cli/index.js"
