@@ -17,6 +17,10 @@
   intent preflight and the judge seat also writes the validation plan. The default budget is now 13 so
   a normal run still has room for one repair without skipping the validation plan.
 
+### Fixed
+- Codex provider smoke no longer crashes in non-git folders; Aiki now passes Codex's verified
+  `--skip-git-repo-check` flag while keeping `-s read-only`.
+
 ## 0.2.0 — 2026-07-06 — v2 product round
 
 ### Added

@@ -54,15 +54,15 @@ Antigravity binary. Command/binary references in fixes (e.g. "run `agy`") keep t
 
 ## codex exec output (verified live, T3)
 
-- `codex exec [-s read-only] "<prompt>"` — **stdout = the model's final message only**; the
+- `codex exec --skip-git-repo-check [-s read-only] "<prompt>"` — **stdout = the model's final message only**; the
   session transcript (session id, echoed prompt, "tokens used") goes to **stderr**. So stdout
   *is* the result → §14 extraction parses directly. We use **plain mode, not `--json` JSONL**
   (plain stdout is already clean; JSONL would need event-stream parsing for no gain).
 - Consequence: codex mirrors prompt + result into stderr. `adapter-core.classify` therefore
   **short-circuits to OK on exit 0** and only scans stderr on failure — otherwise innocent
   content ("rate limit", "login") in a successful transcript would false-positive AUTH/QUOTA.
-- cwd is set via the spawn cwd option (no `-C` needed for the common case). T10: verify
-  `codex exec` behavior for arbitrary review dirs (git-repo check / writable cwd).
+- cwd is set via the spawn cwd option (no `-C` needed for the common case). `--skip-git-repo-check`
+  is required for run-anywhere support; it does not bypass approvals or the read-only sandbox.
 
 ## Flag discrepancies vs §7.3
 
@@ -80,3 +80,4 @@ Antigravity binary. Command/binary references in fixes (e.g. "run `agy`") keep t
 | 2026-07-06 | claude | 2.1.201 | model selection (V8) | `--model <alias\|fullname>` (Model for the session). No "list models" command. | adapter buildArgs adds `--model` when config sets it; `aiki models` → free-text | user-configurable model ✔ |
 | 2026-07-06 | codex | 0.142.5 | model selection (V8) | `-m, --model <MODEL>` (also on `codex exec`, must precede the prompt). No list command. | adapter buildArgs adds `--model` before the prompt; free-text | ✔ |
 | 2026-07-06 | agy | 1.0.16 | model selection (V8) | `--model <id>` AND `agy models` LISTS available (e.g. "Gemini 3.1 Pro (High)", "Claude Opus 4.6 (Thinking)", "GPT-OSS 120B (Medium)" — ids have spaces/parens, pass as one argv elem) | adapter `--model`; `aiki models` runs `agy models` | ✔ only CLI that enumerates |
+| 2026-07-09 | codex | 0.142.5 | run-anywhere smoke in arbitrary cwd | `--skip-git-repo-check` present on `codex exec`; without it, non-git cwd fails: "Not inside a trusted directory..." | adapter always adds `--skip-git-repo-check` after `exec` | read-only unchanged: still uses `-s read-only`; no dangerous bypass |
