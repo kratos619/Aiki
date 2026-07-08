@@ -107,6 +107,12 @@ aiki doctor          # lists each provider: version, ready/not, read-only mode
 ## Install
 
 ```bash
+npm install -g @gaurav_pal/aiki
+```
+
+From source:
+
+```bash
 git clone https://github.com/kratos619/Aiki.git
 cd Aiki
 npm install

@@ -1,5 +1,5 @@
 {
-  "name": "aiki",
+  "name": "@gaurav_pal/aiki",
   "version": "0.2.0",
   "description": "Local-first orchestration CLI binding your installed AI coding CLIs into schema-validated multi-model workflows.",
   "type": "module",
