@@ -225,7 +225,7 @@ export const ClaimGroups = z
 // ── S8: Verification (§13) ──────────────────────────────────────────────────
 //
 // `Verification` is the per-item verdict (§9 "per-item Verification"). `VerificationSet` is the
-// actual S8 stage output: the array plus the mandatory justification when zero REFUTEs (§13).
+// actual S8 stage output. Each item is judged independently; no verdict distribution is required.
 
 export const Verification = z
   .object({
@@ -239,7 +239,7 @@ export const Verification = z
 export const VerificationSet = z
   .object({
     verifications: z.array(Verification),
-    // Required by the S8 prompt only when the verifier issued zero REFUTEs (§13).
+    // Accepted for backward compatibility with pre-R1 artifacts; the R1 prompt no longer requests it.
     all_confirmed_justification: z.string().optional(),
   })
   .strict();
@@ -394,6 +394,14 @@ export const ActionPlan = z
   })
   .strict();
 
+export const PlannerUnavailable = z.object({
+  kind: z.literal('PlannerUnavailable'),
+  reason: z.enum(['budget_exhausted', 'planner_failed']),
+  unresolved_questions: z.array(z.string().min(1)).min(1).max(10),
+}).strict();
+
+export const ActionPlanArtifact = z.union([ActionPlan, PlannerUnavailable]);
+
 // ── RunMeta (§15, §16) ──────────────────────────────────────────────────────
 //
 // Written by the artifact writer; assembled by the engine's RunCtx (T5). Internal → not strict.
@@ -463,5 +471,7 @@ export type Recommendation = z.infer<typeof Recommendation>;
 export type JudgeReport = z.infer<typeof JudgeReport>;
 export type JudgeReportModel = z.infer<typeof JudgeReportModel>;
 export type ActionPlan = z.infer<typeof ActionPlan>;
+export type PlannerUnavailable = z.infer<typeof PlannerUnavailable>;
+export type ActionPlanArtifact = z.infer<typeof ActionPlanArtifact>;
 export type RunMeta = z.infer<typeof RunMeta>;
 export type CallRecord = z.infer<typeof CallRecord>;

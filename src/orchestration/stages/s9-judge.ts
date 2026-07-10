@@ -97,6 +97,32 @@ function fallbackConditions(map: DisagreementMap, adjudications: Adjudication[])
   return [...riskConditions, ...blindSpotConditions, 'Proceed only after one cheap test confirms the core user need.'].slice(0, 6);
 }
 
+export function buildJudgePrompt(
+  contract: IntentContract,
+  map: DisagreementMap,
+  verifications: VerificationSet,
+  rubric: RubricItem[],
+): string {
+  const claimById = new Map([...map.consensus, ...map.unique].map((claim) => [claim.id, claim.statement]));
+  const verificationById = new Map(verifications.verifications.map((verification) => [verification.target_id, verification]));
+  const disputes = map.contradictions.map((dispute) => {
+    const verification = verificationById.get(dispute.id);
+    return {
+      id: dispute.id,
+      claim: dispute.claim_ids.map((id) => claimById.get(id) ?? id).join(' / '),
+      arguments_against: dispute.attacks.map((attack) => attack.argument),
+      verifier_status: verification?.verdict ?? 'UNVERIFIED',
+      verifier_evidence: verification?.evidence ?? '(no verifier evidence recorded)',
+      verifier_note: verification?.note ?? '',
+    };
+  });
+  const consensus = map.consensus.map((claim) => ({ id: claim.id, statement: claim.statement }));
+  return S9_PROMPT.replace('{{RUBRIC_JSON}}', JSON.stringify(rubric.map((item) => item.label)))
+    .replace('{{DISPUTES_JSON}}', JSON.stringify(disputes, null, 2))
+    .replace('{{CONSENSUS_JSON}}', JSON.stringify(consensus, null, 2))
+    .concat(`\nTASK: ${contract.task}`);
+}
+
 export async function s9Judge(
   ctx: RunCtx,
   contract: IntentContract,
@@ -104,24 +130,8 @@ export async function s9Judge(
   verifications: VerificationSet,
   rubric: RubricItem[],
 ): Promise<JudgeReportT> {
-  const claimById = new Map<string, string>();
-  for (const c of [...map.consensus, ...map.unique]) claimById.set(c.id, c.statement);
-  const verdictById = new Map(verifications.verifications.map((v) => [v.target_id, v.verdict]));
-
-  const disputes = map.contradictions.map((d) => ({
-    id: d.id,
-    claim: d.claim_ids.map((cid) => claimById.get(cid) ?? cid).join(' / '),
-    arguments_against: d.attacks.map((a) => a.argument),
-    verifier_verdict: verdictById.get(d.id) ?? 'UNVERIFIED',
-  }));
-  const consensus = map.consensus.map((c) => ({ id: c.id, statement: c.statement }));
   const disputeIds = map.contradictions.map((d) => d.id);
-
-  const basePrompt = S9_PROMPT.replace('{{RUBRIC_JSON}}', JSON.stringify(rubric.map((r) => r.label)))
-    .replace('{{DISPUTES_JSON}}', JSON.stringify(disputes, null, 2))
-    .replace('{{CONSENSUS_JSON}}', JSON.stringify(consensus, null, 2))
-    // reference the contract task so the verdict stays anchored to what the user asked
-    .concat(`\nTASK: ${contract.task}`);
+  const basePrompt = buildJudgePrompt(contract, map, verifications, rubric);
 
   const judge = ctx.handle(ctx.roles.judge);
   let report = await jsonCall(ctx, judge, 'S9', basePrompt, JudgeReportModel);

@@ -2,7 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { DISPLAY_NAME, type ProviderId } from '../providers/types.js';
 import type { WorkflowId } from '../orchestration/context.js';
-import type { ActionPlan, AnnotatedFinding, DisagreementMap, JudgeReport, Recommendation, ReviewMap, RoleOutput, RunMeta } from '../schemas/index.js';
+import type { ActionPlanArtifact, AnnotatedFinding, DisagreementMap, JudgeReport, Recommendation, ReviewMap, RoleOutput, RunMeta } from '../schemas/index.js';
 import { deriveAudit, deriveScorecard, mergeOpenQuestions, type AuditRow, type ScorecardRow } from '../orchestration/stages/s10-render.js';
 import type { SeatOutput } from '../orchestration/stages/s4-analyze.js';
 import { IDEA_RUBRIC } from '../workflows/idea-refinement.js';
@@ -55,7 +55,7 @@ export interface CouncilView {
   scorecard?: ScorecardRow[];
   audit?: AuditRow[];
   debates?: DebateItem[];
-  actionPlan?: ActionPlan;
+  actionPlan?: ActionPlanArtifact;
   openQuestions?: string[];
   receipt?: string[];
 }
@@ -274,7 +274,7 @@ export async function loadCouncilView(runId: string, dir: string): Promise<Counc
   if (!meta) return null;
   const [judge, actionPlan, roles, intent] = await Promise.all([
     readJsonArtifact<JudgeReport>(dir, '09-judge-report.json'),
-    readJsonArtifact<ActionPlan>(dir, '09b-action-plan.json'),
+    readJsonArtifact<ActionPlanArtifact>(dir, '09b-action-plan.json'),
     loadRoleOutputs(dir),
     readJsonArtifact<{ task?: string }>(dir, '01-intent-contract.json'),
   ]);
@@ -305,7 +305,7 @@ export async function loadCouncilView(runId: string, dir: string): Promise<Counc
       ];
       narrative = ideaNarrative(map, judge);
       const reportV3 = Boolean(judge?.recommendation || actionPlan);
-      if (actionPlan) narrative.nextSteps = actionPlan.actions.map((a) => a.action);
+      if (actionPlan && !('kind' in actionPlan)) narrative.nextSteps = actionPlan.actions.map((a) => a.action);
       if (reportV3) {
         const ideaSeats = ideaSeatOutputs(roles);
         narrative = {
@@ -499,9 +499,10 @@ function renderIdeaBody(view: CouncilView): string {
     ${glance}
   </section>`;
 
+  const synthesisWarning = view.flags.includes('synthesis_suspect') ? '<div class="warns"><span class="warn">⚑ synthesis suspect</span></div>' : '';
   const chairman = view.keyPoints?.length
-    ? section('01', "Chairman's reasoning", `<ul class="reasons">${view.keyPoints.map((p) => `<li>${escapeHtml(p)}</li>`).join('')}</ul>`, 100)
-    : '';
+    ? section('01', "Chairman's reasoning", `${synthesisWarning}<ul class="reasons">${view.keyPoints.map((p) => `<li>${escapeHtml(p)}</li>`).join('')}</ul>`, 100)
+    : synthesisWarning ? section('01', "Chairman's reasoning", `${synthesisWarning}<p class="muted">No reliable chairman reasoning was produced.</p>`, 100) : '';
 
   const scorecard = view.scorecard?.length
     ? `<div class="score-grid">${view.scorecard.map((s) => `<div class="score ${s.status}"><span>${escapeHtml(s.label)}</span><strong>${escapeHtml(s.status)}</strong></div>`).join('')}</div>`
@@ -532,7 +533,9 @@ function renderIdeaBody(view: CouncilView): string {
       </article>`).join('')
     : '<p class="muted">No contradictions reached the chair.</p>';
 
-  const plan = view.actionPlan
+  const plan = view.actionPlan && 'kind' in view.actionPlan
+    ? `<div class="card"><div class="warns"><span class="warn">⚑ ${view.flags.filter((f) => f === 'plan_fallback' || f === 'plan_skipped').map((f) => escapeHtml(f.replaceAll('_', ' '))).join(' · ')}</span></div><p><strong>Planner unavailable: ${escapeHtml(view.actionPlan.reason)}</strong></p><ul class="checks">${view.actionPlan.unresolved_questions.map((q) => `<li>${escapeHtml(q)}</li>`).join('')}</ul></div>`
+    : view.actionPlan
     ? `<div class="table-wrap"><table class="data-table plan-table"><thead><tr><th>#</th><th>Action</th><th>Why</th><th>Validates</th><th>Effort</th><th>Kill signal</th></tr></thead><tbody>
         ${view.actionPlan.actions.map((a) => `<tr><td>${a.order}</td><td>${escapeHtml(a.action)}</td><td>${escapeHtml(a.why)}</td><td><code>${escapeHtml(a.validates)}</code></td><td>${escapeHtml(a.effort)}</td><td>${escapeHtml(a.kill_signal)}</td></tr>`).join('')}
       </tbody></table><p class="lede">${escapeHtml(view.actionPlan.sequencing_note)}</p></div>`
@@ -596,8 +599,11 @@ function councilMarkdown(view: CouncilView): string {
   }
   if (view.keyPoints?.length) {
     L.push("## Chairman's reasoning", '');
+    if (view.flags.includes('synthesis_suspect')) L.push('⚠ synthesis_suspect — the chair output required deterministic repair or degradation handling.', '');
     for (const p of view.keyPoints) L.push(`- ${p}`);
     L.push('');
+  } else if (view.flags.includes('synthesis_suspect')) {
+    L.push("## Chairman's reasoning", '', '⚠ synthesis_suspect — no reliable chairman reasoning was produced.', '');
   }
   if (isIdea) {
     if (reportV3 && view.scorecard?.length) {
@@ -628,14 +634,21 @@ function councilMarkdown(view: CouncilView): string {
     }
     if (reportV3 && view.actionPlan) {
       L.push('## Validation plan', '');
-      for (const a of view.actionPlan.actions) {
-        L.push(`${a.order}. ${a.action}`);
-        L.push(`   - Why: ${a.why}`);
-        L.push(`   - Validates: ${a.validates}`);
-        L.push(`   - Effort: ${a.effort}`);
-        L.push(`   - Kill signal: ${a.kill_signal}`);
+      if ('kind' in view.actionPlan) {
+        const planFlags = view.flags.filter((flag) => flag === 'plan_fallback' || flag === 'plan_skipped');
+        L.push(`Planner unavailable: ${view.actionPlan.reason}${planFlags.length ? ` (${planFlags.join(', ')})` : ''}.`, '', 'Unresolved questions:');
+        for (const question of view.actionPlan.unresolved_questions) L.push(`- ${question}`);
+      } else {
+        for (const a of view.actionPlan.actions) {
+          L.push(`${a.order}. ${a.action}`);
+          L.push(`   - Why: ${a.why}`);
+          L.push(`   - Validates: ${a.validates}`);
+          L.push(`   - Effort: ${a.effort}`);
+          L.push(`   - Kill signal: ${a.kill_signal}`);
+        }
+        L.push('', view.actionPlan.sequencing_note);
       }
-      L.push('', view.actionPlan.sequencing_note, '');
+      L.push('');
     }
     if (reportV3 && view.openQuestions?.length) {
       L.push('## Open questions that flip the verdict', '');

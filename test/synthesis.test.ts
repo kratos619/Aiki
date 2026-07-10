@@ -3,8 +3,9 @@
 
 import { describe, it, expect } from 'vitest';
 import { applyGroups } from '../src/orchestration/stages/s7-disagreement.js';
-import { adjudicationScopeViolations, demoteSelfAuthored, recommendationIssues } from '../src/orchestration/stages/s9-judge.js';
+import { adjudicationScopeViolations, buildJudgePrompt, demoteSelfAuthored, recommendationIssues } from '../src/orchestration/stages/s9-judge.js';
 import { deriveAudit, deriveScorecard } from '../src/orchestration/stages/s10-render.js';
+import { buildVerifierPrompt } from '../src/orchestration/stages/s8-verify.js';
 import type { ClaimSet } from '../src/orchestration/stages/s6-claims.js';
 import type { DisagreementMap, JudgeReport } from '../src/schemas/index.js';
 
@@ -85,6 +86,44 @@ describe('S9 recommendationIssues', () => {
     expect(recommendationIssues({ recommendation: 'PROCEED_WITH_CONDITIONS' })).toContain('conditions are required for PROCEED_WITH_CONDITIONS');
     expect(recommendationIssues({ recommendation: 'STOP', conditions: ['check'] })).toContain('conditions are only valid with PROCEED_WITH_CONDITIONS');
     expect(recommendationIssues({ recommendation: 'PROCEED_WITH_CONDITIONS', conditions: ['check'] })).toEqual([]);
+  });
+});
+
+describe('S9 judge prompt', () => {
+  it('passes the verifier status, evidence/reasoning, and note through unchanged', () => {
+    const map: DisagreementMap = {
+      consensus: [],
+      unique: [{ id: 'C1', statement: 'the fee covers loaded costs', type: 'VERIFIABLE', providers: ['agy'] }],
+      contradictions: [{ id: 'D1', claim_ids: ['C1'], attacks: [{ provider: 'codex', argument: 'loaded costs exceed the fee', severity: 'HIGH' }] }],
+      blind_spots: [],
+    };
+    const prompt = buildJudgePrompt(
+      { task: 'evaluate the fee', task_type: 'idea-refinement', constraints: [], unknowns: [], success_criteria: [] },
+      map,
+      { verifications: [{ target_id: 'D1', verdict: 'CONFIRM', evidence: 'Payroll rule §12 supports the objection.', note: 'Fee base still needs definition.' }] },
+      [{ id: 'R1', label: 'business model', keywords: ['fee'] }],
+    );
+
+    expect(prompt).toContain('"verifier_status": "CONFIRM"');
+    expect(prompt).toContain('"verifier_evidence": "Payroll rule §12 supports the objection."');
+    expect(prompt).toContain('"verifier_note": "Fee base still needs definition."');
+  });
+});
+
+describe('S8 verifier prompt', () => {
+  it('defines verdicts around the objection and imposes no forced opposition quota', () => {
+    const map: DisagreementMap = {
+      consensus: [],
+      unique: [{ id: 'C1', statement: 'the fee covers loaded costs', type: 'VERIFIABLE', providers: ['agy'] }],
+      contradictions: [{ id: 'D1', claim_ids: ['C1'], attacks: [{ provider: 'codex', argument: 'loaded costs exceed the fee', severity: 'HIGH' }] }],
+      blind_spots: [],
+    };
+
+    const prompt = buildVerifierPrompt(map);
+
+    expect(prompt).toContain('CONFIRM = the argument against the claim is supported');
+    expect(prompt).toContain('REFUTE = the argument against the claim is not supported');
+    expect(prompt).not.toMatch(/MUST issue|at least one REFUTE|quota/i);
   });
 });
 

@@ -14,7 +14,7 @@
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { z } from 'zod';
-import { ActionPlan, DisagreementMap, IntentContract, JudgeReport, ReviewMap, RoleOutput, RunBrief, RunMeta, VerificationSet } from '../schemas/index.js';
+import { ActionPlanArtifact, DisagreementMap, IntentContract, JudgeReport, ReviewMap, RoleOutput, RunBrief, RunMeta, VerificationSet } from '../schemas/index.js';
 
 export class OutOfOrderWriteError extends Error {
   constructor(slot: string, ord: number, maxOrd: number) {
@@ -51,7 +51,7 @@ const JSON_SLOTS = {
   'review-map': { ord: 7, path: '07-review-map.json', schema: ReviewMap },
   verifications: { ord: 8, path: '08-verifications.json', schema: VerificationSet },
   'judge-report': { ord: 9, path: '09-judge-report.json', schema: JudgeReport },
-  'action-plan': { ord: 9.5, path: '09b-action-plan.json', schema: ActionPlan },
+  'action-plan': { ord: 9.5, path: '09b-action-plan.json', schema: ActionPlanArtifact },
 } satisfies Record<string, SlotDef>;
 
 /** Text (markdown) stage slots (§15). */

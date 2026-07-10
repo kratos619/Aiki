@@ -4,7 +4,7 @@
 // the judge — §624). A truly missing required field is a template bug (fail loudly); degraded-but-valid
 // states (S8 skipped, items UNVERIFIED, empty consensus) render normally. User-facing → DISPLAY_NAME.
 
-import type { ActionPlan, DisagreementMap, IntentContract, JudgeReport, Recommendation, VerificationSet } from '../../schemas/index.js';
+import type { ActionPlanArtifact, DisagreementMap, IntentContract, JudgeReport, Recommendation, VerificationSet } from '../../schemas/index.js';
 import type { ProviderId } from '../../providers/types.js';
 import { DISPLAY_NAME } from '../../providers/types.js';
 import type { RunCtx } from '../context.js';
@@ -86,7 +86,7 @@ export interface S10Args {
   map: DisagreementMap;
   verifications: VerificationSet;
   judgeReport: JudgeReport;
-  actionPlan?: ActionPlan;
+  actionPlan?: ActionPlanArtifact;
   rubric?: RubricItem[];
 }
 
@@ -147,8 +147,11 @@ export function renderReport(ctx: RunCtx, args: S10Args): string {
 
   if (judgeReport.key_points?.length) {
     L.push("## Chairman's reasoning", '');
+    if (flags.includes('synthesis_suspect')) L.push('> ⚠ synthesis_suspect — the chair output required deterministic repair or degradation handling.', '');
     for (const p of judgeReport.key_points) L.push(`- ${p}`);
     L.push('');
+  } else if (flags.includes('synthesis_suspect')) {
+    L.push("## Chairman's reasoning", '', '> ⚠ synthesis_suspect — no reliable chairman reasoning was produced.', '');
   }
 
   if (scorecard.length) {
@@ -184,11 +187,19 @@ export function renderReport(ctx: RunCtx, args: S10Args): string {
   }
 
   if (actionPlan) {
-    L.push('## Validation plan', '', '| # | Action | Why | Validates | Effort | Kill signal |', '|---|---|---|---|---|---|');
-    for (const a of actionPlan.actions) {
-      L.push(`| ${a.order} | ${mdCell(a.action)} | ${mdCell(a.why)} | ${mdCell(a.validates)} | ${a.effort} | ${mdCell(a.kill_signal)} |`);
+    L.push('## Validation plan', '');
+    if ('kind' in actionPlan) {
+      const planFlags = flags.filter((flag) => flag === 'plan_fallback' || flag === 'plan_skipped');
+      L.push(`> ⚠ Planner unavailable: ${actionPlan.reason}${planFlags.length ? ` (${planFlags.join(', ')})` : ''}.`, '', 'Unresolved questions:');
+      for (const question of actionPlan.unresolved_questions) L.push(`- ${question}`);
+      L.push('');
+    } else {
+      L.push('| # | Action | Why | Validates | Effort | Kill signal |', '|---|---|---|---|---|---|');
+      for (const a of actionPlan.actions) {
+        L.push(`| ${a.order} | ${mdCell(a.action)} | ${mdCell(a.why)} | ${mdCell(a.validates)} | ${a.effort} | ${mdCell(a.kill_signal)} |`);
+      }
+      L.push('', actionPlan.sequencing_note, '');
     }
-    L.push('', actionPlan.sequencing_note, '');
   }
 
   const questions = mergeOpenQuestions(seats);
