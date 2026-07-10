@@ -15,10 +15,21 @@ anonymous sources. For EACH item, independently judge whether the argument defea
 Output ONLY JSON:
 {"verifications": [{"target_id": "<id>", "verdict": "CONFIRM|REFUTE|UNCERTAIN",
   "evidence": "<your own independent reasoning>", "note": "<≤2 sentences>"}]}
-CONFIRM = the argument holds (the claim is genuinely doubtful). REFUTE = the argument fails (the claim
-stands). Rules: you MUST issue at least one REFUTE, or set "all_confirmed_justification" explaining why
-every claim survives. JSON only, no prose outside it.
+CONFIRM = the argument against the claim is supported (the claim is genuinely doubtful).
+REFUTE = the argument against the claim is not supported (the claim survives this objection).
+UNCERTAIN = the available evidence cannot decide whether the argument holds. Judge each item independently;
+do not target any verdict distribution. JSON only, no prose outside it.
 ITEMS: {{DISPUTED_ITEMS_JSON}}`;
+
+export function buildVerifierPrompt(map: DisagreementMap): string {
+  const claimById = new Map([...map.consensus, ...map.unique].map((claim) => [claim.id, claim.statement]));
+  const items = map.contradictions.map((dispute) => ({
+    id: dispute.id,
+    claim: dispute.claim_ids.map((id) => claimById.get(id) ?? id).join(' / '),
+    arguments_against: dispute.attacks.map((attack) => attack.argument),
+  }));
+  return S8_PROMPT.replace('{{DISPUTED_ITEMS_JSON}}', JSON.stringify(items, null, 2));
+}
 
 export async function s8Verify(ctx: RunCtx, map: DisagreementMap): Promise<VerificationSetT> {
   const disputes = map.contradictions;
@@ -28,15 +39,7 @@ export async function s8Verify(ctx: RunCtx, map: DisagreementMap): Promise<Verif
     return empty;
   }
 
-  // Anonymized disputed items: claim text + argument text only, no provider attribution.
-  const claimById = new Map<string, string>();
-  for (const c of [...map.consensus, ...map.unique]) claimById.set(c.id, c.statement);
-  const items = disputes.map((d) => ({
-    id: d.id,
-    claim: d.claim_ids.map((cid) => claimById.get(cid) ?? cid).join(' / '),
-    arguments_against: d.attacks.map((a) => a.argument),
-  }));
-  const prompt = S8_PROMPT.replace('{{DISPUTED_ITEMS_JSON}}', JSON.stringify(items, null, 2));
+  const prompt = buildVerifierPrompt(map);
 
   try {
     const vset = await jsonCall(ctx, ctx.handle(ctx.roles.verifier), 'S8', prompt, VerificationSet);

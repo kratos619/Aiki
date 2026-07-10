@@ -1,9 +1,10 @@
 // S9b — idea validation plan. This is the one report-v3 model call after the judge: it turns the
 // adjudicated risks, blind spots, and open questions into anchored validation actions. Rendering stays
-// deterministic; if the planner fails or produces unanchored actions, we write a flagged fallback plan.
+// deterministic; if the planner fails or produces unanchored actions, we write flagged unavailability.
 
-import type { ActionPlan as ActionPlanT, DisagreementMap, IntentContract, JudgeReport } from '../../schemas/index.js';
+import type { ActionPlan as ActionPlanT, ActionPlanArtifact, DisagreementMap, IntentContract, JudgeReport, PlannerUnavailable } from '../../schemas/index.js';
 import { ActionPlan } from '../../schemas/index.js';
+import { z } from 'zod';
 import { BudgetExceeded, isFatal, type RunCtx } from '../context.js';
 import { jsonCall } from '../jsonStage.js';
 import { loadSkill } from '../skills.js';
@@ -22,6 +23,19 @@ export interface PlanAnchors {
   blindSpots: string[];
   openQuestions: string[];
 }
+
+const PlannerOutput = z.object({
+  actions: z.array(z.object({
+    order: z.number().int().min(1).optional(),
+    action: z.string().min(1),
+    why: z.string().min(1),
+    validates: z.string().min(1),
+    effort: z.string().min(1).optional(),
+    kill_signal: z.string().min(1),
+  }).strict()).min(1).max(7),
+  sequencing_note: z.string().min(1),
+}).strict();
+type PlannerOutput = z.infer<typeof PlannerOutput>;
 
 const S9B_PROMPT = `ROLE: Validation planner. You write the next actions for a decision-maker after an
 idea council has already debated and judged the idea. Do not write a build roadmap. Write only validation
@@ -50,14 +64,6 @@ function sevRank(s: string): number {
 
 function norm(s: string): string {
   return s.trim().toLowerCase();
-}
-
-function questionAnchor(q: string): string {
-  return `Q:${clip(q, 90)}`;
-}
-
-function blindAnchor(b: string): string {
-  return `blind:${b}`;
 }
 
 function upheldRisks(map: DisagreementMap, judgeReport: JudgeReport): UpheldRisk[] {
@@ -120,54 +126,44 @@ export function anchoredActionPlan(plan: ActionPlanT, anchors: PlanAnchors): Act
   return { actions, sequencing_note: plan.sequencing_note };
 }
 
-export function fallbackActionPlan(contract: IntentContract, map: DisagreementMap, judgeReport: JudgeReport, openQuestions: string[]): ActionPlanT {
-  const risks = upheldRisks(map, judgeReport);
-  const actions: ActionPlanT['actions'] = [];
-  for (const r of risks) {
-    actions.push({
-      order: actions.length + 1,
-      action: `Test whether "${clip(r.assumption, 120)}" is true with the smallest realistic sample.`,
-      why: `The chair upheld this as a load-bearing ${r.severity} risk.`,
-      validates: r.id,
-      effort: 'S',
-      kill_signal: 'The assumption fails in the sample or only works outside the intended use case.',
-    });
-  }
-  for (const b of map.blind_spots) {
-    actions.push({
-      order: actions.length + 1,
-      action: `Answer the ${b} gap with one concrete evidence source.`,
-      why: 'No analyst examined this dimension enough to rely on it.',
-      validates: blindAnchor(b),
-      effort: 'S',
-      kill_signal: 'The answer exposes a hard blocker or makes the target user/use case incoherent.',
-    });
-  }
-  for (const q of openQuestions) {
-    actions.push({
-      order: actions.length + 1,
-      action: `Resolve this question: ${clip(q, 140)}`,
-      why: 'The analysts identified it as an answer that could change the verdict.',
-      validates: questionAnchor(q),
-      effort: 'S',
-      kill_signal: 'The answer contradicts the value proposition or removes the target user.',
-    });
-  }
-  if (actions.length === 0) {
-    const q = `What evidence would change the verdict for ${clip(contract.task, 80)}?`;
-    actions.push({
-      order: 1,
-      action: 'Run one cheap test of the core user need before investing more.',
-      why: 'The council produced no unsettled anchored item, so validate the core demand directly.',
-      validates: questionAnchor(q),
-      effort: 'S',
-      kill_signal: 'Target users do not recognize the problem or would not switch from existing alternatives.',
-    });
-  }
+export function normalizeEffort(raw?: string): 'S' | 'M' | 'L' {
+  const value = raw?.trim().toLowerCase();
+  if (value === 's' || value === 'm' || value === 'l') return value.toUpperCase() as 'S' | 'M' | 'L';
+  const match = value?.match(/(\d+(?:\.\d+)?)(?:\s*-\s*(\d+(?:\.\d+)?))?\s*(minute|hour|day|week|month|year)s?/);
+  if (!match) return 'M';
+  const amount = Number(match[2] ?? match[1]);
+  const unit = match[3];
+  const days = amount * (unit === 'minute' ? 1 / 1440 : unit === 'hour' ? 1 / 24 : unit === 'day' ? 1 : unit === 'week' ? 7 : unit === 'month' ? 30 : 365);
+  return days <= 2 ? 'S' : days <= 14 ? 'M' : 'L';
+}
+
+export function normalizePlannerOutput(plan: PlannerOutput): ActionPlanT {
   return ActionPlan.parse({
-    actions: actions.slice(0, 7).map((a, i) => ({ ...a, order: i + 1 })),
-    sequencing_note: 'Start with upheld risks, then blind spots, then open questions; stop when a kill signal fires.',
+    actions: plan.actions.map((action, i) => ({
+      ...action,
+      order: i + 1,
+      effort: normalizeEffort(action.effort),
+    })),
+    sequencing_note: plan.sequencing_note,
   });
+}
+
+function unavailablePlan(
+  reason: PlannerUnavailable['reason'],
+  contract: IntentContract,
+  risks: UpheldRisk[],
+  blindSpots: string[],
+  openQuestions: string[],
+): PlannerUnavailable {
+  const unresolved = openQuestions.length ? openQuestions : [
+    ...risks.map((risk) => `What evidence would resolve whether ${risk.assumption}?`),
+    ...blindSpots.map((spot) => `What evidence resolves the ${spot} gap?`),
+  ];
+  return {
+    kind: 'PlannerUnavailable',
+    reason,
+    unresolved_questions: (unresolved.length ? unresolved : [`What evidence would change the verdict for ${clip(contract.task, 100)}?`]).slice(0, 10),
+  };
 }
 
 export async function s9bPlan(
@@ -176,7 +172,7 @@ export async function s9bPlan(
   seats: SeatOutput[],
   map: DisagreementMap,
   judgeReport: JudgeReport,
-): Promise<ActionPlanT> {
+): Promise<ActionPlanArtifact> {
   const openQuestions = mergeOpenQuestions(seats);
   const risks = upheldRisks(map, judgeReport);
   const anchors: PlanAnchors = {
@@ -184,9 +180,9 @@ export async function s9bPlan(
     blindSpots: map.blind_spots,
     openQuestions,
   };
-  const fallback = async (flag: 'plan_skipped' | 'plan_fallback'): Promise<ActionPlanT> => {
+  const fallback = async (flag: 'plan_skipped' | 'plan_fallback'): Promise<ActionPlanArtifact> => {
     ctx.addFlag(flag);
-    const plan = fallbackActionPlan(contract, map, judgeReport, openQuestions);
+    const plan = unavailablePlan(flag === 'plan_skipped' ? 'budget_exhausted' : 'planner_failed', contract, risks, map.blind_spots, openQuestions);
     await ctx.writer.writeJson('action-plan', plan);
     return plan;
   };
@@ -203,7 +199,7 @@ export async function s9bPlan(
   }, loadSkill('idea-refinement', 'planner'));
 
   try {
-    const first = await jsonCall(ctx, ctx.handle(ctx.roles.judge), 'S9b-plan', prompt, ActionPlan);
+    const first = normalizePlannerOutput(await jsonCall(ctx, ctx.handle(ctx.roles.judge), 'S9b-plan', prompt, PlannerOutput));
     const anchored = anchoredActionPlan(first, anchors);
     if (anchored) {
       await ctx.writer.writeJson('action-plan', anchored);
@@ -216,7 +212,7 @@ export async function s9bPlan(
       `Valid blind spots: ${anchors.blindSpots.join(' | ') || '(none)'}\n` +
       `Valid open questions: ${anchors.openQuestions.join(' | ') || '(none)'}\n` +
       `Output ONLY corrected JSON with every action anchored to one of those values.`;
-    const repaired = await jsonCall(ctx, ctx.handle(ctx.roles.judge), 'S9b-anchor-repair', repair, ActionPlan);
+    const repaired = normalizePlannerOutput(await jsonCall(ctx, ctx.handle(ctx.roles.judge), 'S9b-anchor-repair', repair, PlannerOutput));
     const repairedAnchored = anchoredActionPlan(repaired, anchors);
     if (repairedAnchored) {
       await ctx.writer.writeJson('action-plan', repairedAnchored);
