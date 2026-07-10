@@ -1,0 +1,49 @@
+```json
+{
+  "actions": [
+    {
+      "action": "Build a per-worked-hour P&L spreadsheet using real quotes: call 3 PEOs (TriNet, Justworks, Employer.com) and 2 malpractice insurers for acute-care temp nurse coverage. Plug in target metro RN bill rates ($65-85/hr), subtract nurse wage, FICA (7.65%), FUTA, state UI, PEO admin fee, malpractice premium per hour, credentialing cost per placement, payment processing (2.9%), and estimated support cost. Calculate whether 15% of bill rate—or 15% on top of nurse pay—yields ≥10% gross margin.",
+      "validates": "D1",
+      "why": "The entire business model rests on the commission covering employer costs. If the math is negative under both interpretations of '15% commission,' every other validation is moot.",
+      "kill_signal": "Gross margin per worked hour is negative or below 5% under both pricing interpretations (commission inclusive and commission on top), even at the highest defensible bill rate in the target metro."
+    },
+    {
+      "action": "Ask each PEO and malpractice insurer contacted in Action 1 three direct questions: (a) Will you onboard W-2 nurses for variable-hour, on-demand acute-care shifts including ICU/ED? (b) What indemnity and hold-harmless language do you require from the staffing platform? (c) What per-nurse or per-hour premium applies? Document any coverage exclusions or minimum-hour requirements.",
+      "validates": "D6",
+      "why": "If no PEO will underwrite variable-hour acute-care placements, or if malpractice insurers carve out high-acuity units, the liability structure has no viable home—regardless of margin math.",
+      "kill_signal": "Zero PEOs agree to cover on-demand acute-care W-2 shifts, or malpractice quotes exceed $15/worked-hour, or all insurers exclude ICU/ED placements."
+    },
+    {
+      "action": "Interview 3 hospital credentialing or compliance officers (use founders' network) with a specific scenario: 'A fully licensed RN with active state credentials and BLS/ACLS wants to pick up a Med-Surg shift tonight at your facility. What steps must happen before that nurse touches a patient?' Document every requirement: facility orientation, EMR access provisioning, unit-specific competency check, badge/access, Joint Commission audit trail.",
+      "validates": "D4",
+      "why": "The value proposition is last-minute coverage. If hospitals require multi-day onboarding steps that cannot be pre-completed or parallelized, same-day placement is structurally impossible regardless of API speed.",
+      "kill_signal": "All 3 hospitals require ≥24 hours of facility-specific steps (orientation, EMR provisioning, badge issuance) that cannot be pre-completed before a nurse's first shift."
+    },
+    {
+      "action": "Run a 30-minute structured phone interview with 12 experienced RNs in the target metro (recruit via nursing Facebook groups and founders' contacts). Ask: (a) Would you complete W-2 onboarding paperwork to pick up occasional extra shifts? (b) What is your minimum hourly rate for a last-minute Med-Surg shift? (c) How many shifts per month would you realistically take? (d) Are you currently on any gig nursing platforms, and what do they pay? Tally W-2 willingness rate and minimum rate expectations.",
+      "validates": "D3",
+      "why": "If nurses won't tolerate W-2 friction for intermittent shifts—or their rate floor exceeds what the margin model can pay—supply-side liquidity is dead on arrival.",
+      "kill_signal": "Fewer than 4 of 12 nurses would complete W-2 onboarding for intermittent shifts, or the median minimum rate leaves <5% gross margin per the Action 1 spreadsheet."
+    },
+    {
+      "action": "Ask the 3 credentialing/compliance officers from Action 3 (or 2 additional hospitals if needed): 'If we pre-credentialed and pre-oriented a pool of nurses at your facility, would you trial 5 shifts through us outside your VMS? What would approval require—a signed vendor agreement, insurance certificate, something else?' Document whether procurement sign-off, VMS integration, or legal review is required and estimated timeline.",
+      "validates": "D8",
+      "why": "If hospitals will not bypass VMS for a small pilot, the go-to-market requires VMS integration—which adds cost, time, and margin erosion that may be fatal given D1 findings.",
+      "kill_signal": "All hospitals require full VMS integration or vendor onboarding taking >90 days, with no willingness to run an off-VMS pilot."
+    },
+    {
+      "action": "Using Actions 1-4 results, calculate the minimum number of active, credentialed nurses needed in the metro pool to fill 70% of last-minute shifts within 2 hours (assume 10% acceptance rate per push notification, based on gig platform benchmarks). Compare that pool size to the W-2 willingness rate from Action 4 and the PEO cost of maintaining inactive W-2 workers from Action 1.",
+      "validates": "D9",
+      "why": "The liquidity math determines whether the single-metro launch can deliver its core promise without bleeding cash on an oversized idle pool.",
+      "kill_signal": "Required pool size exceeds 200 active nurses to hit 70% fill rate, or maintaining the idle pool costs >$20k/month in PEO minimums and compliance overhead."
+    },
+    {
+      "action": "Before running Actions 1-5, founders write down three specific numbers that would cause them to stop, pivot the employment model (e.g., switch to 1099 or marketplace-only), or pivot the target customer (e.g., outpatient clinics instead of hospitals). Revisit these numbers after all actions complete.",
+      "validates": "blind:kill criteria",
+      "why": "The council flagged that no failure conditions were defined. Without pre-committed kill criteria, founders will rationalize bad results and burn runway.",
+      "kill_signal": "Founders cannot agree on any quantitative stop/pivot threshold before starting validation—indicating commitment bias that makes the $500k a sunk-cost trap."
+    }
+  ],
+  "sequencing_note": "Action 7 (kill criteria) should actually be done first—it takes 30 minutes and prevents rationalization of later results. Then Action 1 (spreadsheet + quotes, 1-2 days) because negative unit economics kills everything. Action 2 (insurance/PEO willingness) runs in parallel with Action 1 since the same calls serve both. Action 3 (hospital credentialing interviews) and Action 4 (nurse interviews) can run in parallel the following week—both are phone-based and independent. Action 5 (hospital pilot willingness) piggybacks on Action 3 contacts. Action 6 (liquidity math) is last because it synthesizes all prior results. Total elapsed time: 2-3 weeks, total cost: <$500 in recruiting incentives for nurse interviews."
+}
+```
