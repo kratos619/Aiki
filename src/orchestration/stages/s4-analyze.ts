@@ -19,6 +19,7 @@ import { jsonCall } from '../jsonStage.js';
 /** One surviving S4 seat: the validated analyst output plus which provider produced it. */
 export interface SeatOutput {
   provider: ProviderId;
+  sample?: string;
   output: IdeaRoleOutput;
 }
 
@@ -28,7 +29,7 @@ async function runSeat(ctx: RunCtx, seat: ProviderId, label: string, prompt: str
   const model = await jsonCall(ctx, ctx.handle(seat), `S4-${label}`, prompt, IdeaRoleOutputModel);
   const output: IdeaRoleOutput = { workflow: 'idea-refinement', ...model };
   await ctx.writer.writeRoleOutput(label, output);
-  return { provider: seat, output };
+  return { provider: seat, sample: label, output };
 }
 
 export async function s4Analyze(ctx: RunCtx, analystPrompt: string): Promise<SeatOutput[]> {

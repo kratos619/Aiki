@@ -13,8 +13,8 @@ import { s2Misread } from '../orchestration/stages/s2-misread.js';
 import { s3Prompts } from '../orchestration/stages/s3-prompts.js';
 import { s4Analyze } from '../orchestration/stages/s4-analyze.js';
 import { s5Drift } from '../orchestration/stages/s5-drift.js';
-import { s6Claims } from '../orchestration/stages/s6-claims.js';
-import { s7Disagreement, type RubricItem } from '../orchestration/stages/s7-disagreement.js';
+import { s6Positions } from '../orchestration/stages/s6-positions.js';
+import { s7DecisionGraph, type RubricItem } from '../orchestration/stages/s7-decision-graph.js';
 import { s8Verify } from '../orchestration/stages/s8-verify.js';
 import { s9Judge } from '../orchestration/stages/s9-judge.js';
 import { s9bPlan } from '../orchestration/stages/s9b-plan.js';
@@ -49,10 +49,13 @@ INPUT DOCUMENT: read the file at {{INPUT_PATH}}{{SKILL}}
 Produce ONLY JSON matching {{S4_SCHEMA_REF}} with:
 - task_echo: restate the task in ≤2 sentences (drift check).
 - strongest_version: the best honest version of this idea in ≤150 words.
-- assumptions: ≤8, each {id "A1"..., statement, type VERIFIABLE|JUDGMENT, load_bearing bool}.
-- attacks: ≤6, each {id "X1"..., target_assumption, argument, severity HIGH|MED|LOW}.
-  Every attack MUST target an assumption id. Unanchored attacks will be discarded.
-- open_questions: ≤5 questions whose answers would change the verdict.
+- positions: explicit claim positions with local_id, proposition, rubric dimension_id, stance
+  SUPPORT|OPPOSE|MIXED|UNKNOWN, basis EVIDENCE|INFERENCE|ASSUMPTION, load_bearing, if_false
+  STOP|PIVOT|CONDITION|MINOR, concise reasoning, evidence_ids, and depends_on position ids.
+- evidence: evidence cards with source_kind USER|PRIMARY|SECONDARY|MODEL_KNOWLEDGE, support direction,
+  and freshness. Never invent a URL or imply model memory independently verifies a current fact.
+- coverage: rubric dimensions marked COVERED with position_ids, or NOT_APPLICABLE with a rationale.
+- decision_questions: questions whose answers could change the verdict, anchored by claim_ids.
 Rules: no motivation, no summaries of your own output, no markdown, JSON only.`;
 
 /**
@@ -74,8 +77,8 @@ export const IDEA_STAGES: StageInfo[] = [
   { id: 'S3', label: 'Prompt generation', role: 'analyst' },
   { id: 'S4', label: 'Parallel analysis', role: 's4' },
   { id: 'S5', label: 'Drift check', role: null },
-  { id: 'S6', label: 'Claim extraction', role: null },
-  { id: 'S7', label: 'Disagreement map', role: 'judge' },
+  { id: 'S6', label: 'Position collection', role: null },
+  { id: 'S7', label: 'Decision graph', role: 'judge' },
   { id: 'S8', label: 'Verifier loop', role: 'verifier' },
   { id: 'S9', label: 'Judge synthesis', role: 'judge' },
   { id: 'S9b', label: 'Validation plan', role: 'judge' },
@@ -108,10 +111,10 @@ export async function runIdeaRefinement(ctx: RunCtx, input: string): Promise<voi
   // s3Prompts guarantees an entry for every template key (it iterates them), so `analyst` is present.
   const seats = await runStage(ctx, 'S4', () => s4Analyze(ctx, stagePrompts.prompts.analyst!));
   const { kept } = await runStage(ctx, 'S5', () => s5Drift(ctx, contract, seats));
-  const claimSet = await runStage(ctx, 'S6', () => s6Claims(ctx, kept));
-  const map = await runStage(ctx, 'S7', () => s7Disagreement(ctx, claimSet, kept, IDEA_RUBRIC));
-  const verifications = await runStage(ctx, 'S8', () => s8Verify(ctx, map));
-  const judgeReport = await runStage(ctx, 'S9', () => s9Judge(ctx, contract, map, verifications, IDEA_RUBRIC));
-  const actionPlan = await runStage(ctx, 'S9b', () => s9bPlan(ctx, contract, kept, map, judgeReport));
-  await runStage(ctx, 'S10', () => s10Render(ctx, { contract, seats: kept, map, verifications, judgeReport, actionPlan, rubric: IDEA_RUBRIC }));
+  const positions = await runStage(ctx, 'S6', () => s6Positions(ctx, kept));
+  const graph = await runStage(ctx, 'S7', () => s7DecisionGraph(ctx, positions, IDEA_RUBRIC));
+  const verifications = await runStage(ctx, 'S8', () => s8Verify(ctx, graph));
+  const judgeReport = await runStage(ctx, 'S9', () => s9Judge(ctx, contract, graph, verifications, IDEA_RUBRIC));
+  const actionPlan = await runStage(ctx, 'S9b', () => s9bPlan(ctx, contract, kept, graph, judgeReport));
+  await runStage(ctx, 'S10', () => s10Render(ctx, { contract, seats: kept, graph, verifications, judgeReport, actionPlan, rubric: IDEA_RUBRIC }));
 }

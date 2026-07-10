@@ -147,7 +147,7 @@ const Attack = z
   })
   .strict();
 
-export const IdeaRoleOutput = z
+export const LegacyIdeaRoleOutput = z
   .object({
     workflow: z.literal('idea-refinement'),
     task_echo: z.string().min(1), // ≤2 sentence restatement (drift check, S5)
@@ -157,6 +157,100 @@ export const IdeaRoleOutput = z
     open_questions: z.array(z.string()).max(5),
   })
   .strict();
+
+export const ClaimPosition = z
+  .object({
+    local_id: z.string().min(1),
+    proposition: z.string().min(1),
+    dimension_id: z.string().min(1),
+    stance: z.enum(['SUPPORT', 'OPPOSE', 'MIXED', 'UNKNOWN']),
+    basis: z.enum(['EVIDENCE', 'INFERENCE', 'ASSUMPTION']),
+    load_bearing: z.boolean(),
+    if_false: z.enum(['STOP', 'PIVOT', 'CONDITION', 'MINOR']),
+    reasoning: z.string().min(1),
+    evidence_ids: z.array(z.string().min(1)),
+    depends_on: z.array(z.string().min(1)),
+  })
+  .strict();
+
+export const EvidenceCard = z
+  .object({
+    id: z.string().min(1),
+    claim_supported: z.string().min(1),
+    source_kind: z.enum(['USER', 'PRIMARY', 'SECONDARY', 'MODEL_KNOWLEDGE']),
+    title: z.string().min(1).optional(),
+    url: z.string().url().optional(),
+    published_at: z.string().min(1).optional(),
+    accessed_at: z.string().min(1).optional(),
+    locator: z.string().min(1).optional(),
+    support: z.enum(['SUPPORTS', 'CONTRADICTS', 'CONTEXT_ONLY']),
+    freshness: z.enum(['CURRENT', 'DATED', 'UNKNOWN']),
+  })
+  .strict();
+
+export const CoverageEntry = z
+  .object({
+    dimension_id: z.string().min(1),
+    status: z.enum(['COVERED', 'NOT_APPLICABLE']),
+    position_ids: z.array(z.string().min(1)),
+    rationale: z.string().min(1),
+  })
+  .strict();
+
+export const DecisionQuestion = z
+  .object({
+    id: z.string().min(1),
+    question: z.string().min(1),
+    claim_ids: z.array(z.string().min(1)),
+  })
+  .strict();
+
+const IdeaRoleOutputBase = z
+  .object({
+    workflow: z.literal('idea-refinement'),
+    task_echo: z.string().min(1),
+    strongest_version: z.string().min(1),
+    positions: z.array(ClaimPosition).max(12),
+    evidence: z.array(EvidenceCard).max(20),
+    coverage: z.array(CoverageEntry).max(12),
+    decision_questions: z.array(DecisionQuestion).max(8),
+  })
+  .strict();
+
+type SubmissionRefs = z.infer<typeof IdeaRoleOutputBase>;
+
+function checkSubmissionRefs(submission: SubmissionRefs, ctx: z.RefinementCtx): void {
+  const positionIds = new Set<string>();
+  for (const [index, position] of submission.positions.entries()) {
+    if (positionIds.has(position.local_id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['positions', index, 'local_id'], message: `duplicate position id: ${position.local_id}` });
+    positionIds.add(position.local_id);
+  }
+  const evidenceIds = new Set<string>();
+  for (const [index, evidence] of submission.evidence.entries()) {
+    if (evidenceIds.has(evidence.id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['evidence', index, 'id'], message: `duplicate evidence id: ${evidence.id}` });
+    evidenceIds.add(evidence.id);
+  }
+  for (const [index, position] of submission.positions.entries()) {
+    for (const id of position.evidence_ids) {
+      if (!evidenceIds.has(id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['positions', index, 'evidence_ids'], message: `unknown evidence id: ${id}` });
+    }
+    for (const id of position.depends_on) {
+      if (!positionIds.has(id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['positions', index, 'depends_on'], message: `unknown position id: ${id}` });
+    }
+  }
+  for (const [index, entry] of submission.coverage.entries()) {
+    for (const id of entry.position_ids) {
+      if (!positionIds.has(id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['coverage', index, 'position_ids'], message: `unknown position id: ${id}` });
+    }
+  }
+  for (const [index, question] of submission.decision_questions.entries()) {
+    for (const id of question.claim_ids) {
+      if (!positionIds.has(id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['decision_questions', index, 'claim_ids'], message: `unknown position id: ${id}` });
+    }
+  }
+}
+
+export const IdeaRoleOutput = IdeaRoleOutputBase.superRefine(checkSubmissionRefs);
 
 /** Defect categories a finding (and a seeded bug, T11) can carry. BENCHMARK.md's "defect class" match
  *  is equality on this enum (off-by-one→CORRECTNESS, race→CONCURRENCY, unhandled-rejection→ERROR_HANDLING,
@@ -186,7 +280,7 @@ export const CodeReviewRoleOutput = z
   })
   .strict();
 
-export const RoleOutput = z.discriminatedUnion('workflow', [IdeaRoleOutput, CodeReviewRoleOutput]);
+export const RoleOutput = z.union([IdeaRoleOutput, CodeReviewRoleOutput]);
 
 /** The exact JSON a code-review S4 reviewer returns: `CodeReviewRoleOutput` WITHOUT the `workflow`
  *  discriminator (§13 — model output carries no `workflow`). Mirrors `IdeaRoleOutputModel` (T6); S4
@@ -197,7 +291,8 @@ export const CodeReviewRoleOutputModel = CodeReviewRoleOutput.omit({ workflow: t
  *  `workflow` discriminator (§13 — model output carries no `workflow`). S4 validates the raw call
  *  against this, then injects `workflow` and re-validates as `RoleOutput` before persisting.
  *  `.omit` preserves the object's strict mode, so extra keys still trigger the §14 repair retry. */
-export const IdeaRoleOutputModel = IdeaRoleOutput.omit({ workflow: true });
+export const IdeaRoleOutputModel = IdeaRoleOutputBase.omit({ workflow: true }).superRefine((submission, ctx) =>
+  checkSubmissionRefs({ workflow: 'idea-refinement', ...submission }, ctx));
 
 // ── S3: StagePrompts (§9, §13) ──────────────────────────────────────────────
 //
@@ -221,6 +316,46 @@ export const ClaimGroups = z
     groups: z.array(z.array(z.string().min(1)).min(2)),
   })
   .strict();
+
+// ── R2: typed decision graph ────────────────────────────────────────────────
+
+const GraphPosition = ClaimPosition.extend({
+  id: z.string().min(1),
+  provider: ProviderIdSchema,
+  source_id: z.string().min(1),
+});
+
+const GraphEvidence = EvidenceCard.extend({
+  id: z.string().min(1),
+  provider: ProviderIdSchema,
+  source_id: z.string().min(1),
+});
+
+export const DecisionClaim = z.object({
+  id: z.string().min(1),
+  proposition: z.string().min(1),
+  position_ids: z.array(z.string().min(1)).min(1),
+  state: z.enum(['CONSENSUS', 'SHARED_CONCERN', 'DISAGREEMENT', 'UNIQUE', 'UNCERTAIN']),
+  evidence_state: z.enum(['SUPPORTED', 'CONFLICTED', 'UNVERIFIED']),
+  load_bearing: z.boolean(),
+  if_false: z.enum(['STOP', 'PIVOT', 'CONDITION', 'MINOR']),
+  sensitivity: z.enum(['DECISIVE', 'MATERIAL', 'LOW']),
+});
+
+export const DecisionGraph = z.object({
+  positions: z.array(GraphPosition),
+  evidence: z.array(GraphEvidence),
+  claims: z.array(DecisionClaim),
+  edges: z.array(z.object({
+    from: z.string().min(1),
+    to: z.string().min(1),
+    type: z.enum(['DEPENDS_ON', 'SUPPORTS', 'ATTACKS', 'CONTRADICTS']),
+  })),
+  holes: z.object({
+    coverage: z.array(z.object({ dimension_id: z.string().min(1), label: z.string().min(1) })),
+    evidence: z.array(z.object({ claim_id: z.string().min(1), reason: z.string().min(1) })),
+  }),
+});
 
 // ── S8: Verification (§13) ──────────────────────────────────────────────────
 //
@@ -454,6 +589,11 @@ export type StagePrompts = z.infer<typeof StagePrompts>;
 export type RoleOutput = z.infer<typeof RoleOutput>;
 export type IdeaRoleOutput = z.infer<typeof IdeaRoleOutput>;
 export type IdeaRoleOutputModel = z.infer<typeof IdeaRoleOutputModel>;
+export type LegacyIdeaRoleOutput = z.infer<typeof LegacyIdeaRoleOutput>;
+export type ClaimPosition = z.infer<typeof ClaimPosition>;
+export type EvidenceCard = z.infer<typeof EvidenceCard>;
+export type CoverageEntry = z.infer<typeof CoverageEntry>;
+export type DecisionQuestion = z.infer<typeof DecisionQuestion>;
 export type CodeReviewRoleOutput = z.infer<typeof CodeReviewRoleOutput>;
 export type CodeReviewRoleOutputModel = z.infer<typeof CodeReviewRoleOutputModel>;
 export type Finding = z.infer<typeof Finding>;
@@ -462,6 +602,8 @@ export type CrossVerdict = z.infer<typeof CrossVerdict>;
 export type AnnotatedFinding = z.infer<typeof AnnotatedFinding>;
 export type ReviewMap = z.infer<typeof ReviewMap>;
 export type ClaimGroups = z.infer<typeof ClaimGroups>;
+export type DecisionClaim = z.infer<typeof DecisionClaim>;
+export type DecisionGraph = z.infer<typeof DecisionGraph>;
 export type Verification = z.infer<typeof Verification>;
 export type VerificationSet = z.infer<typeof VerificationSet>;
 export type Claim = z.infer<typeof Claim>;

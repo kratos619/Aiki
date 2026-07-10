@@ -2,11 +2,12 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { DISPLAY_NAME, type ProviderId } from '../providers/types.js';
 import type { WorkflowId } from '../orchestration/context.js';
-import type { ActionPlanArtifact, AnnotatedFinding, DisagreementMap, JudgeReport, Recommendation, ReviewMap, RoleOutput, RunMeta } from '../schemas/index.js';
+import { RoleOutput as RoleOutputSchema, type ActionPlanArtifact, type AnnotatedFinding, type DecisionGraph, type DisagreementMap, type JudgeReport, type Recommendation, type ReviewMap, type RoleOutput, type RunMeta } from '../schemas/index.js';
 import { deriveAudit, deriveScorecard, mergeOpenQuestions, type AuditRow, type ScorecardRow } from '../orchestration/stages/s10-render.js';
 import type { SeatOutput } from '../orchestration/stages/s4-analyze.js';
 import { IDEA_RUBRIC } from '../workflows/idea-refinement.js';
 import { listArtifacts, readJsonArtifact } from '../storage/runs-read.js';
+import { adaptIdeaOutput, adaptLegacyDecisionGraph } from '../orchestration/legacy-idea-adapter.js';
 
 type Column = { provider: string; title: string; lines: string[] };
 type RowKind = 'consensus' | 'dispute' | 'unique' | 'single';
@@ -81,9 +82,8 @@ function roleColumn(provider: string, role: RoleOutput): Column {
     title: providerName(provider),
     lines: [
       `Strongest version: ${role.strongest_version}`,
-      ...role.assumptions.map((a) => `${a.load_bearing ? 'Load-bearing' : 'Assumption'}: ${a.statement}`),
-      ...role.attacks.map((a) => `Attack: ${a.argument}`),
-      ...role.open_questions.map((q) => `Question: ${q}`),
+      ...role.positions.map((position) => `${position.load_bearing ? 'Load-bearing' : position.stance}: ${position.proposition}`),
+      ...role.decision_questions.map(({ question }) => `Question: ${question}`),
     ],
   };
 }
@@ -108,27 +108,28 @@ function codeReviewRows(map: ReviewMap, judge: JudgeReport | null): CouncilRow[]
   ];
 }
 
-function ideaRows(map: DisagreementMap, judge: JudgeReport | null): CouncilRow[] {
+function graphRows(graph: DecisionGraph, judge: JudgeReport | null): CouncilRow[] {
   const rulings = judgeRulings(judge);
-  return [
-    ...map.consensus.map((c) => ({ kind: 'consensus' as const, title: c.statement, detail: c.evidence ?? '', providers: c.providers })),
-    ...map.contradictions.map((d) => ({
-      kind: 'dispute' as const,
-      title: d.id,
-      detail: d.attacks.map((a) => `${providerName(a.provider)}: ${a.argument}`).join(' · '),
-      providers: d.attacks.map((a) => a.provider),
-      ruling: rulings.get(d.id),
-    })),
-    ...map.unique.map((c) => ({ kind: 'unique' as const, title: c.statement, detail: c.evidence ?? '', providers: c.providers })),
-  ];
+  const positionById = new Map(graph.positions.map((position) => [position.id, position]));
+  return graph.claims.map((claim) => {
+    const positions = claim.position_ids.map((id) => positionById.get(id)!);
+    const providers = [...new Set(positions.map((position) => position.provider))];
+    const kind: RowKind = claim.state === 'DISAGREEMENT' ? 'dispute'
+      : claim.state === 'CONSENSUS' || claim.state === 'SHARED_CONCERN' ? 'consensus'
+        : 'unique';
+    return {
+      kind,
+      title: claim.proposition,
+      detail: positions.map((position) => `${providerName(position.provider)} ${position.stance}: ${position.reasoning}`).join(' · '),
+      providers,
+      ruling: rulings.get(claim.id),
+    };
+  });
 }
 
 const SEV_ORDER: Record<string, number> = { HIGH: 0, MED: 1, MEDIUM: 1, LOW: 2 };
 function sevRank(s: string): number {
   return SEV_ORDER[s.toUpperCase()] ?? 1;
-}
-function maxSeverity(sevs: string[]): string {
-  return [...sevs].sort((a, b) => sevRank(a) - sevRank(b))[0] ?? 'MED';
 }
 function clip(s: string, n: number): string {
   const t = s.trim();
@@ -167,20 +168,21 @@ function chairPhrase(ruling: string | undefined): string {
   return 'left to you';
 }
 
-function ideaDebates(map: DisagreementMap, judge: JudgeReport | null): DebateItem[] {
-  const claims = new Map([...map.consensus, ...map.unique].map((c) => [c.id, c]));
-  const adj = new Map((judge?.adjudications ?? []).map((a) => [a.id, a]));
-  return map.contradictions.map((d) => {
-    const a = adj.get(d.id);
-    const claimantProviders = [...new Set(d.claim_ids.flatMap((id) => claims.get(id)?.providers ?? []))];
-    const attackerProviders = [...new Set(d.attacks.map((x) => x.provider))];
+function graphDebates(graph: DecisionGraph, judge: JudgeReport | null): DebateItem[] {
+  const positionById = new Map(graph.positions.map((position) => [position.id, position]));
+  const adjudication = new Map((judge?.adjudications ?? []).map((item) => [item.id, item]));
+  return graph.claims.filter((claim) => claim.state === 'DISAGREEMENT').map((claim) => {
+    const positions = claim.position_ids.map((id) => positionById.get(id)!);
+    const supporting = positions.filter((position) => position.stance === 'SUPPORT');
+    const opposing = positions.filter((position) => position.stance === 'OPPOSE');
+    const ruling = adjudication.get(claim.id);
     return {
-      claim: d.claim_ids.map((id) => claims.get(id)?.statement ?? id).join(' / '),
-      claimantProviders,
-      attackerProviders,
-      challenge: d.attacks.map((x) => `${providerName(x.provider)}: ${x.argument}`).join('\n\n'),
-      chair: chairPhrase(a?.ruling),
-      reasoning: a?.reasoning ?? '',
+      claim: claim.proposition,
+      claimantProviders: [...new Set(supporting.map((position) => position.provider))],
+      attackerProviders: [...new Set(opposing.map((position) => position.provider))],
+      challenge: opposing.map((position) => `${providerName(position.provider)}: ${position.reasoning}`).join('\n\n'),
+      chair: chairPhrase(ruling?.ruling),
+      reasoning: ruling?.reasoning ?? '',
     };
   });
 }
@@ -214,39 +216,42 @@ function receiptLines(meta: RunMeta): string[] {
   ].filter(Boolean);
 }
 
-/** Turn the idea disagreement map + judge report into the human decision story. Deterministic. */
-function ideaNarrative(map: DisagreementMap, judge: JudgeReport | null): Partial<CouncilView> {
-  const claims = new Map<string, string>();
-  for (const c of [...map.consensus, ...map.unique]) claims.set(c.id, c.statement);
-  const adj = new Map((judge?.adjudications ?? []).map((a) => [a.id, a]));
-
-  const disputes = map.contradictions.map((d) => {
-    const a = adj.get(d.id);
-    return {
-      ruling: a?.ruling ?? '',
-      assumption: d.claim_ids.map((id) => claims.get(id) ?? id).join(' '),
-      challenge: d.attacks.map((x) => `${providerName(x.provider)}: ${x.argument}`).join('\n\n'),
-      severity: maxSeverity(d.attacks.map((x) => x.severity)),
-      reasoning: a?.reasoning ?? '',
-      providers: d.attacks.map((x) => x.provider),
-    };
+function graphNarrative(graph: DecisionGraph, judge: JudgeReport | null): Partial<CouncilView> {
+  const positionById = new Map(graph.positions.map((position) => [position.id, position]));
+  const ruling = new Map((judge?.adjudications ?? []).map((item) => [item.id, item]));
+  const agreements: Agreement[] = graph.claims
+    .filter((claim) => claim.state === 'CONSENSUS')
+    .map((claim) => ({
+      statement: claim.proposition,
+      providers: [...new Set(claim.position_ids.map((id) => positionById.get(id)!.provider))],
+    }));
+  const risks: RiskItem[] = graph.claims.flatMap((claim): RiskItem[] => {
+    const decision = ruling.get(claim.id);
+    if (claim.state !== 'SHARED_CONCERN' && decision?.ruling !== 'UPHOLD') return [];
+    const positions = claim.position_ids.map((id) => positionById.get(id)!);
+    return [{
+      assumption: claim.proposition,
+      severity: claim.sensitivity === 'DECISIVE' ? 'HIGH' : claim.sensitivity === 'MATERIAL' ? 'MED' : 'LOW',
+      challenge: positions.filter((position) => position.stance === 'OPPOSE').map((position) => `${providerName(position.provider)}: ${position.reasoning}`).join('\n\n'),
+      reasoning: decision?.reasoning ?? 'Multiple analysts independently raised this concern.',
+      providers: [...new Set(positions.map((position) => position.provider))],
+    }];
+  }).sort((a, b) => sevRank(a.severity) - sevRank(b.severity));
+  const defended: DefendedItem[] = graph.claims.flatMap((claim): DefendedItem[] => {
+    const decision = ruling.get(claim.id);
+    if (decision?.ruling !== 'REJECT') return [];
+    const positions = claim.position_ids.map((id) => positionById.get(id)!);
+    return [{
+      assumption: claim.proposition,
+      challenge: positions.filter((position) => position.stance === 'OPPOSE').map((position) => position.reasoning).join('\n\n'),
+      reasoning: decision.reasoning,
+    }];
   });
-
-  const risks: RiskItem[] = disputes
-    .filter((d) => d.ruling === 'UPHOLD')
-    .sort((a, b) => sevRank(a.severity) - sevRank(b.severity))
-    .map(({ assumption, severity, challenge, reasoning, providers }) => ({ assumption, severity, challenge, reasoning, providers }));
-  const defended: DefendedItem[] = disputes
-    .filter((d) => d.ruling === 'REJECT')
-    .map(({ assumption, challenge, reasoning }) => ({ assumption, challenge, reasoning }));
-  const agreements: Agreement[] = map.consensus.map((c) => ({ statement: c.statement, providers: c.providers }));
-  const blindSpots = map.blind_spots ?? [];
-
+  const blindSpots = graph.holes.coverage.map((hole) => hole.label);
   const nextSteps = [
-    ...risks.map((r) => `Pressure-test the assumption “${clip(r.assumption, 130)}” — the council found it doesn't hold as stated.`),
-    ...blindSpots.map((b) => `Work out: ${b}.`),
+    ...risks.map((risk) => `Pressure-test “${clip(risk.assumption, 130)}”.`),
+    ...blindSpots.map((spot) => `Work out: ${spot}.`),
   ];
-
   return {
     signal: computeSignal(risks.length, agreements.length),
     agreements,
@@ -262,10 +267,13 @@ function ideaNarrative(map: DisagreementMap, judge: JudgeReport | null): Partial
 async function loadRoleOutputs(dir: string): Promise<Array<{ provider: string; role: RoleOutput }>> {
   const artifacts = await listArtifacts(dir);
   const roleFiles = artifacts.filter((f) => f.startsWith('04-role-outputs/') && f.endsWith('.json'));
-  const roles = await Promise.all(roleFiles.map(async (file) => ({
-    provider: basename(file, '.json'),
-    role: JSON.parse(await readFile(join(dir, file), 'utf8')) as RoleOutput,
-  })));
+  const roles = await Promise.all(roleFiles.map(async (file) => {
+    const raw: unknown = JSON.parse(await readFile(join(dir, file), 'utf8'));
+    const role = typeof raw === 'object' && raw !== null && 'workflow' in raw && raw.workflow === 'idea-refinement'
+      ? adaptIdeaOutput(raw)
+      : RoleOutputSchema.parse(raw);
+    return { provider: basename(file, '.json'), role };
+  }));
   return roles.sort((a, b) => providerName(a.provider).localeCompare(providerName(b.provider)));
 }
 
@@ -294,16 +302,19 @@ export async function loadCouncilView(runId: string, dir: string): Promise<Counc
       ];
     }
   } else {
-    const map = await readJsonArtifact<DisagreementMap>(dir, '07-disagreement-map.json');
-    if (map) {
-      rows = ideaRows(map, judge);
+    const storedGraph = await readJsonArtifact<DecisionGraph>(dir, '07-decision-graph.json');
+    const legacyMap = storedGraph ? null : await readJsonArtifact<DisagreementMap>(dir, '07-disagreement-map.json');
+    const graph = storedGraph ?? (legacyMap ? adaptLegacyDecisionGraph(legacyMap) : null);
+    if (graph) {
+      rows = graphRows(graph, judge);
       stats = [
-        `${map.consensus.length} consensus`,
-        `${map.contradictions.length} disputes`,
-        `${map.unique.length} unique`,
-        `${map.blind_spots.length} blind spots`,
+        `${graph.claims.filter((claim) => claim.state === 'CONSENSUS').length} consensus`,
+        `${graph.claims.filter((claim) => claim.state === 'SHARED_CONCERN').length} shared concerns`,
+        `${graph.claims.filter((claim) => claim.state === 'DISAGREEMENT').length} disputes`,
+        `${graph.claims.filter((claim) => claim.state === 'UNIQUE').length} unique`,
+        `${graph.holes.coverage.length} coverage holes`,
       ];
-      narrative = ideaNarrative(map, judge);
+      narrative = graphNarrative(graph, judge);
       const reportV3 = Boolean(judge?.recommendation || actionPlan);
       if (actionPlan && !('kind' in actionPlan)) narrative.nextSteps = actionPlan.actions.map((a) => a.action);
       if (reportV3) {
@@ -312,9 +323,9 @@ export async function loadCouncilView(runId: string, dir: string): Promise<Counc
           ...narrative,
           recommendation: judge?.recommendation,
           conditions: judge?.conditions,
-          scorecard: deriveScorecard(IDEA_RUBRIC, map),
-          audit: judge ? deriveAudit(map, judge) : [],
-          debates: ideaDebates(map, judge),
+          scorecard: deriveScorecard(IDEA_RUBRIC, graph),
+          audit: judge ? deriveAudit(graph, judge) : [],
+          debates: graphDebates(graph, judge),
           actionPlan: actionPlan ?? undefined,
           openQuestions: mergeOpenQuestions(ideaSeats),
           receipt: receiptLines(meta),
