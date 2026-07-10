@@ -36,6 +36,8 @@ describe('scoreRun', () => {
     const s = scoreRun(findings, bugs);
     expect(s.matched).toBe(1);
     expect(s.recall).toBe(0.5);
+    expect(s.matchedRelaxed).toBe(2); // location-only L1 metric counts the mis-categorized second finding
+    expect(s.recallRelaxed).toBe(1);
     expect(s.reported).toBe(2);
     expect(s.unmatched).toBe(1); // the mis-categorized finding is a candidate FP
   });
@@ -144,7 +146,8 @@ describe('runBench end-to-end (scripted adapters)', () => {
     expect(written.cases).toHaveLength(1);
 
     const table = renderTable(result);
-    expect(table).toContain('Recall (micro)');
+    expect(table).toContain('Recall (strict)');
+    expect(table).toContain('Recall (category-relaxed)');
     expect(table).toContain('| A |');
   });
 

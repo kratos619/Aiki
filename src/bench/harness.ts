@@ -40,11 +40,11 @@ export async function loadCases(suite: string, set: string, root = process.cwd()
   return cases;
 }
 
-/** A/B/C need claude (the fixed single model); D needs claude+codex reviewers; E needs agy+codex
- *  reviewers + claude judge (the Opus-thrift variant). */
+/** A/B/C need claude (the fixed single model); D needs claude+codex reviewers; E/L need agy+codex
+ *  reviewers + claude judge/hole-hunter. */
 function armAvailable(arm: ArmId, available: string[]): boolean {
   if (arm === 'D') return available.includes('claude') && available.includes('codex');
-  if (arm === 'E') return available.includes('agy') && available.includes('codex') && available.includes('claude');
+  if (arm === 'E' || arm === 'L') return available.includes('agy') && available.includes('codex') && available.includes('claude');
   return available.includes('claude');
 }
 
@@ -64,11 +64,11 @@ async function readPrecision(runId: string, reported: number, root = process.cwd
 
 async function runArmOnCase(arm: ArmId, c: BenchCase, handles: ProviderHandle[], available: ProviderId[], root: string): Promise<ArmScore> {
   const runId = makeRunId('code-review');
-  // Arm C's synthesis judge stays same-model; Arm E swaps the product pipeline's roles to the
-  // Opus-thrift config (agy+codex hunt, claude judge). D uses code-review defaults.
+  // Arm C's synthesis judge stays same-model; E/L use the Opus-thrift roles
+  // (agy+codex tier-1 hunt, claude judge/hole-hunter). D uses code-review defaults.
   const overrides: Partial<RoleMap> | undefined =
     arm === 'C' ? { judge: 'claude' }
-    : arm === 'E' ? { s4: ['agy', 'codex'], judge: 'claude' }
+    : arm === 'E' || arm === 'L' ? { s4: ['agy', 'codex'], judge: 'claude' }
     : undefined;
   const roles = resolveRoles('code-review', available, overrides);
   const ctx = new RunCtx({ runId, workflow: 'code-review', handles, roles, writer: new RunWriter(runId, join(root, '.aiki')), cwd: c.dir });
@@ -102,6 +102,8 @@ async function runArmOnCase(arm: ArmId, c: BenchCase, handles: ProviderHandle[],
     seeded: s.seeded,
     matched: s.matched,
     recall: s.recall,
+    matchedRelaxed: s.matchedRelaxed,
+    recallRelaxed: s.recallRelaxed,
     reported: s.reported,
     unmatched: s.unmatched,
     precision: await readPrecision(runId, s.reported, root),
@@ -121,7 +123,7 @@ export interface BenchOptions {
 
 /** Approx claude/Opus calls each arm makes per case — for the pre-run quota estimate (§19). Not exact:
  *  §14 JSON repairs can add a few, and D's cross-exam/judge vary; deliberately a round upper-ish figure. */
-export const CLAUDE_CALLS_PER_CASE: Record<ArmId, number> = { A: 1, B: 1, C: 4, D: 2, E: 1 };
+export const CLAUDE_CALLS_PER_CASE: Record<ArmId, number> = { A: 1, B: 1, C: 4, D: 2, E: 1, L: 5 };
 
 /** ≈ claude/Opus calls for a list of case×arm pairs (the quota-sensitive cost the user cares about). */
 export function estimateClaudeCalls(pairs: { arm: ArmId }[]): number {
@@ -274,12 +276,13 @@ export function renderTable(result: BenchResult): string {
   const L: string[] = [];
   L.push(`bench ${result.suite} — set ${result.set} — ${result.cases.length} case(s)`);
   L.push('');
-  L.push('| Arm | Recall (micro) | Recall (macro) | Matched/Seeded | Reported | Unmatched(FP?) | Precision | Calls | Wall(s) |');
-  L.push('|---|---|---|---|---|---|---|---|---|');
+  L.push('| Arm | Recall (strict) | Recall (category-relaxed) | Recall (macro) | Matched/Seeded | Reported | Unmatched(FP?) | Precision | Calls | Wall(s) |');
+  L.push('|---|---|---|---|---|---|---|---|---|---|');
   for (const r of result.summary) {
     const pct = (n: number) => `${(n * 100).toFixed(0)}%`;
     const prec = r.precision === null ? '—' : pct(r.precision);
-    L.push(`| ${r.arm} | ${pct(r.recall)} | ${pct(r.recallMacro)} | ${r.matched}/${r.seeded} | ${r.reported} | ${r.unmatched} | ${prec} | ${r.calls} | ${(r.wallMs / 1000).toFixed(1)} |`);
+    const relaxed = r.recallRelaxed === undefined ? '—' : pct(r.recallRelaxed);
+    L.push(`| ${r.arm} | ${pct(r.recall)} | ${relaxed} | ${pct(r.recallMacro)} | ${r.matched}/${r.seeded} | ${r.reported} | ${r.unmatched} | ${prec} | ${r.calls} | ${(r.wallMs / 1000).toFixed(1)} |`);
   }
   L.push('');
   L.push('Precision "—" = not yet adjudicated (label false positives with `aiki resolve <run>`).');

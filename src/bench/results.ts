@@ -5,13 +5,15 @@
 import { z } from 'zod';
 
 export const ArmScore = z.object({
-  arm: z.enum(['A', 'B', 'C', 'D', 'E']),
+  arm: z.enum(['A', 'B', 'C', 'D', 'E', 'L']),
   status: z.enum(['scored', 'skipped', 'error']),
   reason: z.string().optional(), // why skipped / the error message
   runId: z.string().optional(),
   seeded: z.number().int().nonnegative().optional(),
   matched: z.number().int().nonnegative().optional(),
   recall: z.number().optional(),
+  matchedRelaxed: z.number().int().nonnegative().optional(),
+  recallRelaxed: z.number().optional(),
   reported: z.number().int().nonnegative().optional(),
   unmatched: z.number().int().nonnegative().optional(), // candidate FPs, UNADJUDICATED
   precision: z.number().nullable().optional(), // null until FP-labelled via resolve
@@ -29,12 +31,14 @@ export type CaseResult = z.infer<typeof CaseResult>;
 
 /** Per-arm rollup across all cases. `recall` = micro (total matched / total seeded); `recallMacro` = mean of per-case. */
 export const SummaryRow = z.object({
-  arm: z.enum(['A', 'B', 'C', 'D', 'E']),
+  arm: z.enum(['A', 'B', 'C', 'D', 'E', 'L']),
   cases: z.number().int().nonnegative(), // scored cases
   seeded: z.number().int().nonnegative(),
   matched: z.number().int().nonnegative(),
   recall: z.number(), // micro
   recallMacro: z.number(),
+  matchedRelaxed: z.number().int().nonnegative().optional(),
+  recallRelaxed: z.number().optional(),
   reported: z.number().int().nonnegative(),
   unmatched: z.number().int().nonnegative(),
   precision: z.number().nullable(), // micro precision if any labels, else null
@@ -47,7 +51,7 @@ export const BenchResult = z.object({
   suite: z.string(),
   set: z.string(),
   at: z.string(),
-  arms: z.array(z.enum(['A', 'B', 'C', 'D', 'E'])),
+  arms: z.array(z.enum(['A', 'B', 'C', 'D', 'E', 'L'])),
   cases: z.array(CaseResult),
   summary: z.array(SummaryRow),
 });
@@ -63,6 +67,8 @@ export function summarize(cases: CaseResult[], arms: BenchResult['arms']): Summa
     const reported = sum((a) => a.reported ?? 0);
     const recallMacro = scored.length ? scored.reduce((s, a) => s + (a.recall ?? 0), 0) / scored.length : 0;
     const precisions = scored.map((a) => a.precision).filter((p): p is number => typeof p === 'number');
+    const relaxedComplete = scored.every((a) => a.matchedRelaxed !== undefined);
+    const matchedRelaxed = relaxedComplete ? sum((a) => a.matchedRelaxed ?? 0) : undefined;
     return {
       arm,
       cases: scored.length,
@@ -70,6 +76,7 @@ export function summarize(cases: CaseResult[], arms: BenchResult['arms']): Summa
       matched,
       recall: seeded ? matched / seeded : 0,
       recallMacro,
+      ...(matchedRelaxed === undefined ? {} : { matchedRelaxed, recallRelaxed: seeded ? matchedRelaxed / seeded : 0 }),
       reported,
       unmatched: sum((a) => a.unmatched ?? 0),
       precision: precisions.length ? precisions.reduce((s, p) => s + p, 0) / precisions.length : null,

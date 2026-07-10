@@ -101,7 +101,7 @@ program
 
 program
   .command('bench')
-  .description('Run benchmark arms A–D on a task set; writes bench/results/*.json + summary table (§17).')
+  .description('Run benchmark arms A–E/L on a task set; writes bench/results/*.json + summary table (§17).')
   .argument('<workflow>', 'workflow id (v1: code-review)')
   .option('--arms <list>', 'comma-separated arms to run', 'A,B,C,D')
   .option('--set <name>', 'task set: build | holdout', 'build')
