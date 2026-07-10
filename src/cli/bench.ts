@@ -7,7 +7,7 @@ import { planBench, renderTable, runBench, type BenchPlan } from '../bench/harne
 import type { ArmId } from '../bench/arms.js';
 import { setupProviders } from '../orchestration/context.js';
 
-const VALID_ARMS: ArmId[] = ['A', 'B', 'C', 'D', 'E'];
+const VALID_ARMS: ArmId[] = ['A', 'B', 'C', 'D', 'E', 'L'];
 
 /** One-block pre-run summary: what will run + the ≈Opus cost, so the user commits knowingly (§19). */
 function renderPlan(plan: BenchPlan): string {
@@ -31,7 +31,7 @@ export async function benchCommand(
     .map((s) => s.trim().toUpperCase())
     .filter((a): a is ArmId => (VALID_ARMS as string[]).includes(a));
   if (arms.length === 0) {
-    process.stderr.write(`no valid arms in "${opts.arms}". Valid: A,B,C,D\n`);
+    process.stderr.write(`no valid arms in "${opts.arms}". Valid: A,B,C,D,E,L\n`);
     return 1;
   }
   const set = opts.set ?? 'build';
