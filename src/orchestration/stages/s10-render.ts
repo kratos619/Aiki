@@ -4,13 +4,14 @@
 // the judge — §624). A truly missing required field is a template bug (fail loudly); degraded-but-valid
 // states (S8 skipped, items UNVERIFIED, empty consensus) render normally. User-facing → DISPLAY_NAME.
 
-import type { ActionPlanArtifact, DisagreementMap, IntentContract, JudgeReport, Recommendation, VerificationSet } from '../../schemas/index.js';
+import type { ActionPlanArtifact, IntentContract, JudgeReport, Recommendation, VerificationSet } from '../../schemas/index.js';
 import type { ProviderId } from '../../providers/types.js';
 import { DISPLAY_NAME } from '../../providers/types.js';
 import type { RunCtx } from '../context.js';
 import { overlap, tokenize } from '../cluster.js';
 import type { SeatOutput } from './s4-analyze.js';
-import type { RubricItem } from './s7-disagreement.js';
+import type { RubricItem } from './s7-decision-graph.js';
+import type { DecisionGraph } from '../decision-graph.js';
 
 export interface AuditRow {
   id: string;
@@ -20,39 +21,40 @@ export interface AuditRow {
   confidence: 'HIGH' | 'MEDIUM' | 'LOW';
 }
 
-/** Pure: derive the assumption-audit (held/failed/unverified + confidence) from the map + the judge's
- *  rulings on disputes. Consensus+undisputed → held/HIGH; single-provider+undisputed → held/MEDIUM;
- *  attack REJECTed → held/MEDIUM; UPHELD → failed/LOW; UNRESOLVED or unadjudicated → unverified/LOW. */
-export function deriveAudit(map: DisagreementMap, judgeReport: JudgeReport): AuditRow[] {
-  const contestedBy = new Map<string, string>(); // claim id → contradiction id
-  for (const d of map.contradictions) for (const cid of d.claim_ids) contestedBy.set(cid, d.id);
+/** Pure graph-backed decision audit. */
+export function deriveAudit(graph: DecisionGraph, judgeReport: JudgeReport): AuditRow[] {
   const ruling = new Map(judgeReport.adjudications.map((a) => [a.id, a.ruling]));
+  const positionById = new Map(graph.positions.map((position) => [position.id, position]));
 
-  return [...map.consensus, ...map.unique].map((c) => {
-    const dispId = contestedBy.get(c.id);
+  return graph.claims.map((claim) => {
+    const positions = claim.position_ids.map((id) => positionById.get(id)!);
+    const providers = [...new Set(positions.map((position) => position.provider))];
     let status: AuditRow['status'];
     let confidence: AuditRow['confidence'];
-    if (!dispId) {
-      status = 'held';
-      confidence = c.providers.length >= 2 ? 'HIGH' : 'MEDIUM';
+    if (claim.state === 'UNCERTAIN' || claim.evidence_state !== 'SUPPORTED') {
+      [status, confidence] = ['unverified', 'LOW'];
+    } else if (claim.state === 'SHARED_CONCERN' || (claim.state === 'UNIQUE' && positions[0]?.stance === 'OPPOSE')) {
+      [status, confidence] = ['failed', providers.length >= 2 ? 'HIGH' : 'MEDIUM'];
+    } else if (claim.state === 'DISAGREEMENT') {
+      const result = ruling.get(claim.id);
+      if (result === 'UPHOLD') [status, confidence] = ['failed', 'MEDIUM'];
+      else if (result === 'REJECT') [status, confidence] = ['held', 'MEDIUM'];
+      else [status, confidence] = ['unverified', 'LOW'];
     } else {
-      const r = ruling.get(dispId);
-      if (r === 'REJECT') [status, confidence] = ['held', 'MEDIUM'];
-      else if (r === 'UPHOLD') [status, confidence] = ['failed', 'LOW'];
-      else [status, confidence] = ['unverified', 'LOW']; // UNRESOLVED / unadjudicated
+      [status, confidence] = ['held', providers.length >= 2 ? 'HIGH' : 'MEDIUM'];
     }
-    return { id: c.id, statement: c.statement, providers: c.providers, status, confidence };
+    return { id: claim.id, statement: claim.proposition, providers, status, confidence };
   });
 }
 
 const disp = (id: ProviderId): string => DISPLAY_NAME[id];
 const attrib = (ps: ProviderId[]): string => ps.map(disp).join(', ');
 
-/** Union of the seats' open questions, deduped by lexical similarity (≥0.85), capped. */
+/** Union of the seats' decision questions, deduped by lexical similarity (≥0.85), capped. */
 export function mergeOpenQuestions(seats: SeatOutput[], cap = 10): string[] {
   const kept: Array<{ q: string; tokens: Set<string> }> = [];
   for (const seat of seats) {
-    for (const q of seat.output.open_questions) {
+    for (const { question: q } of seat.output.decision_questions) {
       const tokens = tokenize(q);
       if (!kept.some((k) => overlap(k.tokens, tokens) >= 0.85)) kept.push({ q, tokens });
     }
@@ -66,16 +68,18 @@ export interface ScorecardRow {
   status: 'contested' | 'examined' | 'unexamined';
 }
 
-/** Best-effort rubric coverage for the report. This is intentionally coarse: it mirrors S7's keyword
- *  coverage, never throws, and labels the result honestly as best-effort in the renderer. */
-export function deriveScorecard(rubric: RubricItem[], map: DisagreementMap): ScorecardRow[] {
-  const claimById = new Map([...map.consensus, ...map.unique].map((c) => [c.id, c.statement]));
-  const blind = new Set(map.blind_spots.map((b) => b.toLowerCase()));
-  const contestedTexts = map.contradictions.map((d) => d.claim_ids.map((id) => claimById.get(id) ?? id).join(' '));
+/** Exact rubric coverage derived from graph dimension anchors and holes. */
+export function deriveScorecard(rubric: RubricItem[], graph: DecisionGraph): ScorecardRow[] {
+  const blind = new Set(graph.holes.coverage.map((hole) => hole.dimension_id));
+  const claimByPosition = new Map(graph.claims.flatMap((claim) => claim.position_ids.map((id) => [id, claim] as const)));
   return rubric.map((r) => {
-    if (blind.has(r.label.toLowerCase())) return { id: r.id, label: r.label, status: 'unexamined' as const };
-    const dimensionTokens = new Set([...tokenize(r.label), ...r.keywords.flatMap((kw) => [...tokenize(kw)])]);
-    const contested = contestedTexts.some((text) => overlap(dimensionTokens, tokenize(text)) > 0);
+    if (blind.has(r.id)) return { id: r.id, label: r.label, status: 'unexamined' as const };
+    const contested = graph.positions
+      .filter((position) => position.dimension_id === r.id)
+      .some((position) => {
+        const state = claimByPosition.get(position.id)?.state;
+        return state === 'DISAGREEMENT' || state === 'UNCERTAIN';
+      });
     return { id: r.id, label: r.label, status: contested ? 'contested' : 'examined' };
   });
 }
@@ -83,7 +87,7 @@ export function deriveScorecard(rubric: RubricItem[], map: DisagreementMap): Sco
 export interface S10Args {
   contract: IntentContract;
   seats: SeatOutput[];
-  map: DisagreementMap;
+  graph: DecisionGraph;
   verifications: VerificationSet;
   judgeReport: JudgeReport;
   actionPlan?: ActionPlanArtifact;
@@ -121,12 +125,12 @@ function receiptLines(ctx: RunCtx): string[] {
 
 /** Build the markdown report (pure given the run context's read-only accounting). */
 export function renderReport(ctx: RunCtx, args: S10Args): string {
-  const { seats, map, judgeReport, actionPlan } = args;
+  const { seats, graph, judgeReport, actionPlan } = args;
   const flags = [...ctx.flags];
-  const audit = deriveAudit(map, judgeReport);
-  const scorecard = args.rubric ? deriveScorecard(args.rubric, map) : [];
+  const audit = deriveAudit(graph, judgeReport);
+  const scorecard = args.rubric ? deriveScorecard(args.rubric, graph) : [];
   const rulingById = new Map(judgeReport.adjudications.map((a) => [a.id, a]));
-  const claimById = new Map([...map.consensus, ...map.unique].map((c) => [c.id, c]));
+  const positionById = new Map(graph.positions.map((position) => [position.id, position]));
   const L: string[] = [];
 
   L.push(`# Decision Brief — ${ctx.runId}`, '');
@@ -155,12 +159,12 @@ export function renderReport(ctx: RunCtx, args: S10Args): string {
   }
 
   if (scorecard.length) {
-    L.push('## Dimension scorecard (best-effort)', '', '| Dimension | Status |', '|---|---|');
+    L.push('## Dimension scorecard', '', '| Dimension | Status |', '|---|---|');
     for (const r of scorecard) L.push(`| ${mdCell(r.label)} | ${r.status} |`);
     L.push('');
   }
 
-  L.push('## Assumption audit', '', '| Claim | Status | Confidence | Analysts |', '|---|---|---|---|');
+  L.push('## Decision audit', '', '| Claim | Status | Confidence | Analysts |', '|---|---|---|---|');
   for (const r of audit) L.push(`| ${mdCell(r.statement)} | ${r.status} | ${r.confidence} | ${attrib(r.providers)} |`);
   L.push('');
 
@@ -171,15 +175,24 @@ export function renderReport(ctx: RunCtx, args: S10Args): string {
     L.push('');
   }
 
-  if (map.contradictions.length) {
+  const sharedConcerns = graph.claims.filter((claim) => claim.state === 'SHARED_CONCERN');
+  if (sharedConcerns.length) {
+    L.push('## Shared concerns', '');
+    for (const claim of sharedConcerns) {
+      const providers = [...new Set(claim.position_ids.map((id) => positionById.get(id)!.provider))];
+      L.push(`- ${claim.proposition} _(${attrib(providers)})_`);
+    }
+    L.push('');
+  }
+
+  const disagreements = graph.claims.filter((claim) => claim.state === 'DISAGREEMENT');
+  if (disagreements.length) {
     L.push('## The debate', '');
-    for (const d of map.contradictions) {
-      const adj = rulingById.get(d.id);
-      const claim = d.claim_ids.map((id) => claimById.get(id)?.statement ?? id).join(' / ');
-      const claimants = [...new Set(d.claim_ids.flatMap((id) => claimById.get(id)?.providers ?? []))];
-      const attackers = [...new Set(d.attacks.map((a) => a.provider))];
+    for (const claim of disagreements) {
+      const adj = rulingById.get(claim.id);
+      const positions = claim.position_ids.map((id) => positionById.get(id)!);
       L.push(
-        `- ${attrib(claimants)} claimed ${claim}. ${attrib(attackers)} countered: ${d.attacks.map((a) => a.argument).join('; ')}. ` +
+        `- **${claim.proposition}** — ${positions.map((position) => `${disp(position.provider)} ${position.stance.toLowerCase()}: ${position.reasoning}`).join(' · ')}. ` +
           `Chair: ${rulingPhrase(adj?.ruling)}${adj?.reasoning ? ` — ${adj.reasoning}` : ''}.`,
       );
     }
@@ -217,19 +230,20 @@ export function renderReport(ctx: RunCtx, args: S10Args): string {
   for (const seat of seats) L.push(`- **${disp(seat.provider)}:** ${seat.output.strongest_version}`);
   L.push('');
 
-  L.push('## Disagreement map', '');
-  L.push(`**Consensus (≥2 analysts):** ${map.consensus.length}`);
-  for (const c of map.consensus) L.push(`- ${c.statement}  _(${attrib(c.providers)})_`);
-  L.push('', `**Unique (one analyst):** ${map.unique.length}`);
-  for (const c of map.unique) L.push(`- ${c.statement}  _(${attrib(c.providers)})_`);
-  L.push('', `**Contradictions:** ${map.contradictions.length}`);
-  for (const d of map.contradictions) {
-    const adj = rulingById.get(d.id);
-    L.push(`- **${d.id}** ${adj ? `→ ${adj.ruling}` : ''}: ${d.attacks.map((a) => a.argument).join('; ')}`);
+  L.push('## Decision graph', '');
+  for (const state of ['CONSENSUS', 'SHARED_CONCERN', 'DISAGREEMENT', 'UNIQUE', 'UNCERTAIN'] as const) {
+    const claims = graph.claims.filter((claim) => claim.state === state);
+    L.push(`**${state.replaceAll('_', ' ').toLowerCase()}:** ${claims.length}`);
+    for (const claim of claims) L.push(`- ${claim.proposition}`);
+    L.push('');
   }
-  if (map.blind_spots.length) {
-    L.push('', `**Blind spots (rubric items no analyst addressed):**`);
-    for (const b of map.blind_spots) L.push(`- ${b}`);
+  if (graph.holes.coverage.length || graph.holes.evidence.length) {
+    L.push('**Unresolved holes:**');
+    for (const hole of graph.holes.coverage) L.push(`- Coverage: ${hole.label}`);
+    for (const hole of graph.holes.evidence) {
+      const claim = graph.claims.find((item) => item.id === hole.claim_id);
+      L.push(`- Evidence: ${claim?.proposition ?? hole.claim_id} — ${hole.reason}`);
+    }
   }
   L.push('');
 

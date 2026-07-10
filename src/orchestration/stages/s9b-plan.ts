@@ -2,7 +2,7 @@
 // adjudicated risks, blind spots, and open questions into anchored validation actions. Rendering stays
 // deterministic; if the planner fails or produces unanchored actions, we write flagged unavailability.
 
-import type { ActionPlan as ActionPlanT, ActionPlanArtifact, DisagreementMap, IntentContract, JudgeReport, PlannerUnavailable } from '../../schemas/index.js';
+import type { ActionPlan as ActionPlanT, ActionPlanArtifact, IntentContract, JudgeReport, PlannerUnavailable } from '../../schemas/index.js';
 import { ActionPlan } from '../../schemas/index.js';
 import { z } from 'zod';
 import { BudgetExceeded, isFatal, type RunCtx } from '../context.js';
@@ -10,6 +10,7 @@ import { jsonCall } from '../jsonStage.js';
 import { loadSkill } from '../skills.js';
 import type { SeatOutput } from './s4-analyze.js';
 import { mergeOpenQuestions } from './s10-render.js';
+import type { DecisionGraph } from '../decision-graph.js';
 
 interface UpheldRisk {
   id: string;
@@ -19,7 +20,7 @@ interface UpheldRisk {
 }
 
 export interface PlanAnchors {
-  disputeIds: string[];
+  claimIds: string[];
   blindSpots: string[];
   openQuestions: string[];
 }
@@ -44,7 +45,7 @@ actions that test unsettled risks, blind spots, or open questions. Cheapest deci
 Output ONLY JSON matching the ActionPlan schema:
 - actions: 1-7 ordered actions, each imperative and concrete.
 - validates MUST anchor to one of:
-  - a dispute id from upheld_risks, e.g. "D3"
+  - a graph claim id from upheld_risks, e.g. "G3"
   - a blind spot label as "blind:<label>"
   - an open-question prefix as "Q:<question prefix>"
 - why ties the action to the risk, blind spot, or question.
@@ -66,22 +67,34 @@ function norm(s: string): string {
   return s.trim().toLowerCase();
 }
 
-function upheldRisks(map: DisagreementMap, judgeReport: JudgeReport): UpheldRisk[] {
-  const claimById = new Map([...map.consensus, ...map.unique].map((c) => [c.id, c.statement]));
+function unresolvedRisks(graph: DecisionGraph, judgeReport: JudgeReport): UpheldRisk[] {
+  const claimById = new Map(graph.claims.map((claim) => [claim.id, claim]));
   const rulingById = new Map(judgeReport.adjudications.map((a) => [a.id, a]));
-  return map.contradictions
-    .map((d) => {
-      const adj = rulingById.get(d.id);
+  const risks = graph.claims
+    .map((claim) => {
+      const adj = rulingById.get(claim.id);
       if (adj?.ruling !== 'UPHOLD') return null;
       return {
-        id: d.id,
-        assumption: d.claim_ids.map((id) => claimById.get(id) ?? id).join(' / '),
-        severity: [...d.attacks].sort((a, b) => sevRank(a.severity) - sevRank(b.severity))[0]?.severity ?? 'MED',
+        id: claim.id,
+        assumption: claim.proposition,
+        severity: claim.sensitivity === 'DECISIVE' ? 'HIGH' as const : claim.sensitivity === 'MATERIAL' ? 'MED' as const : 'LOW' as const,
         reasoning: adj.reasoning,
       };
     })
-    .filter((r): r is UpheldRisk => r !== null)
-    .sort((a, b) => sevRank(a.severity) - sevRank(b.severity));
+    .filter((risk): risk is UpheldRisk => risk !== null);
+  const seen = new Set(risks.map((risk) => risk.id));
+  for (const hole of graph.holes.evidence) {
+    if (seen.has(hole.claim_id)) continue;
+    const claim = claimById.get(hole.claim_id);
+    if (!claim) continue;
+    risks.push({
+      id: claim.id,
+      assumption: claim.proposition,
+      severity: claim.sensitivity === 'DECISIVE' ? 'HIGH' : claim.sensitivity === 'MATERIAL' ? 'MED' : 'LOW',
+      reasoning: hole.reason,
+    });
+  }
+  return risks.sort((a, b) => sevRank(a.severity) - sevRank(b.severity));
 }
 
 export function buildActionPlannerPrompt(input: {
@@ -99,7 +112,7 @@ export function buildActionPlannerPrompt(input: {
 
 export function validAnchor(anchor: string, anchors: PlanAnchors): boolean {
   const a = anchor.trim();
-  if (anchors.disputeIds.includes(a)) return true;
+  if (anchors.claimIds.includes(a)) return true;
   if (a.toLowerCase().startsWith('blind:')) {
     const label = norm(a.slice('blind:'.length));
     return anchors.blindSpots.some((b) => {
@@ -170,19 +183,20 @@ export async function s9bPlan(
   ctx: RunCtx,
   contract: IntentContract,
   seats: SeatOutput[],
-  map: DisagreementMap,
+  graph: DecisionGraph,
   judgeReport: JudgeReport,
 ): Promise<ActionPlanArtifact> {
   const openQuestions = mergeOpenQuestions(seats);
-  const risks = upheldRisks(map, judgeReport);
+  const risks = unresolvedRisks(graph, judgeReport);
+  const blindSpots = graph.holes.coverage.map((hole) => hole.label);
   const anchors: PlanAnchors = {
-    disputeIds: risks.map((r) => r.id),
-    blindSpots: map.blind_spots,
+    claimIds: risks.map((r) => r.id),
+    blindSpots,
     openQuestions,
   };
   const fallback = async (flag: 'plan_skipped' | 'plan_fallback'): Promise<ActionPlanArtifact> => {
     ctx.addFlag(flag);
-    const plan = unavailablePlan(flag === 'plan_skipped' ? 'budget_exhausted' : 'planner_failed', contract, risks, map.blind_spots, openQuestions);
+    const plan = unavailablePlan(flag === 'plan_skipped' ? 'budget_exhausted' : 'planner_failed', contract, risks, blindSpots, openQuestions);
     await ctx.writer.writeJson('action-plan', plan);
     return plan;
   };
@@ -194,7 +208,7 @@ export async function s9bPlan(
     recommendation: judgeReport.recommendation,
     conditions: judgeReport.conditions,
     upheld_risks: risks,
-    blind_spots: map.blind_spots,
+    blind_spots: blindSpots,
     open_questions: openQuestions,
   }, loadSkill('idea-refinement', 'planner'));
 
@@ -208,7 +222,7 @@ export async function s9bPlan(
     if (ctx.budget.limit - ctx.budget.used < 1) return fallback('plan_fallback');
     const repair =
       `${prompt}\n\n---\nYour previous plan had no actions with valid anchors.\n` +
-      `Valid dispute ids: ${anchors.disputeIds.join(', ') || '(none)'}\n` +
+      `Valid graph claim ids: ${anchors.claimIds.join(', ') || '(none)'}\n` +
       `Valid blind spots: ${anchors.blindSpots.join(' | ') || '(none)'}\n` +
       `Valid open questions: ${anchors.openQuestions.join(' | ') || '(none)'}\n` +
       `Output ONLY corrected JSON with every action anchored to one of those values.`;

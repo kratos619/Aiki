@@ -101,23 +101,29 @@ describe('RoleOutput (workflow-discriminated union)', () => {
     workflow: 'idea-refinement' as const,
     task_echo: 'restate',
     strongest_version: 'best version',
-    assumptions: [{ id: 'A1', statement: 's', type: 'VERIFIABLE' as const, load_bearing: true }],
-    attacks: [{ id: 'X1', target_assumption: 'A1', argument: 'a', severity: 'HIGH' as const }],
-    open_questions: ['q?'],
+    positions: [{
+      local_id: 'P1', proposition: 's', dimension_id: 'R1', stance: 'SUPPORT' as const,
+      basis: 'EVIDENCE' as const, load_bearing: true, if_false: 'STOP' as const,
+      reasoning: 'because', evidence_ids: ['E1'], depends_on: [],
+    }],
+    evidence: [{
+      id: 'E1', claim_supported: 's', source_kind: 'USER' as const,
+      support: 'SUPPORTS' as const, freshness: 'CURRENT' as const,
+    }],
+    coverage: [{ dimension_id: 'R1', status: 'COVERED' as const, position_ids: ['P1'], rationale: 'P1 addresses it.' }],
+    decision_questions: [{ id: 'Q1', question: 'q?', claim_ids: ['P1'] }],
   };
 
   it('routes to the idea-refinement member', () => {
     expect(RoleOutput.parse(idea)).toMatchObject({ workflow: 'idea-refinement' });
   });
 
-  it('rejects >8 assumptions (cap §12.1)', () => {
-    const many = Array.from({ length: 9 }, (_, i) => ({
-      id: `A${i}`,
-      statement: 's',
-      type: 'JUDGMENT' as const,
-      load_bearing: false,
-    }));
-    expect(() => RoleOutput.parse({ ...idea, assumptions: many })).toThrow();
+  it('rejects position references to missing evidence', () => {
+    expect(() => RoleOutput.parse({ ...idea, positions: [{ ...idea.positions[0], evidence_ids: ['E404'] }] })).toThrow();
+  });
+
+  it('rejects duplicate local position ids at the stage boundary', () => {
+    expect(() => RoleOutput.parse({ ...idea, positions: [...idea.positions, { ...idea.positions[0] }] })).toThrow();
   });
 
   it('routes to the code-review member and enforces self_confidence range', () => {

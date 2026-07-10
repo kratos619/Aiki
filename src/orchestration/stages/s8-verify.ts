@@ -1,62 +1,62 @@
-// S8 — verifier loop (§9, §13). The verifier (codex) independently checks each dispute before the
-// judge sees it. Idea-refinement runs a SINGLE pass (the "max 2 iterations" cap is the code-review
-// reviewer cross-exam, §313, landing at T10). Disputed items are ANONYMIZED — the verifier sees the
-// claim + the argument(s) against it with NO provider labels (§313/§624 anti-self-preference), since
-// codex authored some S4 claims. Zero disputes → skip the call entirely. A verifier failure is
-// graceful: every item is marked UNCERTAIN ("unverified") and passed to the judge, never an abort (§259).
+// S8 — independently verify only genuine disagreements and load-bearing unique positions. Shared
+// concerns are settled context, not manufactured debate. All provider identity stays hidden.
 
-import type { DisagreementMap, VerificationSet as VerificationSetT } from '../../schemas/index.js';
+import type { DecisionGraph } from '../decision-graph.js';
+import { selectEscalations } from '../decision-graph.js';
+import type { VerificationSet as VerificationSetT } from '../../schemas/index.js';
 import { VerificationSet } from '../../schemas/index.js';
 import { isFatal, type RunCtx } from '../context.js';
 import { jsonCall } from '../jsonStage.js';
 
-const S8_PROMPT = `ROLE: Verifier. Below are disputed claims, each with the argument(s) against it, from
-anonymous sources. For EACH item, independently judge whether the argument defeats the claim.
-Output ONLY JSON:
+const S8_PROMPT = `ROLE: Independent verifier. Check each anonymous decision claim below.
+For a disagreement, decide which position the available evidence supports. For a unique load-bearing
+claim, try to falsify it independently. Output ONLY JSON:
 {"verifications": [{"target_id": "<id>", "verdict": "CONFIRM|REFUTE|UNCERTAIN",
-  "evidence": "<your own independent reasoning>", "note": "<≤2 sentences>"}]}
-CONFIRM = the argument against the claim is supported (the claim is genuinely doubtful).
-REFUTE = the argument against the claim is not supported (the claim survives this objection).
-UNCERTAIN = the available evidence cannot decide whether the argument holds. Judge each item independently;
-do not target any verdict distribution. JSON only, no prose outside it.
-ITEMS: {{DISPUTED_ITEMS_JSON}}`;
+  "evidence": "<your independent evidence/reasoning>", "note": "<≤2 sentences>"}]}
+CONFIRM = the challenged concern is supported. REFUTE = it is not supported. UNCERTAIN = evidence
+cannot decide. Judge each item independently; no verdict quota. JSON only.
+ITEMS: {{ITEMS_JSON}}`;
 
-export function buildVerifierPrompt(map: DisagreementMap): string {
-  const claimById = new Map([...map.consensus, ...map.unique].map((claim) => [claim.id, claim.statement]));
-  const items = map.contradictions.map((dispute) => ({
-    id: dispute.id,
-    claim: dispute.claim_ids.map((id) => claimById.get(id) ?? id).join(' / '),
-    arguments_against: dispute.attacks.map((attack) => attack.argument),
-  }));
-  return S8_PROMPT.replace('{{DISPUTED_ITEMS_JSON}}', JSON.stringify(items, null, 2));
+export function buildVerifierPrompt(graph: DecisionGraph): string {
+  const positionById = new Map(graph.positions.map((position) => [position.id, position]));
+  const items = selectEscalations(graph, { max: 8 }).map((escalation) => {
+    const claim = graph.claims.find((item) => item.id === escalation.claim_id)!;
+    return {
+      id: claim.id,
+      kind: escalation.kind,
+      proposition: claim.proposition,
+      positions: claim.position_ids.map((id) => {
+        const position = positionById.get(id)!;
+        return { stance: position.stance, reasoning: position.reasoning };
+      }),
+    };
+  });
+  return S8_PROMPT.replace('{{ITEMS_JSON}}', JSON.stringify(items, null, 2));
 }
 
-export async function s8Verify(ctx: RunCtx, map: DisagreementMap): Promise<VerificationSetT> {
-  const disputes = map.contradictions;
-  if (disputes.length === 0) {
+export async function s8Verify(ctx: RunCtx, graph: DecisionGraph): Promise<VerificationSetT> {
+  const escalations = selectEscalations(graph, { max: 8 });
+  if (escalations.length === 0) {
     const empty: VerificationSetT = { verifications: [] };
     await ctx.writer.writeJson('verifications', empty);
     return empty;
   }
 
-  const prompt = buildVerifierPrompt(map);
-
   try {
-    const vset = await jsonCall(ctx, ctx.handle(ctx.roles.verifier), 'S8', prompt, VerificationSet);
-    await ctx.writer.writeJson('verifications', vset);
-    return vset;
-  } catch (e) {
-    if (isFatal(e)) throw e; // budget/deadline/abort → abort the run
-    // Verifier down / bad output: mark every dispute unverified, pass to the judge as low-confidence.
-    const vset: VerificationSetT = {
-      verifications: disputes.map((d) => ({
-        target_id: d.id,
+    const result = await jsonCall(ctx, ctx.handle(ctx.roles.verifier), 'S8', buildVerifierPrompt(graph), VerificationSet);
+    await ctx.writer.writeJson('verifications', result);
+    return result;
+  } catch (error) {
+    if (isFatal(error)) throw error;
+    const unavailable: VerificationSetT = {
+      verifications: escalations.map((escalation) => ({
+        target_id: escalation.claim_id,
         verdict: 'UNCERTAIN',
         evidence: '(verifier unavailable — unverified)',
         note: '',
       })),
     };
-    await ctx.writer.writeJson('verifications', vset);
-    return vset;
+    await ctx.writer.writeJson('verifications', unavailable);
+    return unavailable;
   }
 }

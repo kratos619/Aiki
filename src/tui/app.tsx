@@ -44,7 +44,7 @@ async function loadCompletion(dir: string): Promise<CompletionView | null> {
   try {
     const [judge, map] = await Promise.all([
       readFile(join(dir, '09-judge-report.json'), 'utf8').then((s) => JSON.parse(s)),
-      readFile(join(dir, '07-disagreement-map.json'), 'utf8').then((s) => JSON.parse(s)),
+      readFile(join(dir, '07-decision-graph.json'), 'utf8').then((s) => JSON.parse(s)),
     ]);
     return formatCompletion(dir, judge, map);
   } catch {

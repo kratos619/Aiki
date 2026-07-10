@@ -49,20 +49,27 @@ function scriptAdapter(id: ProviderId, counter: { n: number }, opts: { judgeFail
         obj = {
           task_echo: 'build a local multi-model orchestration CLI',
           strongest_version: 'A local CLI that orchestrates installed AI CLIs for cross-model review.',
-          assumptions: [
-            { id: 'A1', statement: 'developers want local multi model orchestration', type: 'JUDGMENT', load_bearing: true },
-            { id: 'A2', statement: 'installed CLIs expose stable machine readable output', type: 'VERIFIABLE', load_bearing: true },
+          positions: [
+            { local_id: 'P1', proposition: 'developers want local multi model orchestration', dimension_id: 'R1', stance: 'SUPPORT', basis: 'EVIDENCE', load_bearing: true, if_false: 'STOP', reasoning: 'The supplied request demonstrates demand.', evidence_ids: ['E1'], depends_on: [] },
+            { local_id: 'P2', proposition: 'installed CLIs expose stable machine readable output', dimension_id: 'R4', stance: id === 'agy' ? 'SUPPORT' : 'OPPOSE', basis: 'EVIDENCE', load_bearing: true, if_false: 'CONDITION', reasoning: id === 'agy' ? 'Probe-time formats can be pinned.' : 'CLI output formats drift between versions.', evidence_ids: ['E2'], depends_on: [] },
           ],
-          attacks: [{ id: 'X1', target_assumption: 'A2', argument: 'CLI output formats drift between versions', severity: 'MED' }],
-          open_questions: ['who is the target user?'],
+          evidence: [
+            { id: 'E1', claim_supported: 'developers want local multi model orchestration', source_kind: 'USER', support: 'SUPPORTS', freshness: 'CURRENT' },
+            { id: 'E2', claim_supported: 'installed CLIs expose stable machine readable output', source_kind: 'USER', support: id === 'agy' ? 'SUPPORTS' : 'CONTRADICTS', freshness: 'CURRENT' },
+          ],
+          coverage: [
+            { dimension_id: 'R1', status: 'COVERED', position_ids: ['P1'], rationale: 'P1 covers target users.' },
+            { dimension_id: 'R4', status: 'COVERED', position_ids: ['P2'], rationale: 'P2 covers feasibility.' },
+          ],
+          decision_questions: [{ id: 'Q1', question: 'who is the target user?', claim_ids: ['P1'] }],
         };
-      } else if (p.includes('grouping claims that state the SAME')) {
-        obj = { groups: [] };
-      } else if (p.includes('ROLE: Verifier')) {
-        obj = { verifications: [{ target_id: 'D1', verdict: 'REFUTE', evidence: 'the format is pinned at probe time', note: '' }] };
+      } else if (p.includes('Group anonymous positions')) {
+        obj = { groups: [['P1', 'P3'], ['P2', 'P4']] };
+      } else if (p.includes('ROLE: Independent verifier')) {
+        obj = { verifications: [{ target_id: 'G2', verdict: 'REFUTE', evidence: 'the format is pinned at probe time', note: '' }] };
       } else if (p.includes('ROLE: Judge')) {
         obj = {
-          adjudications: [{ id: 'D1', ruling: 'REJECT', reasoning: 'the drift risk is mitigated by the flag probe', evidence_cited: 'S1 probe' }],
+          adjudications: [{ id: 'G2', ruling: 'REJECT', reasoning: 'the drift risk is mitigated by the flag probe', evidence_cited: 'S1 probe' }],
           verdict: 'Viable as a local orchestration layer; ship behind a provider-probe guard.',
           recommendation: 'PROCEED_WITH_CONDITIONS',
           conditions: ['Proceed only if provider output probing stays stable across versions.'],

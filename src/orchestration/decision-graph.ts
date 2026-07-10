@@ -1,0 +1,191 @@
+import type { ProviderId } from '../providers/types.js';
+import type {
+  ClaimPosition as ClaimPositionT,
+  CoverageEntry as CoverageEntryT,
+  DecisionGraph as DecisionGraphT,
+  DecisionQuestion as DecisionQuestionT,
+  EvidenceCard as EvidenceCardT,
+  IdeaRoleOutput,
+} from '../schemas/index.js';
+
+export type ClaimPosition = ClaimPositionT;
+export type EvidenceCard = EvidenceCardT;
+export type CoverageEntry = CoverageEntryT;
+export type DecisionQuestion = DecisionQuestionT;
+export type AnalystSubmission = Omit<IdeaRoleOutput, 'workflow'>;
+export type Stance = ClaimPosition['stance'];
+export type Basis = ClaimPosition['basis'];
+export type IfFalse = ClaimPosition['if_false'];
+
+export interface ProviderSubmission {
+  provider: ProviderId;
+  source_id?: string;
+  submission: AnalystSubmission;
+}
+
+export type DecisionGraph = DecisionGraphT;
+export type GraphPosition = DecisionGraph['positions'][number];
+export type GraphEvidence = DecisionGraph['evidence'][number];
+export type DecisionClaim = DecisionGraph['claims'][number];
+export type ClaimState = DecisionClaim['state'];
+export type EvidenceState = DecisionClaim['evidence_state'];
+export type Sensitivity = DecisionClaim['sensitivity'];
+
+export interface Escalation {
+  claim_id: string;
+  reason: string;
+  kind: 'DISAGREEMENT' | 'INDEPENDENT_CHALLENGE';
+}
+
+export function positionId(provider: ProviderId, localId: string, sourceId: string = provider): string {
+  return `${sourceId}/${localId}`;
+}
+
+function classify(positions: GraphPosition[]): ClaimState {
+  const providers = new Set(positions.map((position) => position.provider));
+  const stances = new Set(positions.map((position) => position.stance));
+  const supporters = positions.filter((position) => position.stance === 'SUPPORT').map((position) => position.provider);
+  const opponents = positions.filter((position) => position.stance === 'OPPOSE').map((position) => position.provider);
+  if (supporters.some((supporter) => opponents.some((opponent) => opponent !== supporter))) return 'DISAGREEMENT';
+  if (stances.has('SUPPORT') && stances.has('OPPOSE')) return 'UNCERTAIN';
+  if (providers.size >= 2 && stances.size === 1 && stances.has('OPPOSE')) return 'SHARED_CONCERN';
+  if (providers.size >= 2 && stances.size === 1 && !stances.has('UNKNOWN')) return 'CONSENSUS';
+  if ([...stances].every((stance) => stance === 'UNKNOWN' || stance === 'MIXED')) return 'UNCERTAIN';
+  if (providers.size === 1) return 'UNIQUE';
+  return 'UNCERTAIN';
+}
+
+const restrictedClaim = /\b(current|today|latest|now|law|legal|regulat\w*|medic\w*|health\w*|financ\w*|market\w*|prices?|costs?|revenue|fees?|percent(?:age)?)\b|\d/i;
+
+function needsIndependentEvidence(positions: GraphPosition[], evidenceById: Map<string, GraphEvidence>): boolean {
+  const evidence = positions.flatMap((position) => position.evidence_ids
+    .map((id) => evidenceById.get(positionId(position.provider, id, position.source_id)))
+    .filter((item): item is GraphEvidence => item !== undefined));
+  return positions.some((position) => restrictedClaim.test(`${position.dimension_id} ${position.proposition}`))
+    || evidence.some((item) => item.freshness === 'CURRENT');
+}
+
+function evidenceState(positions: GraphPosition[], evidenceById: Map<string, GraphEvidence>): EvidenceState {
+  const requiresIndependent = needsIndependentEvidence(positions, evidenceById);
+  let unresolved = false;
+  for (const position of positions) {
+    const allowed = position.evidence_ids
+      .map((id) => evidenceById.get(positionId(position.provider, id, position.source_id)))
+      .filter((item): item is GraphEvidence => item !== undefined)
+      .filter((item) => !requiresIndependent || item.source_kind !== 'MODEL_KNOWLEDGE');
+    const directions = new Set(allowed.map((item) => item.support));
+    const expected = position.stance === 'SUPPORT' ? 'SUPPORTS' : position.stance === 'OPPOSE' ? 'CONTRADICTS' : undefined;
+    if (!expected || !directions.has(expected)) unresolved = true;
+    const opposite = expected === 'SUPPORTS' ? 'CONTRADICTS' : expected === 'CONTRADICTS' ? 'SUPPORTS' : undefined;
+    if (opposite && directions.has(opposite)) return 'CONFLICTED';
+  }
+  return unresolved ? 'UNVERIFIED' : 'SUPPORTED';
+}
+
+const ifFalseRank: Record<IfFalse, number> = { STOP: 0, PIVOT: 1, CONDITION: 2, MINOR: 3 };
+
+function sensitivity(positions: GraphPosition[]): Sensitivity {
+  if (!positions.some((position) => position.load_bearing)) return 'LOW';
+  const consequence = positions.map((position) => position.if_false).sort((a, b) => ifFalseRank[a] - ifFalseRank[b])[0];
+  return consequence === 'STOP' || consequence === 'PIVOT' ? 'DECISIVE' : consequence === 'CONDITION' ? 'MATERIAL' : 'LOW';
+}
+
+/** Compile validated analyst positions into stance-aware claims without rewriting proposition text. */
+export function compileDecisionGraph(
+  submissions: ProviderSubmission[],
+  _rubric: Array<{ id: string; label: string }>,
+  semanticGroups: string[][] = [],
+): DecisionGraph {
+  const positions = submissions.flatMap(({ provider, source_id = provider, submission }) => submission.positions.map((position) => ({
+    ...position,
+    id: positionId(provider, position.local_id, source_id),
+    provider,
+    source_id,
+  })));
+  const evidence = submissions.flatMap(({ provider, source_id = provider, submission }) => submission.evidence.map((item) => ({
+    ...item,
+    id: positionId(provider, item.id, source_id),
+    provider,
+    source_id,
+  })));
+  const byId = new Map(positions.map((position) => [position.id, position]));
+  const evidenceById = new Map(evidence.map((item) => [item.id, item]));
+  const grouped = new Set<string>();
+  const groups = semanticGroups.flatMap((group) => {
+    const valid = group.filter((id) => byId.has(id) && !grouped.has(id));
+    if (valid.length < 2) return [];
+    valid.forEach((id) => grouped.add(id));
+    return [valid];
+  });
+  for (const position of positions) if (!grouped.has(position.id)) groups.push([position.id]);
+  const evidenceHoles: DecisionGraph['holes']['evidence'] = [];
+  const claims = groups.map((ids, index) => {
+    const members = ids.map((id) => byId.get(id)!);
+    const evidence_state = evidenceState(members, evidenceById);
+    const id = `G${index + 1}`;
+    if (members.some((member) => member.load_bearing) && evidence_state !== 'SUPPORTED') {
+      const reason = evidence_state === 'CONFLICTED'
+        ? 'load-bearing claim has conflicting evidence'
+        : needsIndependentEvidence(members, evidenceById)
+          ? 'claim requires independently checkable evidence'
+          : 'load-bearing claim has no settling evidence';
+      evidenceHoles.push({ claim_id: id, reason });
+    }
+    const baseState = classify(members);
+    return {
+      id,
+      proposition: members[0]!.proposition,
+      position_ids: ids,
+      state: evidence_state === 'UNVERIFIED' || evidence_state === 'CONFLICTED' ? 'UNCERTAIN' as const : baseState,
+      evidence_state,
+      load_bearing: members.some((member) => member.load_bearing),
+      if_false: members.map((member) => member.if_false).sort((a, b) => ifFalseRank[a] - ifFalseRank[b])[0]!,
+      sensitivity: sensitivity(members),
+    };
+  });
+  const claimByPosition = new Map(claims.flatMap((claim) => claim.position_ids.map((id) => [id, claim.id] as const)));
+  const edges: DecisionGraph['edges'] = [];
+  const edgeKeys = new Set<string>();
+  const addEdge = (edge: DecisionGraph['edges'][number]) => {
+    const key = `${edge.from}:${edge.to}:${edge.type}`;
+    if (!edgeKeys.has(key)) {
+      edgeKeys.add(key);
+      edges.push(edge);
+    }
+  };
+  for (const position of positions) {
+    const from = claimByPosition.get(position.id)!;
+    for (const dependency of position.depends_on) {
+      const to = claimByPosition.get(dependency.includes('/') ? dependency : positionId(position.provider, dependency, position.source_id));
+      if (to && to !== from) addEdge({ from, to, type: 'DEPENDS_ON' });
+    }
+    for (const evidenceId of position.evidence_ids) {
+      const item = evidenceById.get(positionId(position.provider, evidenceId, position.source_id));
+      if (!item) continue;
+      addEdge({ from: item.id, to: from, type: item.support === 'CONTRADICTS' ? 'ATTACKS' : 'SUPPORTS' });
+    }
+  }
+  const covered = new Set(positions.map((position) => position.dimension_id));
+  for (const { submission } of submissions) {
+    for (const entry of submission.coverage) {
+      if (entry.status === 'NOT_APPLICABLE' && entry.rationale.trim()) covered.add(entry.dimension_id);
+    }
+  }
+  const coverageHoles = _rubric
+    .filter((item) => !covered.has(item.id))
+    .map(({ id, label }) => ({ dimension_id: id, label }));
+  return { positions, evidence, claims, edges, holes: { coverage: coverageHoles, evidence: evidenceHoles } };
+}
+
+/** Select only real disputes and load-bearing one-provider claims for independent challenge. */
+export function selectEscalations(graph: DecisionGraph, limits: { max: number }): Escalation[] {
+  return graph.claims.flatMap((claim): Escalation[] => {
+    if (claim.state === 'DISAGREEMENT') {
+      return [{ claim_id: claim.id, reason: 'opposing provider stances', kind: 'DISAGREEMENT' }];
+    }
+    if (claim.state === 'UNIQUE' && claim.load_bearing) {
+      return [{ claim_id: claim.id, reason: 'load-bearing unique claim', kind: 'INDEPENDENT_CHALLENGE' }];
+    }
+    return [];
+  }).slice(0, limits.max);
+}

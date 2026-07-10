@@ -1,165 +1,136 @@
-// S9 — judge synthesis (§9, §13). The judge (claude) adjudicates DISPUTED items only; consensus is
-// already settled (S7 grouping) and passes through untouched. Two guards beyond the schema:
-//   1. Anti-blending (§260, the §602 acceptance test): the judge may reference ONLY disputed ids in
-//      `adjudications` — never a consensus id. `adjudicationScopeViolations` (pure) detects this; the
-//      stage re-asks once, then filters any still-invalid adjudications out and flags the run.
-//   2. Mandatory dissent (§260): empty dissent → re-ask once → else flag `synthesis_suspect` and
-//      inject a placeholder so the report still renders (continue, not abort).
-// Confidence is NOT taken from the judge here — the held/failed/unverified audit + HIGH/MED/LOW labels
-// are derived deterministically at S10 (§624: confidence from cross-model confirmation, not self-report).
+// S9 — chair adjudication over graph-selected escalations. Consensus and shared concerns are
+// read-only context; anonymous position text and the verifier record cross the boundary unchanged.
 
-import type { DisagreementMap, IntentContract, JudgeReport as JudgeReportT, Recommendation, VerificationSet } from '../../schemas/index.js';
+import type { DecisionGraph } from '../decision-graph.js';
+import { selectEscalations } from '../decision-graph.js';
+import type { IntentContract, JudgeReport as JudgeReportT, Recommendation, VerificationSet } from '../../schemas/index.js';
 import { JudgeReportModel } from '../../schemas/index.js';
 import type { ProviderId } from '../../providers/types.js';
 import { isFatal, type RunCtx } from '../context.js';
 import { jsonCall } from '../jsonStage.js';
-import type { RubricItem } from './s7-disagreement.js';
+import type { RubricItem } from './s7-decision-graph.js';
 
 type Adjudication = JudgeReportT['adjudications'][number];
 
-const S9_PROMPT = `ROLE: Judge. You adjudicate ONLY the disputed items below. Consensus items are already
-settled; do not restate, edit, re-litigate, or reference them in your adjudications.
-Apply this rubric strictly: {{RUBRIC_JSON}}
-
-You are the CHAIRMAN of the panel. Write for a decision-maker who did not see the debate — be clear,
-specific, and professional. No hedging mush, no restating the question back.
+const S9_PROMPT = `ROLE: Judge. Adjudicate ONLY the anonymous escalated claim IDs below. Settled claims
+and shared concerns are read-only context; do not re-litigate them. Apply this rubric: {{RUBRIC_JSON}}
 
 Output ONLY JSON matching the judge schema:
-- adjudications: for EACH disputed id → {id, ruling: UPHOLD|REJECT|UNRESOLVED, reasoning ≤3 sentences, evidence_cited}.
-  UPHOLD = the argument defeats the claim; REJECT = the claim survives; UNRESOLVED = genuinely undecided.
-- verdict: 2-5 sentences — your clear recommendation (proceed / proceed-if / don't) and the single most
-  important reason. Grounded ONLY in adjudicated + consensus claims.
-- recommendation: one of PROCEED, PROCEED_WITH_CONDITIONS, PIVOT, STOP.
-  PIVOT = the core idea is unsound but an adjacent version may work. STOP = load-bearing assumptions failed
-  with no credible repair. PROCEED_WITH_CONDITIONS means the idea is viable only if specific checks pass.
-- conditions: required ONLY for PROCEED_WITH_CONDITIONS; each condition must be checkable, not a vibe.
-- key_points: 4-8 bullets — the reasoning a decision-maker needs, in plain language. Cover: what decided
-  it, the decisive trade-offs, where the analysts DISAGREED and whose side you took and why, and the one
-  thing that would most change the verdict. Each bullet a full standalone point, not a fragment.
-- dissent: ≥1 item — the strongest argument AGAINST your own verdict. Empty dissent is invalid.
-- confidence_notes: which conclusions are HIGH/MEDIUM/LOW and why.
-DISPUTED ITEMS + VERIFICATION: {{DISPUTES_JSON}}
-CONSENSUS (context only, read-only): {{CONSENSUS_JSON}}`;
+- adjudications: each escalated id → {id, ruling: UPHOLD|REJECT|UNRESOLVED, reasoning ≤3 sentences, evidence_cited}.
+- verdict: a clear 2-5 sentence recommendation grounded in adjudicated and settled claims.
+- recommendation: PROCEED, PROCEED_WITH_CONDITIONS, PIVOT, or STOP.
+- conditions: required only for PROCEED_WITH_CONDITIONS and must be checkable.
+- key_points: 4-8 standalone decision-relevant bullets.
+- dissent: at least one strongest argument against your verdict.
+- confidence_notes: explain calibrated confidence.
+ESCALATED CLAIMS + VERIFICATION: {{ESCALATIONS_JSON}}
+SETTLED/UNRESOLVED CONTEXT: {{CONTEXT_JSON}}`;
 
-/** Pure anti-blending validator: adjudication ids that are NOT disputed items (the judge trying to
- *  touch consensus). Empty = clean. This is the heart of the §602 "rejects consensus edits" test. */
-export function adjudicationScopeViolations(report: { adjudications: Array<{ id: string }> }, disputeIds: Iterable<string>): string[] {
-  const allowed = new Set(disputeIds);
-  return report.adjudications.map((a) => a.id).filter((id) => !allowed.has(id));
+export function adjudicationScopeViolations(report: { adjudications: Array<{ id: string }> }, ids: Iterable<string>): string[] {
+  const allowed = new Set(ids);
+  return report.adjudications.map((item) => item.id).filter((id) => !allowed.has(id));
 }
 
-/** Idea S9 semantic guard: the model-facing schema permits missing recommendation fields so S9 can
- *  re-ask once instead of losing a usable judge report to one absent enum. */
 export function recommendationIssues(report: { recommendation?: Recommendation; conditions?: string[] }): string[] {
   const issues: string[] = [];
   const hasConditions = (report.conditions?.length ?? 0) > 0;
   if (!report.recommendation) issues.push('recommendation is required');
-  if (report.recommendation === 'PROCEED_WITH_CONDITIONS' && !hasConditions) {
-    issues.push('conditions are required for PROCEED_WITH_CONDITIONS');
-  }
-  if (hasConditions && report.recommendation !== 'PROCEED_WITH_CONDITIONS') {
-    issues.push('conditions are only valid with PROCEED_WITH_CONDITIONS');
-  }
+  if (report.recommendation === 'PROCEED_WITH_CONDITIONS' && !hasConditions) issues.push('conditions are required for PROCEED_WITH_CONDITIONS');
+  if (hasConditions && report.recommendation !== 'PROCEED_WITH_CONDITIONS') issues.push('conditions are only valid with PROCEED_WITH_CONDITIONS');
   return issues;
 }
 
-/** §272 2-provider demotion (pure). When the judge is also an S4 author (only happens with 2
- *  providers), any adjudication on a dispute whose contested claim was authored SOLELY by the judge's
- *  provider is forced to `UNRESOLVED` — the judge may not confirm its own claim; it stays for the
- *  human. A no-op with 3 providers, where the judge (claude) authored no S4 claim. */
-export function demoteSelfAuthored(adjudications: Adjudication[], map: DisagreementMap, judgeProvider: ProviderId): Adjudication[] {
-  const claimProviders = new Map<string, ProviderId[]>();
-  for (const c of [...map.consensus, ...map.unique]) claimProviders.set(c.id, c.providers);
-  const disputeClaims = new Map(map.contradictions.map((d) => [d.id, d.claim_ids]));
-  return adjudications.map((a) => {
-    const cids = disputeClaims.get(a.id) ?? [];
-    const soleJudge = cids.length > 0 && cids.every((cid) => {
-      const ps = claimProviders.get(cid) ?? [];
-      return ps.length === 1 && ps[0] === judgeProvider;
-    });
-    return soleJudge && a.ruling !== 'UNRESOLVED' ? { ...a, ruling: 'UNRESOLVED' as const } : a;
+export function demoteSelfAuthored(adjudications: Adjudication[], graph: DecisionGraph, judgeProvider: ProviderId): Adjudication[] {
+  const positionById = new Map(graph.positions.map((position) => [position.id, position]));
+  const claimById = new Map(graph.claims.map((claim) => [claim.id, claim]));
+  return adjudications.map((adjudication) => {
+    const claim = claimById.get(adjudication.id);
+    const providers = new Set(claim?.position_ids.map((id) => positionById.get(id)?.provider).filter((provider): provider is ProviderId => provider !== undefined));
+    const solelyJudge = providers.size === 1 && providers.has(judgeProvider);
+    return solelyJudge && adjudication.ruling !== 'UNRESOLVED'
+      ? { ...adjudication, ruling: 'UNRESOLVED' as const }
+      : adjudication;
   });
 }
 
-const sevRank = (s: string): number => (s === 'HIGH' ? 0 : s === 'MED' ? 1 : 2);
-
-function fallbackConditions(map: DisagreementMap, adjudications: Adjudication[]): string[] {
-  const claimById = new Map([...map.consensus, ...map.unique].map((c) => [c.id, c.statement]));
-  const rulingById = new Map(adjudications.map((a) => [a.id, a.ruling]));
-  const riskConditions = map.contradictions
-    .filter((d) => rulingById.get(d.id) === 'UPHOLD')
-    .sort((a, b) => Math.min(...a.attacks.map((x) => sevRank(x.severity))) - Math.min(...b.attacks.map((x) => sevRank(x.severity))))
-    .map((d) => {
-      const claim = d.claim_ids.map((id) => claimById.get(id) ?? id).join(' / ');
-      return `Proceed only if you can validate that ${claim}.`;
-    });
-  const blindSpotConditions = map.blind_spots.map((b) => `Proceed only after examining the ${b} gap.`);
-  return [...riskConditions, ...blindSpotConditions, 'Proceed only after one cheap test confirms the core user need.'].slice(0, 6);
+function fallbackConditions(graph: DecisionGraph, adjudications: Adjudication[]): string[] {
+  const claimById = new Map(graph.claims.map((claim) => [claim.id, claim]));
+  const upheld = adjudications
+    .filter((item) => item.ruling === 'UPHOLD')
+    .map((item) => `Proceed only if you can resolve: ${claimById.get(item.id)?.proposition ?? item.id}.`);
+  const holes = graph.holes.coverage.map((hole) => `Proceed only after examining the ${hole.label} gap.`);
+  return [...upheld, ...holes, 'Proceed only after one cheap test confirms the core user need.'].slice(0, 6);
 }
 
 export function buildJudgePrompt(
   contract: IntentContract,
-  map: DisagreementMap,
+  graph: DecisionGraph,
   verifications: VerificationSet,
   rubric: RubricItem[],
 ): string {
-  const claimById = new Map([...map.consensus, ...map.unique].map((claim) => [claim.id, claim.statement]));
-  const verificationById = new Map(verifications.verifications.map((verification) => [verification.target_id, verification]));
-  const disputes = map.contradictions.map((dispute) => {
-    const verification = verificationById.get(dispute.id);
+  const positionById = new Map(graph.positions.map((position) => [position.id, position]));
+  const verificationById = new Map(verifications.verifications.map((item) => [item.target_id, item]));
+  const escalationIds = new Set(selectEscalations(graph, { max: 8 }).map((item) => item.claim_id));
+  const escalations = graph.claims.filter((claim) => escalationIds.has(claim.id)).map((claim) => {
+    const verification = verificationById.get(claim.id);
     return {
-      id: dispute.id,
-      claim: dispute.claim_ids.map((id) => claimById.get(id) ?? id).join(' / '),
-      arguments_against: dispute.attacks.map((attack) => attack.argument),
+      id: claim.id,
+      proposition: claim.proposition,
+      positions: claim.position_ids.map((id) => {
+        const position = positionById.get(id)!;
+        return { stance: position.stance, reasoning: position.reasoning };
+      }),
       verifier_status: verification?.verdict ?? 'UNVERIFIED',
       verifier_evidence: verification?.evidence ?? '(no verifier evidence recorded)',
       verifier_note: verification?.note ?? '',
     };
   });
-  const consensus = map.consensus.map((claim) => ({ id: claim.id, statement: claim.statement }));
-  return S9_PROMPT.replace('{{RUBRIC_JSON}}', JSON.stringify(rubric.map((item) => item.label)))
-    .replace('{{DISPUTES_JSON}}', JSON.stringify(disputes, null, 2))
-    .replace('{{CONSENSUS_JSON}}', JSON.stringify(consensus, null, 2))
+  const context = graph.claims.filter((claim) => !escalationIds.has(claim.id)).map((claim) => ({
+    id: claim.id,
+    proposition: claim.proposition,
+    state: claim.state,
+    evidence_state: claim.evidence_state,
+  }));
+  return S9_PROMPT
+    .replace('{{RUBRIC_JSON}}', JSON.stringify(rubric.map((item) => item.label)))
+    .replace('{{ESCALATIONS_JSON}}', JSON.stringify(escalations, null, 2))
+    .replace('{{CONTEXT_JSON}}', JSON.stringify(context, null, 2))
     .concat(`\nTASK: ${contract.task}`);
 }
 
 export async function s9Judge(
   ctx: RunCtx,
   contract: IntentContract,
-  map: DisagreementMap,
+  graph: DecisionGraph,
   verifications: VerificationSet,
   rubric: RubricItem[],
 ): Promise<JudgeReportT> {
-  const disputeIds = map.contradictions.map((d) => d.id);
-  const basePrompt = buildJudgePrompt(contract, map, verifications, rubric);
-
+  const ids = selectEscalations(graph, { max: 8 }).map((item) => item.claim_id);
+  const basePrompt = buildJudgePrompt(contract, graph, verifications, rubric);
   const judge = ctx.handle(ctx.roles.judge);
   let report = await jsonCall(ctx, judge, 'S9', basePrompt, JudgeReportModel);
 
-  // Semantic guards beyond the schema → one targeted re-ask.
-  let violations = adjudicationScopeViolations(report, disputeIds);
+  let violations = adjudicationScopeViolations(report, ids);
   let recIssues = recommendationIssues(report);
   if (violations.length || report.dissent.length === 0 || recIssues.length) {
-    const fix =
-      `${basePrompt}\n\n---\nYour previous output had problems:\n` +
-      (violations.length ? `- adjudications must reference ONLY these disputed ids [${disputeIds.join(', ')}]; not: ${violations.join(', ')}\n` : '') +
-      (report.dissent.length === 0 ? `- dissent must contain at least one item.\n` : '') +
-      (recIssues.length ? `- recommendation/conditions problem: ${recIssues.join('; ')}.\n` : '') +
-      `Output ONLY the corrected JSON.`;
+    const repair = `${basePrompt}\n\n---\nCorrect these problems:\n`
+      + (violations.length ? `- adjudications may reference only [${ids.join(', ')}], not ${violations.join(', ')}\n` : '')
+      + (report.dissent.length === 0 ? '- dissent must contain at least one item\n' : '')
+      + (recIssues.length ? `- ${recIssues.join('; ')}\n` : '')
+      + 'Output ONLY corrected JSON.';
     try {
-      report = await jsonCall(ctx, judge, 'S9-repair', fix, JudgeReportModel);
-      violations = adjudicationScopeViolations(report, disputeIds);
+      report = await jsonCall(ctx, judge, 'S9-repair', repair, JudgeReportModel);
+      violations = adjudicationScopeViolations(report, ids);
       recIssues = recommendationIssues(report);
-    } catch (e) {
-      if (isFatal(e)) throw e; // keep the first report on a non-fatal repair failure
+    } catch (error) {
+      if (isFatal(error)) throw error;
     }
   }
 
-  // Enforce after the re-ask: drop any still-out-of-scope adjudications; guarantee non-empty dissent.
-  const inScope = report.adjudications.filter((a) => new Set(disputeIds).has(a.id));
+  const allowed = new Set(ids);
+  const inScope = report.adjudications.filter((item) => allowed.has(item.id));
   if (inScope.length !== report.adjudications.length) ctx.addFlag('synthesis_suspect');
-  // §272: if the judge authored a contested claim (2-provider only), it can't confirm it → UNRESOLVED.
-  const adjudications = demoteSelfAuthored(inScope, map, ctx.roles.judge);
+  const adjudications = demoteSelfAuthored(inScope, graph, ctx.roles.judge);
   let dissent = report.dissent;
   if (dissent.length === 0) {
     ctx.addFlag('synthesis_suspect');
@@ -170,7 +141,7 @@ export async function s9Judge(
   if (recIssues.length) {
     ctx.addFlag('synthesis_suspect');
     recommendation = 'PROCEED_WITH_CONDITIONS';
-    conditions = fallbackConditions(map, adjudications);
+    conditions = fallbackConditions(graph, adjudications);
   } else if (recommendation !== 'PROCEED_WITH_CONDITIONS') {
     conditions = undefined;
   }

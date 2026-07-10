@@ -18,6 +18,7 @@ import { filterCommands, parseCommand, quickActionReducer, routeInput, scopeRedi
 import { IDEA_STAGES } from '../src/workflows/idea-refinement.js';
 import type { RoleMap } from '../src/orchestration/context.js';
 import type { DisagreementMap, JudgeReport } from '../src/schemas/index.js';
+import { adaptLegacyDecisionGraph } from '../src/orchestration/legacy-idea-adapter.js';
 
 const roles: RoleMap = { analyst: 'agy', judge: 'claude', verifier: 'codex', s4: ['agy', 'codex'] };
 const available = ['agy', 'codex', 'claude'] as const;
@@ -66,7 +67,10 @@ describe('timeline: state transitions + elapsed', () => {
 describe('completion + error formatters', () => {
   const map: DisagreementMap = {
     consensus: [],
-    unique: [],
+    unique: [
+      { id: 'C1', statement: 'inventory is sufficient', type: 'JUDGMENT', providers: ['agy'] },
+      { id: 'C2', statement: 'pricing is viable', type: 'JUDGMENT', providers: ['codex'] },
+    ],
     contradictions: [
       { id: 'D1', claim_ids: ['C1'], attacks: [{ provider: 'agy', argument: 'weak inventory', severity: 'HIGH' }] },
       { id: 'D2', claim_ids: ['C2'], attacks: [{ provider: 'codex', argument: 'pricing risk', severity: 'MED' }] },
@@ -81,10 +85,10 @@ describe('completion + error formatters', () => {
   };
 
   it('formatCompletion: verdict + top-N disagreements with rulings + paths', () => {
-    const v = formatCompletion('.aiki/runs/x', judge, map);
+    const v = formatCompletion('.aiki/runs/x', judge, adaptLegacyDecisionGraph(map));
     expect(v.verdict).toBe('Viable behind a probe guard.');
-    expect(v.disagreements[0]).toBe('D1 → UPHOLD: weak inventory');
-    expect(v.disagreements[1]).toBe('D2 → UNRESOLVED: pricing risk'); // no adjudication → UNRESOLVED default
+    expect(v.disagreements[0]).toBe('D1 → UPHOLD: inventory is sufficient');
+    expect(v.disagreements[1]).toBe('D2 → UNRESOLVED: pricing is viable'); // no adjudication → UNRESOLVED default
     expect(v.reportPath).toBe('.aiki/runs/x/final-report.md');
   });
 

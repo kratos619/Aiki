@@ -14,7 +14,7 @@
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { z } from 'zod';
-import { ActionPlanArtifact, DisagreementMap, IntentContract, JudgeReport, ReviewMap, RoleOutput, RunBrief, RunMeta, VerificationSet } from '../schemas/index.js';
+import { ActionPlanArtifact, DecisionGraph, DisagreementMap, IntentContract, JudgeReport, ReviewMap, RoleOutput, RunBrief, RunMeta, VerificationSet } from '../schemas/index.js';
 
 export class OutOfOrderWriteError extends Error {
   constructor(slot: string, ord: number, maxOrd: number) {
@@ -44,7 +44,9 @@ const JSON_SLOTS = {
   'intent-contract': { ord: 1, path: '01-intent-contract.json', schema: IntentContract },
   'misunderstanding-guard': { ord: 2, path: '02-misunderstanding-guard.json', schema: null },
   'drift-report': { ord: 5, path: '05-drift-report.json', schema: null },
+  positions: { ord: 6, path: '06-positions.json', schema: null },
   claims: { ord: 6, path: '06-claims.json', schema: null },
+  'decision-graph': { ord: 7, path: '07-decision-graph.json', schema: DecisionGraph },
   'disagreement-map': { ord: 7, path: '07-disagreement-map.json', schema: DisagreementMap },
   // code-review's stage-7 artifact (ord 7, distinct path). A run writes one of {disagreement-map,
   // review-map} depending on its workflow, so the shared ord never collides within a run.

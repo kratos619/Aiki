@@ -42,20 +42,27 @@ function fakeAdapter(id: ProviderId): Adapter {
         obj = {
           task_echo: 'build a local multi-model orchestration CLI',
           strongest_version: 'A local CLI that orchestrates installed AI CLIs for cross-model review.',
-          assumptions: [
-            { id: 'A1', statement: 'developers want local multi model orchestration', type: 'JUDGMENT', load_bearing: true },
-            { id: 'A2', statement: 'installed CLIs expose stable machine readable output', type: 'VERIFIABLE', load_bearing: true },
+          positions: [
+            { local_id: 'P1', proposition: 'developers want local multi model orchestration', dimension_id: 'R1', stance: 'SUPPORT', basis: 'EVIDENCE', load_bearing: true, if_false: 'STOP', reasoning: 'The supplied request demonstrates demand.', evidence_ids: ['E1'], depends_on: [] },
+            { local_id: 'P2', proposition: 'installed CLIs expose stable machine readable output', dimension_id: 'R4', stance: id === 'agy' ? 'SUPPORT' : 'OPPOSE', basis: 'EVIDENCE', load_bearing: true, if_false: 'CONDITION', reasoning: id === 'agy' ? 'Probe-time formats can be pinned.' : 'CLI output formats drift between versions.', evidence_ids: ['E2'], depends_on: [] },
           ],
-          attacks: [{ id: 'X1', target_assumption: 'A2', argument: 'CLI output formats drift between versions', severity: 'MED' }],
-          open_questions: ['who is the target user?'],
+          evidence: [
+            { id: 'E1', claim_supported: 'developers want local multi model orchestration', source_kind: 'USER', support: 'SUPPORTS', freshness: 'CURRENT' },
+            { id: 'E2', claim_supported: 'installed CLIs expose stable machine readable output', source_kind: 'USER', support: id === 'agy' ? 'SUPPORTS' : 'CONTRADICTS', freshness: 'CURRENT' },
+          ],
+          coverage: [
+            { dimension_id: 'R1', status: 'COVERED', position_ids: ['P1'], rationale: 'P1 covers target users.' },
+            { dimension_id: 'R4', status: 'COVERED', position_ids: ['P2'], rationale: 'P2 covers feasibility.' },
+          ],
+          decision_questions: [{ id: 'Q1', question: 'who is the target user?', claim_ids: ['P1'] }],
         };
-      } else if (p.includes('grouping claims that state the SAME')) {
-        obj = { groups: [] }; // S7 semantic-grouping call — nothing extra to merge (S6 already merged the identical pair)
-      } else if (p.includes('ROLE: Verifier')) {
-        obj = { verifications: [{ target_id: 'D1', verdict: 'REFUTE', evidence: 'the format is pinned at probe time', note: '' }] };
+      } else if (p.includes('Group anonymous positions')) {
+        obj = { groups: [['P1', 'P3'], ['P2', 'P4']] };
+      } else if (p.includes('ROLE: Independent verifier')) {
+        obj = { verifications: [{ target_id: 'G2', verdict: 'REFUTE', evidence: 'the format is pinned at probe time', note: '' }] };
       } else if (p.includes('ROLE: Judge')) {
         obj = {
-          adjudications: [{ id: 'D1', ruling: 'REJECT', reasoning: 'the drift risk is mitigated by the flag probe', evidence_cited: 'S1 probe' }],
+          adjudications: [{ id: 'G2', ruling: 'REJECT', reasoning: 'the drift risk is mitigated by the flag probe', evidence_cited: 'S1 probe' }],
           verdict: 'Viable as a local orchestration layer; ship behind a provider-probe guard.',
           recommendation: 'PROCEED_WITH_CONDITIONS',
           conditions: ['Proceed only if provider output probing stays stable across versions.'],
@@ -155,27 +162,22 @@ describe('executeRun happy path (§24 T7: artifacts 00–10, end-to-end)', () =>
     expect(drift.entries.every((e: { on_task: boolean }) => e.on_task)).toBe(true);
     expect(drift.excluded).toEqual([]);
 
-    // S6: both seats assert the same two assumptions → merged into 2 consensus claims.
-    const claims = JSON.parse(await readFile(join(dir, '06-claims.json'), 'utf8'));
-    expect(claims.claims).toHaveLength(2);
-    expect(claims.claims.every((c: { providers: string[] }) => c.providers.length === 2)).toBe(true);
+    const positions = JSON.parse(await readFile(join(dir, '06-positions.json'), 'utf8'));
+    expect(positions).toHaveLength(2);
 
-    // S7: 2 consensus, 0 unique, 1 contradiction (A2 attacked by both seats).
-    const map = JSON.parse(await readFile(join(dir, '07-disagreement-map.json'), 'utf8'));
-    expect(map.consensus).toHaveLength(2);
-    expect(map.unique).toHaveLength(0);
-    expect(map.contradictions).toHaveLength(1);
-    expect(map.contradictions[0].attacks).toHaveLength(2);
+    const graph = JSON.parse(await readFile(join(dir, '07-decision-graph.json'), 'utf8'));
+    expect(graph.claims.filter((claim: { state: string }) => claim.state === 'CONSENSUS')).toHaveLength(1);
+    expect(graph.claims.filter((claim: { state: string }) => claim.state === 'DISAGREEMENT')).toHaveLength(1);
 
     // S8: the one contradiction (D1) was verified.
     const verif = JSON.parse(await readFile(join(dir, '08-verifications.json'), 'utf8'));
     expect(verif.verifications).toHaveLength(1);
-    expect(verif.verifications[0]).toMatchObject({ target_id: 'D1', verdict: 'REFUTE' });
+    expect(verif.verifications[0]).toMatchObject({ target_id: 'G2', verdict: 'REFUTE' });
 
     // S9: judge adjudicated the dispute only; non-empty dissent.
     const judge = JSON.parse(await readFile(join(dir, '09-judge-report.json'), 'utf8'));
     expect(judge.adjudications).toHaveLength(1);
-    expect(judge.adjudications[0]).toMatchObject({ id: 'D1', ruling: 'REJECT' });
+    expect(judge.adjudications[0]).toMatchObject({ id: 'G2', ruling: 'REJECT' });
     expect(judge.recommendation).toBe('PROCEED_WITH_CONDITIONS');
     expect(judge.dissent.length).toBeGreaterThan(0);
 
@@ -186,7 +188,7 @@ describe('executeRun happy path (§24 T7: artifacts 00–10, end-to-end)', () =>
     const report = await readFile(join(dir, 'final-report.md'), 'utf8');
     expect(report).toContain('# Decision Brief');
     expect(report).toContain('## Validation plan');
-    expect(report).toContain('## Assumption audit');
+    expect(report).toContain('## Decision audit');
     expect(report).toContain('Gemini'); // agy shown as its DISPLAY_NAME (user-facing)
 
     const meta = JSON.parse(await readFile(join(dir, 'meta.json'), 'utf8'));
