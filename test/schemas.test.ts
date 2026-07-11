@@ -19,6 +19,11 @@ describe('IntentContract', () => {
     constraints: ['no cloud'],
     unknowns: ['target user'],
     success_criteria: ['clear verdict'],
+    domain_dimensions: [
+      { id: 'D1', label: 'provider interoperability', rationale: 'The idea depends on multiple installed CLIs.' },
+      { id: 'D2', label: 'workflow adoption', rationale: 'Developers must change review habits.' },
+      { id: 'D3', label: 'output comparability', rationale: 'The council must compare unlike provider outputs.' },
+    ],
   };
 
   it('accepts a valid contract', () => {
@@ -55,6 +60,11 @@ describe('RunBrief preflight', () => {
     claims_to_test: ['1.3x bug-catch rate'],
     evidence_supplied: ['held-out benchmark claim'],
     missing_axes: ['pricing'],
+    domain_dimensions: [
+      { id: 'D1', label: 'provider interoperability', rationale: 'The idea depends on multiple installed CLIs.' },
+      { id: 'D2', label: 'workflow adoption', rationale: 'Developers must change review habits.' },
+      { id: 'D3', label: 'output comparability', rationale: 'The council must compare unlike provider outputs.' },
+    ],
     questions: [
       {
         id: 'Q1',
@@ -87,6 +97,14 @@ describe('RunBrief preflight', () => {
   it('rejects fewer than 3 questions and unknown keys', () => {
     expect(() => RunBriefDraft.parse({ ...draft, questions: draft.questions.slice(0, 2) })).toThrow();
     expect(() => RunBriefDraft.parse({ ...draft, extra: true })).toThrow();
+  });
+
+  it('requires 3-5 unique domain-specific dimensions in preflight', () => {
+    expect(() => RunBriefDraft.parse({ ...draft, domain_dimensions: draft.domain_dimensions.slice(0, 2) })).toThrow();
+    expect(() => RunBriefDraft.parse({
+      ...draft,
+      domain_dimensions: [...draft.domain_dimensions.slice(0, 2), { ...draft.domain_dimensions[0], label: 'duplicate id' }],
+    })).toThrow(/duplicate domain dimension id/);
   });
 
   it('accepts the persisted brief only when every question has an answer', () => {
@@ -124,6 +142,13 @@ describe('RoleOutput (workflow-discriminated union)', () => {
 
   it('rejects duplicate local position ids at the stage boundary', () => {
     expect(() => RoleOutput.parse({ ...idea, positions: [...idea.positions, { ...idea.positions[0] }] })).toThrow();
+  });
+
+  it('rejects NOT_APPLICABLE coverage without a reason', () => {
+    expect(() => RoleOutput.parse({
+      ...idea,
+      coverage: [{ dimension_id: 'R6', status: 'NOT_APPLICABLE', position_ids: [], rationale: '' }],
+    })).toThrow();
   });
 
   it('routes to the code-review member and enforces self_confidence range', () => {

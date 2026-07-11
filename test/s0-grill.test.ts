@@ -19,6 +19,11 @@ const draft = {
   claims_to_test: ['1.3x bug-catch rate'],
   evidence_supplied: ['benchmark claim in prompt'],
   missing_axes: ['pricing'],
+  domain_dimensions: [
+    { id: 'D1', label: 'provider interoperability', rationale: 'The idea depends on installed provider CLIs.' },
+    { id: 'D2', label: 'workflow adoption', rationale: 'Developers must change review habits.' },
+    { id: 'D3', label: 'output comparability', rationale: 'The council compares unlike provider outputs.' },
+  ],
   questions: [
     {
       id: 'Q1',
@@ -105,6 +110,7 @@ describe('S0 contextual grill', () => {
     expect(brief.answers.every((a) => a.source === 'default')).toBe(true);
     expect(enriched).toContain('Aiki intent preflight');
     expect(enriched).toContain('What decision should the council help you make?');
+    expect(enriched).toContain('D1 provider interoperability');
     expect(enriched).toContain('Use best judgment from the supplied prompt.');
   });
 });

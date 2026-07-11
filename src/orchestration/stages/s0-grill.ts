@@ -19,6 +19,9 @@ Output ONLY JSON matching this shape:
   "claims_to_test": ["<load-bearing claims worth testing>"],
   "evidence_supplied": ["<evidence or proof already supplied>"],
   "missing_axes": ["<important missing context>"],
+  "domain_dimensions": [
+    {"id": "D1", "label": "<idea-specific evaluation dimension>", "rationale": "<why it can change the verdict>"}
+  ],
   "questions": [
     {
       "id": "Q1",
@@ -34,6 +37,8 @@ Rules:
 - Ask only questions whose answers could change the analysis or verdict.
 - Make the questions specific to this idea, not generic startup intake.
 - Prefer decision frame, target user, success bar, constraints, evidence, and risk context.
+- Generate 3-5 non-overlapping domain-specific dimensions using ids D1-D5. Do not repeat generic
+  dimensions such as target user, competition, feasibility, business model, distribution, or legal risk.
 - Do not ask more than 4 questions.
 
 USER IDEA:
@@ -76,6 +81,7 @@ export function renderGrilledInput(rawInput: string, brief: RunBriefT): string {
     brief.claims_to_test.length ? `Claims to test: ${brief.claims_to_test.join('; ')}` : null,
     brief.evidence_supplied.length ? `Evidence supplied: ${brief.evidence_supplied.join('; ')}` : null,
     brief.missing_axes.length ? `Missing context: ${brief.missing_axes.join('; ')}` : null,
+    `Domain dimensions: ${brief.domain_dimensions.map((dimension) => `${dimension.id} ${dimension.label} — ${dimension.rationale}`).join('; ')}`,
   ].filter((line): line is string => line !== null);
 
   const answers = brief.questions.map((q) => {

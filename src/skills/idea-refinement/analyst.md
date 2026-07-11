@@ -35,6 +35,10 @@ concern for THIS idea using a reasoned NOT_APPLICABLE coverage entry:
 10. Timing — why now, and what makes the market ready or not.
 11. Scalability — what breaks as it grows.
 12. Key risks / assumptions that must be validated first.
+13. Team / founder capability against the execution requirements.
+
+Also cover every domain-specific dimension listed in the task contract. The lane prompt assigns
+ownership; emit one explicit coverage entry for every owned dimension.
 
 ## Decision questions that move the verdict
 - List only questions whose ANSWER would change the decision. "Nice to know" is not one of them.

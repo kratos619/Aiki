@@ -53,6 +53,11 @@ describe('RunWriter ordering', () => {
       claims_to_test: [],
       evidence_supplied: [],
       missing_axes: [],
+      domain_dimensions: [
+        { id: 'D1', label: 'domain one', rationale: 'matters' },
+        { id: 'D2', label: 'domain two', rationale: 'matters' },
+        { id: 'D3', label: 'domain three', rationale: 'matters' },
+      ],
       questions: [
         { id: 'Q1', axis: 'decision_frame', question: 'decision?', why_it_matters: 'matters', suggested_answers: ['a', 'b'] },
         { id: 'Q2', axis: 'target_user', question: 'user?', why_it_matters: 'matters', suggested_answers: ['a', 'b'] },

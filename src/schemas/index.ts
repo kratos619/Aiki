@@ -23,6 +23,14 @@ export const TaskTypeSchema = z.enum(['idea-refinement', 'code-review', 'other']
 /** The two runnable v1 workflows (§12). Discriminates RoleOutput and tags RunMeta. */
 export const WorkflowIdSchema = z.enum(['idea-refinement', 'code-review']);
 
+export const DomainDimension = z
+  .object({
+    id: z.string().regex(/^D[1-5]$/),
+    label: z.string().min(1),
+    rationale: z.string().min(1),
+  })
+  .strict();
+
 // ── S1: IntentContract (§13) ────────────────────────────────────────────────
 
 export const IntentContract = z
@@ -32,6 +40,7 @@ export const IntentContract = z
     constraints: z.array(z.string()), // explicit constraints the user stated (may be empty)
     unknowns: z.array(z.string()), // things the request leaves unspecified
     success_criteria: z.array(z.string()), // what a good final output must contain
+    domain_dimensions: z.array(DomainDimension).min(3).max(5).optional(), // required by the idea preflight; optional for old/code-review contracts
   })
   .strict();
 
@@ -78,6 +87,7 @@ const RunBriefDraftBase = z
     claims_to_test: z.array(z.string().min(1)).max(8),
     evidence_supplied: z.array(z.string().min(1)).max(8),
     missing_axes: z.array(z.string().min(1)).max(8),
+    domain_dimensions: z.array(DomainDimension).min(3).max(5),
     questions: z.array(RunBriefQuestion).min(3).max(4),
   })
   .strict();
@@ -92,7 +102,20 @@ function checkQuestionIds(questions: { id: string }[], ctx: z.RefinementCtx): vo
   }
 }
 
-export const RunBriefDraft = RunBriefDraftBase.superRefine((brief, ctx) => checkQuestionIds(brief.questions, ctx));
+function checkDomainDimensionIds(dimensions: { id: string }[], ctx: z.RefinementCtx): void {
+  const seen = new Set<string>();
+  for (const dimension of dimensions) {
+    if (seen.has(dimension.id)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['domain_dimensions'], message: `duplicate domain dimension id: ${dimension.id}` });
+    }
+    seen.add(dimension.id);
+  }
+}
+
+export const RunBriefDraft = RunBriefDraftBase.superRefine((brief, ctx) => {
+  checkQuestionIds(brief.questions, ctx);
+  checkDomainDimensionIds(brief.domain_dimensions, ctx);
+});
 
 export const GrillAnswer = z
   .object({
@@ -106,6 +129,7 @@ export const RunBrief = RunBriefDraftBase.extend({
   answers: z.array(GrillAnswer).min(3).max(4),
 }).superRefine((brief, ctx) => {
   checkQuestionIds(brief.questions, ctx);
+  checkDomainDimensionIds(brief.domain_dimensions, ctx);
   const questionIds = new Set(brief.questions.map((q) => q.id));
   const answerIds = new Set<string>();
   for (const answer of brief.answers) {
@@ -212,7 +236,7 @@ const IdeaRoleOutputBase = z
     strongest_version: z.string().min(1),
     positions: z.array(ClaimPosition).max(12),
     evidence: z.array(EvidenceCard).max(20),
-    coverage: z.array(CoverageEntry).max(12),
+    coverage: z.array(CoverageEntry).max(18), // 13 core + up to 5 preflight domain dimensions
     decision_questions: z.array(DecisionQuestion).max(8),
   })
   .strict();
@@ -579,6 +603,7 @@ export const RunMeta = z.object({
 // ── Inferred types ──────────────────────────────────────────────────────────
 
 export type IntentContract = z.infer<typeof IntentContract>;
+export type DomainDimension = z.infer<typeof DomainDimension>;
 export type Interpretation = z.infer<typeof Interpretation>;
 export type GrillQuestionAxis = z.infer<typeof GrillQuestionAxis>;
 export type RunBriefQuestion = z.infer<typeof RunBriefQuestion>;

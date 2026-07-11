@@ -37,6 +37,11 @@ export interface Escalation {
   kind: 'DISAGREEMENT' | 'INDEPENDENT_CHALLENGE';
 }
 
+export interface CoverageHole {
+  dimension_id: string;
+  label: string;
+}
+
 export function positionId(provider: ProviderId, localId: string, sourceId: string = provider): string {
   return `${sourceId}/${localId}`;
 }
@@ -90,10 +95,28 @@ function sensitivity(positions: GraphPosition[]): Sensitivity {
   return consequence === 'STOP' || consequence === 'PIVOT' ? 'DECISIVE' : consequence === 'CONDITION' ? 'MATERIAL' : 'LOW';
 }
 
+/** Required dimensions without an explicit anchored COVERED or reasoned NOT_APPLICABLE entry. */
+export function coverageHoleQueue(
+  submissions: ProviderSubmission[],
+  rubric: Array<{ id: string; label: string }>,
+): CoverageHole[] {
+  const covered = new Set<string>();
+  for (const { submission } of submissions) {
+    const positions = new Map(submission.positions.map((position) => [position.local_id, position]));
+    for (const entry of submission.coverage) {
+      if (entry.status === 'NOT_APPLICABLE' && entry.rationale.trim()) covered.add(entry.dimension_id);
+      if (entry.status === 'COVERED' && entry.position_ids.some((id) => positions.get(id)?.dimension_id === entry.dimension_id)) {
+        covered.add(entry.dimension_id);
+      }
+    }
+  }
+  return rubric.filter((item) => !covered.has(item.id)).map(({ id, label }) => ({ dimension_id: id, label }));
+}
+
 /** Compile validated analyst positions into stance-aware claims without rewriting proposition text. */
 export function compileDecisionGraph(
   submissions: ProviderSubmission[],
-  _rubric: Array<{ id: string; label: string }>,
+  rubric: Array<{ id: string; label: string }>,
   semanticGroups: string[][] = [],
 ): DecisionGraph {
   const positions = submissions.flatMap(({ provider, source_id = provider, submission }) => submission.positions.map((position) => ({
@@ -165,15 +188,7 @@ export function compileDecisionGraph(
       addEdge({ from: item.id, to: from, type: item.support === 'CONTRADICTS' ? 'ATTACKS' : 'SUPPORTS' });
     }
   }
-  const covered = new Set(positions.map((position) => position.dimension_id));
-  for (const { submission } of submissions) {
-    for (const entry of submission.coverage) {
-      if (entry.status === 'NOT_APPLICABLE' && entry.rationale.trim()) covered.add(entry.dimension_id);
-    }
-  }
-  const coverageHoles = _rubric
-    .filter((item) => !covered.has(item.id))
-    .map(({ id, label }) => ({ dimension_id: id, label }));
+  const coverageHoles = coverageHoleQueue(submissions, rubric);
   return { positions, evidence, claims, edges, holes: { coverage: coverageHoles, evidence: evidenceHoles } };
 }
 

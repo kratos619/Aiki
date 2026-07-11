@@ -10,21 +10,22 @@ import type { JudgeReport } from '../src/schemas/index.js';
 import type { RunCtx } from '../src/orchestration/context.js';
 
 function submission(items: Array<{ id: string; proposition: string; stance: Stance; dimension?: string }>): AnalystSubmission {
+  const positions = items.map((item) => ({
+    local_id: item.id,
+    proposition: item.proposition,
+    dimension_id: item.dimension ?? 'R1',
+    stance: item.stance,
+    basis: 'EVIDENCE' as const,
+    load_bearing: true,
+    if_false: 'STOP' as const,
+    reasoning: `${item.stance.toLowerCase()} reasoning`,
+    evidence_ids: [`E-${item.id}`],
+    depends_on: [],
+  }));
   return {
     task_echo: 'evaluate the idea',
     strongest_version: 'A focused version may work.',
-    positions: items.map((item) => ({
-      local_id: item.id,
-      proposition: item.proposition,
-      dimension_id: item.dimension ?? 'R1',
-      stance: item.stance,
-      basis: 'EVIDENCE',
-      load_bearing: true,
-      if_false: 'STOP',
-      reasoning: `${item.stance.toLowerCase()} reasoning`,
-      evidence_ids: [`E-${item.id}`],
-      depends_on: [],
-    })),
+    positions,
     evidence: items.map((item) => ({
       id: `E-${item.id}`,
       claim_supported: item.proposition,
@@ -32,7 +33,12 @@ function submission(items: Array<{ id: string; proposition: string; stance: Stan
       support: item.stance === 'OPPOSE' ? 'CONTRADICTS' : 'SUPPORTS',
       freshness: 'CURRENT',
     })),
-    coverage: [],
+    coverage: [...new Set(positions.map((position) => position.dimension_id))].map((dimension_id) => ({
+      dimension_id,
+      status: 'COVERED',
+      position_ids: positions.filter((position) => position.dimension_id === dimension_id).map((position) => position.local_id),
+      rationale: `${dimension_id} is covered by explicit positions.`,
+    })),
     decision_questions: [],
   };
 }

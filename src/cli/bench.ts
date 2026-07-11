@@ -6,6 +6,7 @@
 import { planBench, renderTable, runBench, type BenchPlan } from '../bench/harness.js';
 import type { ArmId } from '../bench/arms.js';
 import { setupProviders } from '../orchestration/context.js';
+import { chooseLaneDefault, planIdeaLaneBench, runIdeaLaneBench } from '../bench/idea-lane-rotation.js';
 
 const VALID_ARMS: ArmId[] = ['A', 'B', 'C', 'D', 'E', 'L'];
 
@@ -22,8 +23,33 @@ export async function benchCommand(
   workflow: string,
   opts: { arms?: string; set?: string; resume?: boolean; yes?: boolean } = {},
 ): Promise<number> {
+  if (workflow === 'idea-refinement') {
+    if (opts.set && opts.set !== 'build') {
+      process.stderr.write('idea lane rotation is build-set-only; holdout remains sealed\n');
+      return 1;
+    }
+    const handles = await setupProviders();
+    const plan = await planIdeaLaneBench({ handles });
+    if (plan.cases.length === 0) {
+      process.stderr.write('no cases found in bench/sets/idea-refinement/build/\n');
+      return 1;
+    }
+    process.stdout.write(`\nidea lane rotation — ${plan.cases.length} case(s) × 2 assignments\n`);
+    process.stdout.write(`to run: ${plan.runs.length} council run(s) → ≈${plan.estimatedCalls} provider call(s)\n`);
+    if (!opts.yes) {
+      process.stdout.write('\nRe-run with --yes to execute. Paid calls are never started by this dry-run.\n\n');
+      return 0;
+    }
+    const result = await runIdeaLaneBench({ handles });
+    const selected = chooseLaneDefault(result.observations);
+    process.stdout.write(`\nresults: ${result.path}\n`);
+    process.stdout.write(selected
+      ? `default lane assignment: ${selected}\n\n`
+      : 'default remains provisional — blind-score recall/evidence precision before selection.\n\n');
+    return 0;
+  }
   if (workflow !== 'code-review') {
-    process.stderr.write(`bench supports only "code-review" in v1 (got "${workflow}")\n`);
+    process.stderr.write(`bench supports "code-review" or "idea-refinement" (got "${workflow}")\n`);
     return 1;
   }
   const arms = (opts.arms ?? 'A,B,C,D')

@@ -16,7 +16,7 @@ export async function jsonCall<T>(
   stage: string,
   prompt: string,
   schema: z.ZodType<T>,
-  opts: { cwd?: string } = {},
+  opts: { cwd?: string; repair?: boolean } = {},
 ): Promise<T> {
   const first = await ctx.call(handle, { prompt, expectJson: true, cwd: opts.cwd }, stage);
   if (!first.ok) {
@@ -26,6 +26,9 @@ export async function jsonCall<T>(
 
   const parsed = schema.safeParse(first.json);
   if (parsed.success) return parsed.data;
+  if (opts.repair === false) {
+    throw new StageError(stage, 'BAD_OUTPUT', `output failed validation: ${zodMessage(parsed.error)}`);
+  }
 
   // §14 repair retry — one attempt, same provider.
   const repairPrompt =
