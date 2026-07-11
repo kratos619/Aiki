@@ -134,15 +134,28 @@ describe('idea-v3 decision-critical insight scorer', () => {
     expect(manifest.critical_claims[0]?.id).toBe('E1');
   });
 
-  it('loads the sanitized water and nurse build fixtures', async () => {
+  it('loads all eight sanitized build fixtures', async () => {
     const base = join(process.cwd(), 'bench', 'sets', 'idea-refinement', 'build');
-    const cases = ['01-water-reminder', '02-nurse-marketplace'];
-    for (const name of cases) {
+    const cases = [
+      ['01-water-reminder', 'INSPECTED_BUILD'],
+      ['02-nurse-marketplace', 'INSPECTED_BUILD'],
+      ['03-postgres-multitenancy', 'AUTHORED_BUILD'],
+      ['04-library-sunday-hours', 'AUTHORED_BUILD'],
+      ['05-school-ai-tutor', 'AUTHORED_BUILD'],
+      ['06-restaurant-surplus-marketplace', 'AUTHORED_BUILD'],
+      ['07-heat-pump-financing', 'AUTHORED_BUILD'],
+      ['08-support-four-day-week', 'AUTHORED_BUILD'],
+    ] as const;
+    for (const [name, provenance] of cases) {
       const dir = join(base, name);
       const manifestText = await readFile(join(dir, 'case.json'), 'utf8');
       const input = await readFile(join(dir, 'input.md'), 'utf8');
       const manifest = IdeaV3CaseManifest.parse(JSON.parse(manifestText));
       expect(manifest.input_file).toBe('input.md');
+      expect(manifest.provenance).toBe(provenance);
+      for (const source of manifest.source_pack) {
+        if (source.local_file) expect((await readFile(join(dir, source.local_file), 'utf8')).length).toBeGreaterThan(40);
+      }
       expect(`${manifestText}\n${input}`).not.toMatch(/\/Users\/|api[_ -]?key|bearer\s|sk-[a-z0-9]/i);
     }
   });

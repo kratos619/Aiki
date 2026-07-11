@@ -1,0 +1,103 @@
+{
+  "id": "school-ai-tutor",
+  "title": "Public-school generative AI tutor rollout",
+  "set": "build",
+  "provenance": "AUTHORED_BUILD",
+  "tags": ["ambiguous", "evidence-rich", "regulated", "non-commercial", "education"],
+  "input_file": "input.md",
+  "critical_claims": [
+    {
+      "id": "S1",
+      "proposition": "The proposed tutor will improve Algebra I outcomes for this district's ninth-grade students.",
+      "acceptable_stances": ["UNRESOLVED", "QUALIFY"],
+      "evidence_required": true
+    },
+    {
+      "id": "S2",
+      "proposition": "The $57,600 license price fits the stated $65,000 budget before training and support costs.",
+      "acceptable_stances": ["SUPPORT", "QUALIFY"],
+      "evidence_required": true
+    },
+    {
+      "id": "S3",
+      "proposition": "The proposed data-retention terms satisfy district privacy, consent, and records obligations.",
+      "acceptable_stances": ["UNRESOLVED", "OPPOSE", "QUALIFY"],
+      "evidence_required": true
+    },
+    {
+      "id": "S4",
+      "proposition": "Teachers have enough capacity and a defined process to handle tutor errors and escalations safely.",
+      "acceptable_stances": ["UNRESOLVED", "OPPOSE"],
+      "evidence_required": true
+    },
+    {
+      "id": "S5",
+      "proposition": "A 600-student launch would improve rather than widen access for students with different language, disability, device, and connectivity needs.",
+      "acceptable_stances": ["UNRESOLVED", "QUALIFY"],
+      "evidence_required": true
+    },
+    {
+      "id": "S6",
+      "proposition": "The district should launch to 600 students before a smaller controlled pilot and privacy, accessibility, procurement, and workload reviews.",
+      "acceptable_stances": ["OPPOSE"],
+      "evidence_required": false
+    }
+  ],
+  "common_false_claims": [
+    {
+      "id": "SF1",
+      "claim": "The vendor's curriculum-alignment statement proves improved student outcomes.",
+      "reason": "Alignment and causal learning impact are different claims; no local or independent outcome evidence is supplied."
+    },
+    {
+      "id": "SF2",
+      "claim": "De-identified student conversations create no privacy or governance risk.",
+      "reason": "The proposal still requires jurisdiction- and policy-specific review of collection, retention, access, and consent."
+    },
+    {
+      "id": "SF3",
+      "claim": "The rollout costs exactly $57,600.",
+      "reason": "That is license cost only; training, support, accessibility, and administration costs are not estimated."
+    }
+  ],
+  "required_dimensions": [
+    "target user",
+    "existing alternatives",
+    "differentiation",
+    "feasibility",
+    "cost and resources",
+    "policy legal compliance and privacy",
+    "kill criteria",
+    "business model",
+    "distribution and go-to-market",
+    "timing",
+    "scalability",
+    "key risks and assumptions"
+  ],
+  "source_pack": [
+    {
+      "id": "S-S1",
+      "title": "Authored district baseline and vendor-proposal summary",
+      "as_of": "2026-07-01",
+      "local_file": "evidence.md"
+    }
+  ],
+  "acceptable_unresolved_outcomes": [
+    {
+      "claim_id": "S1",
+      "reason": "No independent or local outcome evidence is supplied."
+    },
+    {
+      "claim_id": "S3",
+      "reason": "Required privacy and records reviews are incomplete."
+    },
+    {
+      "claim_id": "S4",
+      "reason": "Teacher escalation workload and operating process are not measured."
+    },
+    {
+      "claim_id": "S5",
+      "reason": "Accessibility, language, device, and connectivity impacts are not evaluated."
+    }
+  ]
+}

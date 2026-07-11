@@ -29,11 +29,20 @@ describe('idea lane build-set rotation harness', () => {
       handles: [handle('agy'), handle('codex'), handle('claude')],
     });
 
-    expect(plan.cases).toEqual(['water-reminder', 'nurse-marketplace']);
-    expect(plan.runs).toHaveLength(4);
+    expect(plan.cases).toEqual([
+      'water-reminder',
+      'nurse-marketplace',
+      'postgres-multitenancy',
+      'library-sunday-hours',
+      'school-ai-tutor',
+      'restaurant-surplus-marketplace',
+      'heat-pump-financing',
+      'support-four-day-week',
+    ]);
+    expect(plan.runs).toHaveLength(16);
     expect(plan.runs[0]).toMatchObject({ rotation: 'agy-market', s4: ['agy', 'codex'] });
     expect(plan.runs[1]).toMatchObject({ rotation: 'codex-market', s4: ['codex', 'agy'] });
-    expect(plan.estimatedCalls).toBe(52);
+    expect(plan.estimatedCalls).toBe(208);
   });
 
   it('chooses the assignment by recall, then evidence precision and operating metrics', () => {
@@ -98,9 +107,9 @@ describe('idea lane build-set rotation harness', () => {
       },
     });
 
-    expect(seen).toHaveLength(4);
-    expect(result.observations).toHaveLength(4);
-    expect(JSON.parse(await readFile(resultsPath, 'utf8')).observations).toHaveLength(4);
+    expect(seen).toHaveLength(16);
+    expect(result.observations).toHaveLength(16);
+    expect(JSON.parse(await readFile(resultsPath, 'utf8')).observations).toHaveLength(16);
   });
 
   it('fills blinded quality metrics through the frozen decision-insight scorer', () => {

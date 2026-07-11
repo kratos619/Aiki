@@ -1,0 +1,96 @@
+{
+  "id": "restaurant-surplus-marketplace",
+  "title": "Restaurant surplus-food pickup marketplace",
+  "set": "build",
+  "provenance": "AUTHORED_BUILD",
+  "tags": ["contestable", "evidence-poor", "marketplace", "commercial"],
+  "input_file": "input.md",
+  "critical_claims": [
+    {
+      "id": "R1",
+      "proposition": "Letters of interest from twelve restaurants predict sustained supply participation after launch.",
+      "acceptable_stances": ["UNRESOLVED", "QUALIFY"],
+      "evidence_required": true
+    },
+    {
+      "id": "R2",
+      "proposition": "Consumers in the launch city will repeatedly buy enough $5 mystery bags to support ten sales per restaurant per day.",
+      "acceptable_stances": ["UNRESOLVED"],
+      "evidence_required": true
+    },
+    {
+      "id": "R3",
+      "proposition": "A $1.25 gross platform fee per order can cover payment fees, refunds, support, acquisition, and operating costs.",
+      "acceptable_stances": ["UNRESOLVED", "QUALIFY"],
+      "evidence_required": true
+    },
+    {
+      "id": "R4",
+      "proposition": "A pickup-only design removes the platform's material food-safety, allergen, and consumer-protection responsibilities.",
+      "acceptable_stances": ["OPPOSE", "QUALIFY"],
+      "evidence_required": true
+    },
+    {
+      "id": "R5",
+      "proposition": "Citywide launch density will produce convenient matches within narrow collection windows.",
+      "acceptable_stances": ["UNRESOLVED", "QUALIFY"],
+      "evidence_required": true
+    },
+    {
+      "id": "R6",
+      "proposition": "The company should build a citywide product before a manual neighborhood pilot measures supply, demand, repeat use, refunds, and contribution margin.",
+      "acceptable_stances": ["OPPOSE"],
+      "evidence_required": false
+    }
+  ],
+  "common_false_claims": [
+    {
+      "id": "RF1",
+      "claim": "The twelve letters prove restaurants will list ten bags every day.",
+      "reason": "The letters are non-binding and no paid operating pilot exists."
+    },
+    {
+      "id": "RF2",
+      "claim": "The platform earns $1.25 profit on every order.",
+      "reason": "The 25% fee is revenue before payment, refund, support, acquisition, and other costs."
+    },
+    {
+      "id": "RF3",
+      "claim": "Pickup-only marketplaces have no food-safety or allergen obligations.",
+      "reason": "The applicable allocation of duties is jurisdiction- and design-specific and requires evidence."
+    }
+  ],
+  "required_dimensions": [
+    "target user",
+    "existing alternatives",
+    "differentiation",
+    "feasibility",
+    "cost and resources",
+    "policy legal compliance and privacy",
+    "kill criteria",
+    "business model",
+    "distribution and go-to-market",
+    "timing",
+    "scalability",
+    "key risks and assumptions"
+  ],
+  "source_pack": [],
+  "acceptable_unresolved_outcomes": [
+    {
+      "claim_id": "R1",
+      "reason": "No restaurant retention or live listing evidence is supplied."
+    },
+    {
+      "claim_id": "R2",
+      "reason": "No consumer purchase or repeat-use evidence is supplied."
+    },
+    {
+      "claim_id": "R3",
+      "reason": "No measured cost or refund inputs are supplied."
+    },
+    {
+      "claim_id": "R5",
+      "reason": "No neighborhood-level supply-and-demand density data is supplied."
+    }
+  ]
+}
