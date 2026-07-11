@@ -25,7 +25,7 @@ export interface RunFlags {
  *  §14 repairs, cross-exam skips, and quorum. `opus` = the Claude/Opus subset (the metered-cost driver). */
 export function estimateRun(workflow: WorkflowId, opts: { cheap?: boolean } = {}): { calls: number; opus: number } {
   if (workflow === 'code-review') return { calls: 5, opus: opts.cheap ? 1 : 2 };
-  return { calls: 12, opus: 4 }; // idea-refinement (S0/S1/S3 on agy; S2 has claude; S7 + S9 + S9b run on the claude judge)
+  return { calls: 13, opus: 4 }; // idea-refinement maximum includes one targeted coverage-fill call
 }
 
 /** Thin y/N prompt (default yes). Only used on an interactive TTY. */

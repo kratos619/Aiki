@@ -25,6 +25,11 @@ function fakeAdapter(id: ProviderId): Adapter {
           claims_to_test: ['1.3x bug-catch rate'],
           evidence_supplied: [],
           missing_axes: ['pricing'],
+          domain_dimensions: [
+            { id: 'D1', label: 'provider interoperability', rationale: 'The idea depends on installed provider CLIs.' },
+            { id: 'D2', label: 'workflow adoption', rationale: 'Developers must change review habits.' },
+            { id: 'D3', label: 'output comparability', rationale: 'The council compares unlike provider outputs.' },
+          ],
           questions: [
             { id: 'Q1', axis: 'decision_frame', question: 'What decision should the council help you make?', why_it_matters: 'The verdict needs a decision frame.', suggested_answers: ['Build/no-build', 'Risk list'] },
             { id: 'Q2', axis: 'target_user', question: 'Who is the first target user?', why_it_matters: 'The audience changes the critique.', suggested_answers: ['Solo developers', 'Teams'] },
@@ -55,6 +60,21 @@ function fakeAdapter(id: ProviderId): Adapter {
             { dimension_id: 'R4', status: 'COVERED', position_ids: ['P2'], rationale: 'P2 covers feasibility.' },
           ],
           decision_questions: [{ id: 'Q1', question: 'who is the target user?', claim_ids: ['P1'] }],
+        };
+      } else if (p.includes('TARGETED COVERAGE FILL')) {
+        const missing = ['R2', 'R3', 'R5', 'R6', 'R7', 'R8', 'R9', 'R10', 'R11', 'R12', 'R13', 'D1', 'D2', 'D3'];
+        obj = {
+          task_echo: 'build a local multi-model orchestration CLI',
+          strongest_version: 'A focused local orchestration CLI may work.',
+          positions: [],
+          evidence: [],
+          coverage: missing.map((dimension_id) => ({
+            dimension_id,
+            status: 'NOT_APPLICABLE',
+            position_ids: [],
+            rationale: `No additional claim is needed for ${dimension_id} in this scripted fixture.`,
+          })),
+          decision_questions: [],
         };
       } else if (p.includes('Group anonymous positions')) {
         obj = { groups: [['P1', 'P3'], ['P2', 'P4']] };
@@ -134,7 +154,7 @@ describe('executeRun happy path (§24 T7: artifacts 00–10, end-to-end)', () =>
     const outcome = await executeRun(ctx, INPUT, runIdeaRefinement);
 
     expect(outcome.ok).toBe(true);
-    expect(outcome.callCount).toBe(12); // S0(1)+S1(1)+S2(3)+S3(1)+S4(2)+S7group(1)+S8(1)+S9(1)+S9b(1)
+    expect(outcome.callCount).toBe(13); // prior 12 + one targeted coverage-fill call
 
     const dir = ctx.writer.dir;
     expect(await readFile(join(dir, '00-original.md'), 'utf8')).toBe(INPUT);
@@ -145,6 +165,7 @@ describe('executeRun happy path (§24 T7: artifacts 00–10, end-to-end)', () =>
 
     const contract = JSON.parse(await readFile(join(dir, '01-intent-contract.json'), 'utf8'));
     expect(contract.task_type).toBe('idea-refinement');
+    expect(contract.domain_dimensions.map((dimension: { id: string }) => dimension.id)).toEqual(['D1', 'D2', 'D3']);
 
     const guard = JSON.parse(await readFile(join(dir, '02-misunderstanding-guard.json'), 'utf8'));
     expect(guard.interpretations).toHaveLength(3);
@@ -155,6 +176,14 @@ describe('executeRun happy path (§24 T7: artifacts 00–10, end-to-end)', () =>
     // S4: one role-output file per fan-out seat (agy, codex — judge=claude is not a seat).
     await expect(stat(join(dir, '04-role-outputs', 'agy.json'))).resolves.toBeDefined();
     await expect(stat(join(dir, '04-role-outputs', 'codex.json'))).resolves.toBeDefined();
+    const rawNames = await readdir(join(dir, 'raw'));
+    const agyS4 = rawNames.find((name) => name.startsWith('S4-agy-agy-') && name.endsWith('.prompt.txt'))!;
+    const codexS4 = rawNames.find((name) => name.startsWith('S4-codex-codex-') && name.endsWith('.prompt.txt'))!;
+    expect(await readFile(join(dir, 'raw', agyS4), 'utf8')).toContain('LANE: market-adoption');
+    expect(await readFile(join(dir, 'raw', codexS4), 'utf8')).toContain('LANE: economics-delivery');
+    await expect(stat(join(dir, '06b-coverage-fill.json'))).resolves.toBeDefined();
+    const coveragePrompt = rawNames.find((name) => name.startsWith('S7-coverage-fill-agy-') && name.endsWith('.prompt.txt'))!;
+    expect(await readFile(join(dir, 'raw', coveragePrompt), 'utf8')).toContain('R13: team / execution capability');
 
     // S5: both seats on-task (task_echo matches contract), nothing excluded.
     const drift = JSON.parse(await readFile(join(dir, '05-drift-report.json'), 'utf8'));
@@ -168,6 +197,7 @@ describe('executeRun happy path (§24 T7: artifacts 00–10, end-to-end)', () =>
     const graph = JSON.parse(await readFile(join(dir, '07-decision-graph.json'), 'utf8'));
     expect(graph.claims.filter((claim: { state: string }) => claim.state === 'CONSENSUS')).toHaveLength(1);
     expect(graph.claims.filter((claim: { state: string }) => claim.state === 'DISAGREEMENT')).toHaveLength(1);
+    expect(graph.holes.coverage).toEqual([]);
 
     // S8: the one contradiction (D1) was verified.
     const verif = JSON.parse(await readFile(join(dir, '08-verifications.json'), 'utf8'));
@@ -193,7 +223,7 @@ describe('executeRun happy path (§24 T7: artifacts 00–10, end-to-end)', () =>
 
     const meta = JSON.parse(await readFile(join(dir, 'meta.json'), 'utf8'));
     expect(meta.exit_status).toBe('ok');
-    expect(meta.call_count).toBe(12);
+    expect(meta.call_count).toBe(13);
     expect(meta.roles).toMatchObject({ analyst: 'agy', judge: 'claude', s4_1: 'agy', s4_2: 'codex' });
   });
 });

@@ -33,6 +33,11 @@ function scriptAdapter(id: ProviderId, counter: { n: number }, opts: { judgeFail
           claims_to_test: ['1.3x bug-catch rate'],
           evidence_supplied: [],
           missing_axes: ['pricing'],
+          domain_dimensions: [
+            { id: 'D1', label: 'provider interoperability', rationale: 'The idea depends on installed provider CLIs.' },
+            { id: 'D2', label: 'workflow adoption', rationale: 'Developers must change review habits.' },
+            { id: 'D3', label: 'output comparability', rationale: 'The council compares unlike provider outputs.' },
+          ],
           questions: [
             { id: 'Q1', axis: 'decision_frame', question: 'What decision should the council help you make?', why_it_matters: 'The verdict needs a decision frame.', suggested_answers: ['Build/no-build', 'Risk list'] },
             { id: 'Q2', axis: 'target_user', question: 'Who is the first target user?', why_it_matters: 'The audience changes the critique.', suggested_answers: ['Solo developers', 'Teams'] },
@@ -62,6 +67,21 @@ function scriptAdapter(id: ProviderId, counter: { n: number }, opts: { judgeFail
             { dimension_id: 'R4', status: 'COVERED', position_ids: ['P2'], rationale: 'P2 covers feasibility.' },
           ],
           decision_questions: [{ id: 'Q1', question: 'who is the target user?', claim_ids: ['P1'] }],
+        };
+      } else if (p.includes('TARGETED COVERAGE FILL')) {
+        const missing = ['R2', 'R3', 'R5', 'R6', 'R7', 'R8', 'R9', 'R10', 'R11', 'R12', 'R13', 'D1', 'D2', 'D3'];
+        obj = {
+          task_echo: 'build a local multi-model orchestration CLI',
+          strongest_version: 'A focused local orchestration CLI may work.',
+          positions: [],
+          evidence: [],
+          coverage: missing.map((dimension_id) => ({
+            dimension_id,
+            status: 'NOT_APPLICABLE',
+            position_ids: [],
+            rationale: `No additional claim is needed for ${dimension_id} in this scripted fixture.`,
+          })),
+          decision_questions: [],
         };
       } else if (p.includes('Group anonymous positions')) {
         obj = { groups: [['P1', 'P3'], ['P2', 'P4']] };
@@ -125,10 +145,10 @@ describe('resume: call replay', () => {
     const c1 = { n: 0 };
     const first = await executeRun(makeCtx(c1), INPUT, runIdeaRefinement);
     expect(first.ok).toBe(true);
-    expect(c1.n).toBe(12); // full run made 12 real calls
+    expect(c1.n).toBe(13); // full run includes one targeted coverage fill
 
     const cache = await buildReplayCache(first.dir);
-    expect(cache.size).toBe(12);
+    expect(cache.size).toBe(13);
 
     // Resume: a NEW run (different id/dir) with the cache — nothing should reach a model.
     const c2 = { n: 0 };
@@ -145,7 +165,7 @@ describe('resume: call replay', () => {
     expect(first.ok).toBe(false); // judge timed out
 
     const cache = await buildReplayCache(first.dir);
-    expect(cache.size).toBe(10); // S0–S8 cached; the failed judge output ([TIMEOUT]) is skipped
+    expect(cache.size).toBe(11); // S0–S8 plus coverage fill cached; the failed judge output is skipped
 
     const c2 = { n: 0 };
     const resumed = await executeRun(makeCtx(c2, { replay: cache }), INPUT, runIdeaRefinement);

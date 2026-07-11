@@ -20,9 +20,11 @@ import { s9Judge } from '../orchestration/stages/s9-judge.js';
 import { s9bPlan } from '../orchestration/stages/s9b-plan.js';
 import { s10Render } from '../orchestration/stages/s10-render.js';
 import { loadSkill } from '../orchestration/skills.js';
+import { buildLanePrompts } from '../orchestration/idea-lanes.js';
+import type { DomainDimension } from '../schemas/index.js';
 
-/** §12.1 idea-vetting rubric: 12 mandatory coverage items. S7 flags any item no analyst addressed
- *  as a blind spot. Inlined here (like the S4 template) while the skill/`rubric.json` loader (§11)
+/** Idea-vetting core rubric: 13 mandatory coverage items. S0 adds 3-5 domain dimensions per run.
+ *  Inlined here (like the S4 template) while the skill/`rubric.json` loader (§11)
  *  is deferred; it moves to skills/idea-refinement/rubric.json when that loader lands. */
 export const IDEA_RUBRIC: RubricItem[] = [
   { id: 'R1', label: 'target user / audience', keywords: ['target user', 'audience', 'customer', 'persona'] },
@@ -37,7 +39,15 @@ export const IDEA_RUBRIC: RubricItem[] = [
   { id: 'R10', label: 'timing / market readiness', keywords: ['timing', 'readiness', 'trend', 'now'] },
   { id: 'R11', label: 'scalability / growth', keywords: ['scalability', 'scale', 'growth'] },
   { id: 'R12', label: 'key risks / assumptions to validate', keywords: ['risk', 'assumption', 'validate', 'uncertain'] },
+  { id: 'R13', label: 'team / execution capability', keywords: ['team', 'founder', 'execution', 'capability'] },
 ];
+
+export function buildIdeaRubric(domainDimensions: DomainDimension[] = []): RubricItem[] {
+  return [
+    ...IDEA_RUBRIC,
+    ...domainDimensions.map((dimension) => ({ id: dimension.id, label: dimension.label, keywords: [dimension.label] })),
+  ];
+}
 
 /** §13 S4 analyst template (idea-refinement). S3 fills its slots; S4 will consume it (T6). */
 export const IDEA_S4_ANALYST_TEMPLATE = `ROLE: Independent analyst on a decision panel. You work ALONE; you will not see
@@ -91,7 +101,7 @@ export const IDEA_STAGES: StageInfo[] = [
 export async function runIdeaRefinement(ctx: RunCtx, input: string): Promise<void> {
   const brief = await runStage(ctx, 'S0', () => s0Grill(ctx, input));
   const grilledInput = renderGrilledInput(input, brief);
-  const contract = await runStage(ctx, 'S1', () => s1Intent(ctx, grilledInput));
+  const contract = await runStage(ctx, 'S1', () => s1Intent(ctx, grilledInput, brief.domain_dimensions));
   const guard = await runStage(ctx, 'S2', () => s2Misread(ctx, contract, grilledInput));
 
   // Persist the input as a file so S4's "read the file at {{INPUT_PATH}}" resolves (not a stage).
@@ -108,13 +118,15 @@ export async function runIdeaRefinement(ctx: RunCtx, input: string): Promise<voi
     }),
   );
 
+  const rubric = buildIdeaRubric(contract.domain_dimensions);
   // s3Prompts guarantees an entry for every template key (it iterates them), so `analyst` is present.
-  const seats = await runStage(ctx, 'S4', () => s4Analyze(ctx, stagePrompts.prompts.analyst!));
+  const lanePrompts = buildLanePrompts(stagePrompts.prompts.analyst!, rubric);
+  const seats = await runStage(ctx, 'S4', () => s4Analyze(ctx, lanePrompts));
   const { kept } = await runStage(ctx, 'S5', () => s5Drift(ctx, contract, seats));
   const positions = await runStage(ctx, 'S6', () => s6Positions(ctx, kept));
-  const graph = await runStage(ctx, 'S7', () => s7DecisionGraph(ctx, positions, IDEA_RUBRIC));
+  const graph = await runStage(ctx, 'S7', () => s7DecisionGraph(ctx, positions, rubric, contract.task));
   const verifications = await runStage(ctx, 'S8', () => s8Verify(ctx, graph));
-  const judgeReport = await runStage(ctx, 'S9', () => s9Judge(ctx, contract, graph, verifications, IDEA_RUBRIC));
+  const judgeReport = await runStage(ctx, 'S9', () => s9Judge(ctx, contract, graph, verifications, rubric));
   const actionPlan = await runStage(ctx, 'S9b', () => s9bPlan(ctx, contract, kept, graph, judgeReport));
-  await runStage(ctx, 'S10', () => s10Render(ctx, { contract, seats: kept, graph, verifications, judgeReport, actionPlan, rubric: IDEA_RUBRIC }));
+  await runStage(ctx, 'S10', () => s10Render(ctx, { contract, seats: kept, graph, verifications, judgeReport, actionPlan, rubric }));
 }

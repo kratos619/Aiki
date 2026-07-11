@@ -87,6 +87,7 @@ describe('compileDecisionGraph', () => {
 
   it('records coverage holes and dependency edges using graph claim ids', () => {
     const input = submission('Unit economics support the proposed fee.', 'SUPPORT');
+    input.coverage = [{ dimension_id: 'business-model', status: 'COVERED', position_ids: ['P1'], rationale: 'P1 covers the business model.' }];
     input.positions.push({
       ...position('P2', 'Demand is strong enough to reach break-even volume.', 'SUPPORT'),
       depends_on: ['P1'],
@@ -122,7 +123,10 @@ describe('compileDecisionGraph', () => {
 
   it('accepts a reasoned NOT_APPLICABLE entry as explicit coverage', () => {
     const input = submission('The fee covers loaded costs.', 'SUPPORT');
-    input.coverage = [{ dimension_id: 'policy', status: 'NOT_APPLICABLE', position_ids: [], rationale: 'No regulated activity is proposed.' }];
+    input.coverage = [
+      { dimension_id: 'business-model', status: 'COVERED', position_ids: ['P1'], rationale: 'P1 addresses the fee.' },
+      { dimension_id: 'policy', status: 'NOT_APPLICABLE', position_ids: [], rationale: 'No regulated activity is proposed.' },
+    ];
     const graph = compileDecisionGraph(
       [{ provider: 'agy', submission: input }],
       [
@@ -132,6 +136,15 @@ describe('compileDecisionGraph', () => {
     );
 
     expect(graph.holes.coverage).toEqual([]);
+  });
+
+  it('reports a structural hole when a position lacks an explicit coverage entry', () => {
+    const graph = compileDecisionGraph(
+      [{ provider: 'agy', submission: submission('The fee covers loaded costs.', 'SUPPORT') }],
+      [{ id: 'business-model', label: 'business model' }],
+    );
+
+    expect(graph.holes.coverage).toEqual([{ dimension_id: 'business-model', label: 'business model' }]);
   });
 });
 
