@@ -18,6 +18,8 @@
   a normal run still has room for one repair without skipping the validation plan.
 
 ### Fixed
+- Idea analyst outputs now canonicalize the observed Gemini evidence enum aliases (`SUPPORT` and lowercase
+  `current`) before strict validation, while unknown enum values still fail the schema boundary.
 - Codex provider smoke no longer crashes in non-git folders; Aiki now passes Codex's verified
   `--skip-git-repo-check` flag while keeping `-s read-only`.
 - `aiki --version` now reads from `package.json`, preventing CLI/package version drift.

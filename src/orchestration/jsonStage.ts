@@ -15,7 +15,7 @@ export async function jsonCall<T>(
   handle: ProviderHandle,
   stage: string,
   prompt: string,
-  schema: z.ZodType<T>,
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
   opts: { cwd?: string; repair?: boolean } = {},
 ): Promise<T> {
   const first = await ctx.call(handle, { prompt, expectJson: true, cwd: opts.cwd }, stage);

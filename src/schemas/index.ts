@@ -311,12 +311,32 @@ export const RoleOutput = z.union([IdeaRoleOutput, CodeReviewRoleOutput]);
  *  validates the raw call against this, injects `workflow`, then persists as `RoleOutput` (T10). */
 export const CodeReviewRoleOutputModel = CodeReviewRoleOutput.omit({ workflow: true });
 
-/** The exact JSON the model returns for an idea-refinement S4 seat: `IdeaRoleOutput` WITHOUT the
- *  `workflow` discriminator (§13 — model output carries no `workflow`). S4 validates the raw call
- *  against this, then injects `workflow` and re-validates as `RoleOutput` before persisting.
- *  `.omit` preserves the object's strict mode, so extra keys still trigger the §14 repair retry. */
-export const IdeaRoleOutputModel = IdeaRoleOutputBase.omit({ workflow: true }).superRefine((submission, ctx) =>
+const StrictIdeaRoleOutputModel = IdeaRoleOutputBase.omit({ workflow: true }).superRefine((submission, ctx) =>
   checkSubmissionRefs({ workflow: 'idea-refinement', ...submission }, ctx));
+
+/** Canonicalize only enum spellings observed in a live provider repair; all other invalid values stay invalid. */
+function canonicalizeIdeaRoleOutputModel(input: unknown): unknown {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return input;
+  const output = input as Record<string, unknown>;
+  if (!Array.isArray(output.evidence)) return input;
+  return {
+    ...output,
+    evidence: output.evidence.map((item) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return item;
+      const evidence = item as Record<string, unknown>;
+      return {
+        ...evidence,
+        support: evidence.support === 'SUPPORT' ? 'SUPPORTS' : evidence.support,
+        freshness: evidence.freshness === 'current' ? 'CURRENT' : evidence.freshness,
+      };
+    }),
+  };
+}
+
+/** The model-facing S4 shape. Exact known enum aliases are canonicalized, then the strict schema validates
+ *  the full output; persisted `IdeaRoleOutput` remains canonical-only. */
+export const IdeaRoleOutputModel: z.ZodType<z.infer<typeof StrictIdeaRoleOutputModel>, z.ZodTypeDef, unknown> =
+  z.preprocess(canonicalizeIdeaRoleOutputModel, StrictIdeaRoleOutputModel);
 
 // ── S3: StagePrompts (§9, §13) ──────────────────────────────────────────────
 //

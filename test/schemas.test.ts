@@ -6,6 +6,7 @@ import {
   RunBriefDraft,
   IntentContract,
   Interpretation,
+  IdeaRoleOutputModel,
   JudgeReport,
   RoleOutput,
   RunMeta,
@@ -134,6 +135,20 @@ describe('RoleOutput (workflow-discriminated union)', () => {
 
   it('routes to the idea-refinement member', () => {
     expect(RoleOutput.parse(idea)).toMatchObject({ workflow: 'idea-refinement' });
+  });
+
+  it('canonicalizes observed provider enum aliases at the model-output boundary', () => {
+    const { workflow: _workflow, ...modelOutput } = idea;
+    const parsed = IdeaRoleOutputModel.parse({
+      ...modelOutput,
+      evidence: [{ ...modelOutput.evidence[0], support: 'SUPPORT', freshness: 'current' }],
+    });
+
+    expect(parsed.evidence[0]).toMatchObject({ support: 'SUPPORTS', freshness: 'CURRENT' });
+    expect(IdeaRoleOutputModel.safeParse({
+      ...modelOutput,
+      evidence: [{ ...modelOutput.evidence[0], support: 'POSITIVE', freshness: 'recent' }],
+    }).success).toBe(false);
   });
 
   it('rejects position references to missing evidence', () => {

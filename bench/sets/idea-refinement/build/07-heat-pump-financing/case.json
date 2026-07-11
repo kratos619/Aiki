@@ -1,0 +1,100 @@
+{
+  "id": "heat-pump-financing",
+  "title": "Residential heat-pump lease launch",
+  "set": "build",
+  "provenance": "AUTHORED_BUILD",
+  "tags": ["contestable", "evidence-poor", "current-fact", "regulated", "commercial"],
+  "input_file": "input.md",
+  "critical_claims": [
+    {
+      "id": "H1",
+      "proposition": "A $149 monthly lease is economically attractive to target households after installation differences, energy use, fuel rates, and available incentives.",
+      "acceptable_stances": ["UNRESOLVED", "QUALIFY"],
+      "evidence_required": true
+    },
+    {
+      "id": "H2",
+      "proposition": "Ten years of $149 payments cover equipment, installation, financing, service, repairs, defaults, early termination, and acquisition with viable margin.",
+      "acceptable_stances": ["UNRESOLVED"],
+      "evidence_required": true
+    },
+    {
+      "id": "H3",
+      "proposition": "Current rebates and incentives can be treated as durable inputs for a ten-year two-state offer.",
+      "acceptable_stances": ["OPPOSE", "UNRESOLVED", "QUALIFY"],
+      "evidence_required": true
+    },
+    {
+      "id": "H4",
+      "proposition": "The installer can manage credit, disclosure, leasing, contractor, servicing, and early-termination obligations in both states.",
+      "acceptable_stances": ["UNRESOLVED", "QUALIFY"],
+      "evidence_required": true
+    },
+    {
+      "id": "H5",
+      "proposition": "Target customers will accept a ten-year HVAC payment obligation at sufficient conversion and default rates.",
+      "acceptable_stances": ["UNRESOLVED"],
+      "evidence_required": true
+    },
+    {
+      "id": "H6",
+      "proposition": "The company should launch in two states before producing cohort economics, jurisdiction reviews, and a quoted-home demand pilot.",
+      "acceptable_stances": ["OPPOSE"],
+      "evidence_required": false
+    }
+  ],
+  "common_false_claims": [
+    {
+      "id": "HF1",
+      "claim": "Every household saves money because heat pumps are more efficient.",
+      "reason": "Household economics depend on building, climate, system sizing, installation, fuel rates, usage, and incentives."
+    },
+    {
+      "id": "HF2",
+      "claim": "Existing rebates will remain unchanged for the full ten-year lease.",
+      "reason": "No current source or durability guarantee is supplied."
+    },
+    {
+      "id": "HF3",
+      "claim": "$149 per month creates positive unit economics.",
+      "reason": "No fully loaded cohort cost, financing, default, termination, or service model is supplied."
+    }
+  ],
+  "required_dimensions": [
+    "target user",
+    "existing alternatives",
+    "differentiation",
+    "feasibility",
+    "cost and resources",
+    "policy legal compliance and privacy",
+    "kill criteria",
+    "business model",
+    "distribution and go-to-market",
+    "timing",
+    "scalability",
+    "key risks and assumptions"
+  ],
+  "source_pack": [],
+  "acceptable_unresolved_outcomes": [
+    {
+      "claim_id": "H1",
+      "reason": "No representative quoted-home savings analysis is supplied."
+    },
+    {
+      "claim_id": "H2",
+      "reason": "No fully loaded cohort economics are supplied."
+    },
+    {
+      "claim_id": "H3",
+      "reason": "No current incentive sources or durability analysis are supplied."
+    },
+    {
+      "claim_id": "H4",
+      "reason": "No state-specific legal and operating reviews are supplied."
+    },
+    {
+      "claim_id": "H5",
+      "reason": "No observed conversion, cancellation, or repayment data is supplied."
+    }
+  ]
+}
