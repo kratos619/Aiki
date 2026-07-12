@@ -119,7 +119,12 @@ n = 10 cases, single run per arm — directional, not a p-value. Full method and
 - **Recommended: 3/3 providers ready.** Aiki can start with 2/3, but full council behavior and benchmarked
   code-review quality expect Claude Code, Codex, and Antigravity/Gemini together.
 
-Check anytime with `aiki doctor`:
+You don't have to remember to check: launching `aiki` runs this preflight automatically — per-provider
+progress rows for CLI presence, version, and auth/quota — and only opens the menu when at least 2 providers
+pass. A failing provider shows its exact fix (install command, `run <binary> once to log in`, or retry
+later). The auth/quota smoke result is cached for 6 hours, so repeat launches are instant and free.
+
+Check manually anytime with `aiki doctor`:
 
 ```bash
 aiki doctor          # lists each provider: version, ready/not, read-only mode

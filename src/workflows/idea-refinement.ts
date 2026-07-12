@@ -128,5 +128,5 @@ export async function runIdeaRefinement(ctx: RunCtx, input: string): Promise<voi
   const verifications = await runStage(ctx, 'S8', () => s8Verify(ctx, graph));
   const judgeReport = await runStage(ctx, 'S9', () => s9Judge(ctx, contract, graph, verifications, rubric));
   const actionPlan = await runStage(ctx, 'S9b', () => s9bPlan(ctx, contract, kept, graph, judgeReport));
-  await runStage(ctx, 'S10', () => s10Render(ctx, { contract, seats: kept, graph, verifications, judgeReport, actionPlan, rubric }));
+  await runStage(ctx, 'S10', () => s10Render(ctx, { contract, seats: kept, graph, verifications, judgeReport, actionPlan, rubric, original: input }));
 }

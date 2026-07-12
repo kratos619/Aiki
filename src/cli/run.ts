@@ -2,7 +2,9 @@
 // code-review computes a git diff from --base/--head (or reads --diff) and reviews it at the repo root.
 
 import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { createInterface } from 'node:readline';
+import { renderTerminalSummary, type DecisionReportJson } from '../orchestration/stages/s10-render.js';
 import { run as runEngine } from '../orchestration/engine.js';
 import type { RoleMap, WorkflowId } from '../orchestration/context.js';
 import { ConfigError, loadLayeredConfig } from '../config/config.js';
@@ -149,7 +151,18 @@ export async function runCommand(workflow: string, input: string | undefined, op
   });
 
   if (outcome.ok) {
-    process.stdout.write(`\n  ✔ run ${outcome.runId} complete — ${outcome.callCount} provider call(s)\n  artifacts: ${outcome.dir}\n`);
+    process.stdout.write(`\n  ✔ run ${outcome.runId} complete — ${outcome.callCount} provider call(s)\n  artifacts: ${outcome.dir}\n\n`);
+    // Level-1 terminal summary from the machine-readable report (idea runs; absent for code-review).
+    try {
+      const report = JSON.parse(await readFile(join(outcome.dir, '10-decision-report.json'), 'utf8')) as DecisionReportJson;
+      const summary = renderTerminalSummary(report, {
+        markdownPath: join(outcome.dir, 'final-report.md'),
+        jsonPath: join(outcome.dir, '10-decision-report.json'),
+      });
+      process.stdout.write(summary.split('\n').map((line) => `  ${line}`).join('\n') + '\n');
+    } catch {
+      /* code-review runs and pre-v4 artifacts have no decision report — the line above already links artifacts */
+    }
     // Auto-open the readable report in the browser (interactive terminals only; skipped in pipes/CI).
     if (process.stdout.isTTY) {
       const html = await openCouncilHtml(outcome.runId, outcome.dir);

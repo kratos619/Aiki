@@ -8,7 +8,7 @@ import { executeRun } from '../orchestration/engine.js';
 import { DecisionGraph } from '../schemas/index.js';
 import { RunWriter } from '../storage/runs.js';
 import { runIdeaRefinement } from '../workflows/idea-refinement.js';
-import { IdeaV3CaseManifest, scoreDecisionInsights, type DecisionInsightAdjudication } from './scoring/decision-insights.js';
+import { DecisionInsightAdjudication, IdeaV3CaseManifest, scoreDecisionInsights } from './scoring/decision-insights.js';
 
 export type LaneRotation = 'agy-market' | 'codex-market';
 
@@ -21,6 +21,7 @@ export interface IdeaLaneBenchPlan {
   cases: string[];
   runs: Array<{ case: string; rotation: LaneRotation; s4: [ProviderId, ProviderId] }>;
   estimatedCalls: number;
+  resumedFrom?: string; // set when a prior campaign file was found and its pairs are kept
 }
 
 export const LaneRotationObservation = z.object({
@@ -64,14 +65,66 @@ async function loadBuildCases(root: string): Promise<Array<{ id: string; input: 
   }));
 }
 
-export async function planIdeaLaneBench(opts: { root?: string; handles?: ProviderHandle[] } = {}): Promise<IdeaLaneBenchPlan> {
+// Only real `idea-lanes-YYYY-MM-DD.json` campaign files — an archived/renamed run is never resumed by accident.
+const LANE_CAMPAIGN = /^idea-lanes-\d{4}-\d{2}-\d{2}\.json$/;
+
+/** Latest dated campaign file under <root>/bench/results, or null when none exists. */
+export async function findLatestLaneResults(root: string): Promise<string | null> {
+  const dir = join(root, 'bench', 'results');
+  try {
+    const latest = (await readdir(dir)).filter((name) => LANE_CAMPAIGN.test(name)).sort().pop();
+    return latest ? join(dir, latest) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function loadPriorObservations(path: string): Promise<LaneRotationObservation[]> {
+  try {
+    return LaneRotationResult.parse(JSON.parse(await readFile(path, 'utf8'))).observations;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw error; // a corrupt checkpoint fails loud — silently starting fresh would re-pay the whole matrix
+  }
+}
+
+async function resolveResume(root: string, opts: { resultsPath?: string; resume?: boolean }): Promise<{ path: string | null; prior: LaneRotationObservation[] }> {
+  const path = opts.resultsPath ?? (opts.resume ? await findLatestLaneResults(root) : null);
+  return { path, prior: opts.resume && path ? await loadPriorObservations(path) : [] };
+}
+
+/** Narrow to one named build case (metered single-case runs); an unknown id fails loud, never runs 0 pairs. */
+function filterCases<T extends { id: string }>(cases: T[], caseId?: string): T[] {
+  if (!caseId) return cases;
+  const picked = cases.filter((item) => item.id === caseId);
+  if (picked.length === 0) throw new Error(`unknown case "${caseId}" — build cases: ${cases.map((item) => item.id).join(', ')}`);
+  return picked;
+}
+
+/** A rotation sample is valid only when both scout seats actually produced output. A `low_diversity` run
+ *  (a seat died; the survivor was resampled) would silently poison the lane comparison if recorded. */
+export function assertLaneRunDiversity(flags: readonly string[] | undefined, label: string): void {
+  if (flags?.includes('low_diversity')) {
+    throw new Error(`${label}: run completed low_diversity (a scout seat died) — not a valid rotation sample; re-run when both providers are healthy`);
+  }
+}
+
+export async function planIdeaLaneBench(opts: { root?: string; handles?: ProviderHandle[]; resultsPath?: string; resume?: boolean; caseId?: string } = {}): Promise<IdeaLaneBenchPlan> {
   const root = opts.root ?? process.cwd();
   const handles = opts.handles ?? await setupProviders();
   const available = new Set(handles.map((handle) => handle.id));
-  const cases = await loadBuildCases(root);
+  const cases = filterCases(await loadBuildCases(root), opts.caseId);
+  const { path, prior } = await resolveResume(root, opts);
+  const done = new Set(prior.map((item) => `${item.case_id}:${item.rotation}`));
   const runnable = ROTATIONS.filter(({ s4 }) => available.has('claude') && s4.every((provider) => available.has(provider)));
-  const runs = cases.flatMap((item) => runnable.map(({ rotation, s4 }) => ({ case: item.id, rotation, s4 })));
-  return { cases: cases.map((item) => item.id), runs, estimatedCalls: runs.length * 13 };
+  const runs = cases.flatMap((item) => runnable.map(({ rotation, s4 }) => ({ case: item.id, rotation, s4 })))
+    .filter((run) => !done.has(`${run.case}:${run.rotation}`));
+  return {
+    cases: cases.map((item) => item.id),
+    runs,
+    estimatedCalls: runs.length * 13,
+    resumedFrom: prior.length ? path ?? undefined : undefined,
+  };
 }
 
 async function executeLaneRun(target: LaneRunTarget, handles: ProviderHandle[], root: string): Promise<LaneRotationObservation> {
@@ -83,6 +136,8 @@ async function executeLaneRun(target: LaneRunTarget, handles: ProviderHandle[], 
   const started = Date.now();
   const outcome = await executeRun(ctx, target.input, runIdeaRefinement);
   if (!outcome.ok) throw new Error(`${target.case_id}/${target.rotation} failed: ${outcome.error?.code}: ${outcome.error?.message}`);
+  const meta = JSON.parse(await readFile(join(outcome.dir, 'meta.json'), 'utf8')) as { flags?: string[] };
+  assertLaneRunDiversity(meta.flags, `${target.case_id}/${target.rotation}`);
   const graph = DecisionGraph.parse(JSON.parse(await readFile(join(outcome.dir, '07-decision-graph.json'), 'utf8')));
   const positions = new Map(graph.positions.map((position) => [position.id, position]));
   const unique = { agy: 0, codex: 0 };
@@ -107,19 +162,24 @@ export async function runIdeaLaneBench(opts: {
   handles?: ProviderHandle[];
   resultsPath?: string;
   execute?: LaneExecutor;
+  resume?: boolean;
+  caseId?: string;
 } = {}): Promise<{ path: string; observations: LaneRotationObservation[] }> {
   const root = opts.root ?? process.cwd();
   const handles = opts.handles ?? await setupProviders();
   const available = new Set(handles.map((handle) => handle.id));
-  const cases = await loadBuildCases(root);
+  const cases = filterCases(await loadBuildCases(root), opts.caseId);
   const targets = cases.flatMap((item) => ROTATIONS
     .filter(({ s4 }) => available.has('claude') && s4.every((provider) => available.has(provider)))
     .map(({ rotation, s4 }) => ({ case_id: item.id, input: item.input, rotation, s4 })));
-  const path = opts.resultsPath ?? join(root, 'bench', 'results', `idea-lanes-${new Date().toISOString().slice(0, 10)}.json`);
+  const resumed = await resolveResume(root, opts);
+  const path = resumed.path ?? join(root, 'bench', 'results', `idea-lanes-${new Date().toISOString().slice(0, 10)}.json`);
+  const done = new Set(resumed.prior.map((item) => `${item.case_id}:${item.rotation}`));
   const execute = opts.execute ?? ((target: LaneRunTarget) => executeLaneRun(target, handles, root));
-  const observations: LaneRotationObservation[] = [];
+  const observations: LaneRotationObservation[] = [...resumed.prior];
   await mkdir(dirname(path), { recursive: true });
   for (const target of targets) {
+    if (done.has(`${target.case_id}:${target.rotation}`)) continue; // already paid for — keep, don't re-run
     observations.push(LaneRotationObservation.parse(await execute(target)));
     const result = LaneRotationResult.parse({ at: new Date().toISOString(), observations });
     const tmp = `${path}.tmp`;
@@ -127,6 +187,50 @@ export async function runIdeaLaneBench(opts: {
     await rename(tmp, path);
   }
   return { path, observations };
+}
+
+/** One human-authored adjudication entry: which pair it scores + the frozen R0 scorer's exact input. */
+const LaneAdjudicationEntry = z
+  .object({
+    case_id: z.string().min(1),
+    rotation: z.enum(['agy-market', 'codex-market']),
+    adjudication: DecisionInsightAdjudication,
+  })
+  .strict();
+const LaneAdjudicationFile = z.array(LaneAdjudicationEntry).min(1);
+
+/** Import blind adjudications into a campaign file: each entry flows through the frozen R0 scorer and
+ *  fills that pair's null recall/precision. One pass by design — an already-scored pair is refused, and
+ *  an unknown pair fails loud rather than silently dropping a rater's work. */
+export async function importLaneAdjudications(opts: {
+  root?: string;
+  resultsPath?: string;
+  importPath: string;
+}): Promise<{ path: string; scored: LaneRotationObservation[]; observations: LaneRotationObservation[] }> {
+  const root = opts.root ?? process.cwd();
+  const path = opts.resultsPath ?? await findLatestLaneResults(root);
+  if (!path) throw new Error('no idea-lanes campaign file under bench/results/ — run the bench first');
+  const prior = LaneRotationResult.parse(JSON.parse(await readFile(path, 'utf8')));
+  const entries = LaneAdjudicationFile.parse(JSON.parse(await readFile(opts.importPath, 'utf8')));
+  const byPair = new Map(prior.observations.map((item) => [`${item.case_id}:${item.rotation}`, item]));
+  const scored: LaneRotationObservation[] = [];
+  for (const entry of entries) {
+    const key = `${entry.case_id}:${entry.rotation}`;
+    const observation = byPair.get(key);
+    if (!observation) throw new Error(`no observation for ${key} in ${path} — run that pair first`);
+    if (observation.decision_critical_recall !== null || observation.evidence_precision !== null) {
+      throw new Error(`${key} is already scored — blind adjudication is one pass (BENCHMARK-IDEA-V3.md)`);
+    }
+    const updated = scoreLaneObservation(observation, entry.adjudication);
+    byPair.set(key, updated);
+    scored.push(updated);
+  }
+  const observations = prior.observations.map((item) => byPair.get(`${item.case_id}:${item.rotation}`)!);
+  const result = LaneRotationResult.parse({ at: new Date().toISOString(), observations });
+  const tmp = `${path}.tmp`;
+  await writeFile(tmp, JSON.stringify(result, null, 2), 'utf8');
+  await rename(tmp, path);
+  return { path, scored, observations };
 }
 
 /** Pick only from fully adjudicated build observations; exact ties leave the default unfrozen. */

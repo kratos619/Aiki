@@ -314,7 +314,16 @@ export const CodeReviewRoleOutputModel = CodeReviewRoleOutput.omit({ workflow: t
 const StrictIdeaRoleOutputModel = IdeaRoleOutputBase.omit({ workflow: true }).superRefine((submission, ctx) =>
   checkSubmissionRefs({ workflow: 'idea-refinement', ...submission }, ctx));
 
-/** Canonicalize only enum spellings observed in a live provider repair; all other invalid values stay invalid. */
+/** Case-insensitive match to an exact canonical enum word (plus known aliases); prose never matches. */
+function canonicalEnum(value: unknown, canon: readonly string[], aliases: Record<string, string> = {}): unknown {
+  if (typeof value !== 'string') return value;
+  const upper = value.toUpperCase();
+  const mapped = aliases[upper] ?? upper;
+  return canon.includes(mapped) ? mapped : value;
+}
+
+/** Canonicalize enum spellings observed in live provider repairs (SUPPORT, current, Current);
+ *  anything that is not the exact word in some casing stays invalid. */
 function canonicalizeIdeaRoleOutputModel(input: unknown): unknown {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return input;
   const output = input as Record<string, unknown>;
@@ -326,11 +335,31 @@ function canonicalizeIdeaRoleOutputModel(input: unknown): unknown {
       const evidence = item as Record<string, unknown>;
       return {
         ...evidence,
-        support: evidence.support === 'SUPPORT' ? 'SUPPORTS' : evidence.support,
-        freshness: evidence.freshness === 'current' ? 'CURRENT' : evidence.freshness,
+        support: canonicalEnum(evidence.support, ['SUPPORTS', 'CONTRADICTS', 'CONTEXT_ONLY'], { SUPPORT: 'SUPPORTS' }),
+        freshness: canonicalEnum(evidence.freshness, ['CURRENT', 'DATED', 'UNKNOWN']),
       };
     }),
   };
+}
+
+/** Deterministic last resort after a failed §14 repair (run 20260712-0011: Gemini wrote evidence prose
+ *  into `support`). Drops evidence cards that are still invalid after canonicalization and scrubs their
+ *  ids from positions — an unusable card costs one card, not the run. Positions are NEVER altered: a
+ *  broken claim set stays a hard failure. */
+export function salvageIdeaRoleOutputModel(input: unknown): unknown {
+  const canonical = canonicalizeIdeaRoleOutputModel(input);
+  if (!canonical || typeof canonical !== 'object' || Array.isArray(canonical)) return canonical;
+  const output = canonical as Record<string, unknown>;
+  if (!Array.isArray(output.evidence) || !Array.isArray(output.positions)) return canonical;
+  const evidence = output.evidence.filter((item) => EvidenceCard.safeParse(item).success);
+  const kept = new Set(evidence.map((item) => (item as { id: string }).id));
+  const positions = output.positions.map((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return item;
+    const position = item as Record<string, unknown>;
+    if (!Array.isArray(position.evidence_ids)) return item;
+    return { ...position, evidence_ids: position.evidence_ids.filter((id) => kept.has(id as string)) };
+  });
+  return { ...output, evidence, positions };
 }
 
 /** The model-facing S4 shape. Exact known enum aliases are canonicalized, then the strict schema validates

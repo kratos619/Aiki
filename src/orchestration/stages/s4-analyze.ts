@@ -12,7 +12,7 @@
 
 import type { ProviderId } from '../../providers/types.js';
 import type { IdeaRoleOutput } from '../../schemas/index.js';
-import { IdeaRoleOutputModel } from '../../schemas/index.js';
+import { IdeaRoleOutputModel, salvageIdeaRoleOutputModel } from '../../schemas/index.js';
 import { isFatal, StageError, type RunCtx } from '../context.js';
 import { jsonCall } from '../jsonStage.js';
 import { IDEA_LANES, type IdeaLane, type LanePrompts } from '../idea-lanes.js';
@@ -28,7 +28,7 @@ export interface SeatOutput {
 /** Run one analyst seat → validated `RoleOutput`, persisted to 04-role-outputs/<label>.json.
  *  `label` doubles as the artifact filename, so a resample uses a distinct label. */
 async function runSeat(ctx: RunCtx, seat: ProviderId, label: string, lane: IdeaLane, prompt: string): Promise<SeatOutput> {
-  const model = await jsonCall(ctx, ctx.handle(seat), `S4-${label}`, prompt, IdeaRoleOutputModel);
+  const model = await jsonCall(ctx, ctx.handle(seat), `S4-${label}`, prompt, IdeaRoleOutputModel, { salvage: salvageIdeaRoleOutputModel });
   const output: IdeaRoleOutput = { workflow: 'idea-refinement', ...model };
   await ctx.writer.writeRoleOutput(label, output);
   return { provider: seat, sample: label, lane, output };

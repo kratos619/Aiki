@@ -8,7 +8,8 @@ import Spinner from 'ink-spinner';
 import TextInput from 'ink-text-input';
 import { readFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
-import { DISPLAY_NAME, type ProviderId } from '../providers/types.js';
+import { DISPLAY_NAME, PROVIDER_IDS, type ProviderId } from '../providers/types.js';
+import { preflightLine, runDoctorChecks, type DoctorReport } from '../cli/doctor.js';
 import {
   RunCtx,
   DEFAULT_BUDGET,
@@ -92,16 +93,23 @@ export function App(props: AppProps): React.JSX.Element {
   const [aborted, setAborted] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const ctxRef = useRef<RunCtx | null>(null);
+  // Startup preflight (full doctor: CLI presence, version, auth/quota smoke — smoke cached ≤6h).
+  const [checks, setChecks] = useState<Partial<Record<ProviderId, ReturnType<typeof preflightLine>>>>({});
+  const [preflightFail, setPreflightFail] = useState<DoctorReport | null>(null);
 
-  // Detect providers + repo context once, up front.
+  // Full doctor preflight + provider handles + repo context once, up front. The menu only shows
+  // when ≥2 providers pass; a failure stays on this screen with the exact fix per provider.
   useEffect(() => {
     let alive = true;
-    void Promise.all([setupProviders(providerModels), detectRepoStatus(process.cwd())]).then(([hs, repoStatus]) => {
+    void Promise.all([
+      setupProviders(providerModels),
+      runDoctorChecks({ onRow: (row) => { if (alive) setChecks((prev) => ({ ...prev, [row.det.id]: preflightLine(row) })); } }),
+      detectRepoStatus(process.cwd()),
+    ]).then(([hs, report, repoStatus]) => {
       if (!alive) return;
       setRepo(repoStatus);
-      if (hs.length < 2) {
-        setErrorView(formatError('QUORUM'));
-        setPhase('finished');
+      if (report.ready < 2 || hs.length < 2) {
+        setPreflightFail(report);
         return;
       }
       setHandles(hs);
@@ -118,6 +126,9 @@ export function App(props: AppProps): React.JSX.Element {
     const t = setInterval(() => setNow(Date.now()), 500);
     return () => clearInterval(t);
   }, [phase]);
+
+  // Preflight rows that failed but left quorum intact — surfaced as a warning on the home screen.
+  const degraded = Object.values(checks).filter((line): line is NonNullable<typeof line> => !!line && !line.ok);
 
   // V10 command palette: matches for what's being typed (only on the input screen, not mid-confirm).
   const paletteMatches = phase === 'input' && pendingIdea === null ? filterCommands(idea) : [];
@@ -154,6 +165,11 @@ export function App(props: AppProps): React.JSX.Element {
       }
       if (clarify) clarify.resolve({ kind: 'pick', index: 0 }); // unblock S2 so the run reaches its abort guard
       if (phase === 'detecting' || phase === 'input' || phase === 'finished') exit();
+      return;
+    }
+    // Failed preflight: any of q / Esc / Enter leaves — there is nothing else to do here.
+    if (phase === 'detecting' && preflightFail && (input === 'q' || key.escape || key.return)) {
+      exit();
       return;
     }
     // V10 confirm gate: the TextInput is unmounted while pending, so Enter/Esc arrive here only.
@@ -438,12 +454,27 @@ export function App(props: AppProps): React.JSX.Element {
       </Text>
 
       {phase === 'detecting' && (
-        <Text>
-          <Text color="yellow">
-            <Spinner type="dots" />
-          </Text>{' '}
-          detecting providers…
-        </Text>
+        <Box flexDirection="column" marginTop={1}>
+          <Text dimColor>preflight — checking provider CLIs, auth & quota (smoke cached ≤6h)</Text>
+          {PROVIDER_IDS.map((id) => {
+            const line = checks[id];
+            return (
+              <Text key={id}>
+                {line
+                  ? line.ok ? <Text color="green">✔</Text> : <Text color="red">✖</Text>
+                  : <Text color="yellow"><Spinner type="dots" /></Text>}
+                {' '}{line ? line.label : `${DISPLAY_NAME[id]} — checking…`}
+                {line?.fix ? <Text dimColor>  →  {line.fix}</Text> : null}
+              </Text>
+            );
+          })}
+          {preflightFail && (
+            <Box flexDirection="column" marginTop={1}>
+              <Text color="red" bold>preflight failed — {preflightFail.ready}/3 providers ready (aiki needs 2)</Text>
+              <Text dimColor>apply the fix shown next to each ✖, then run `aiki` again · `aiki doctor --fresh` re-checks live · q quits</Text>
+            </Box>
+          )}
+        </Box>
       )}
 
       {(phase === 'input' || phase === 'running' || phase === 'grill' || phase === 'clarify' || phase === 'finished') && handles.length > 0 && (
@@ -463,6 +494,11 @@ export function App(props: AppProps): React.JSX.Element {
             ))}
             <Text dimColor> — council ready</Text>
           </Text>
+          {degraded.length > 0 && (
+            <Text color="yellow">
+              ⚠ {degraded.map((line) => `${line.label}${line.fix ? ` (${line.fix})` : ''}`).join(' · ')} — continuing with {Math.max(handles.length - degraded.length, 0)}/3 providers
+            </Text>
+          )}
         </Box>
       )}
 

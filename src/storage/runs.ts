@@ -55,6 +55,8 @@ const JSON_SLOTS = {
   verifications: { ord: 8, path: '08-verifications.json', schema: VerificationSet },
   'judge-report': { ord: 9, path: '09-judge-report.json', schema: JudgeReport },
   'action-plan': { ord: 9.5, path: '09b-action-plan.json', schema: ActionPlanArtifact },
+  // machine-readable final report (three-level report v4); schema-less: derived output, never re-read by stages
+  'decision-report': { ord: 10, path: '10-decision-report.json', schema: null },
 } satisfies Record<string, SlotDef>;
 
 /** Text (markdown) stage slots (§15). */

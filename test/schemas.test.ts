@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import {
   ActionPlan,
   DisagreementMap,
@@ -10,6 +11,7 @@ import {
   JudgeReport,
   RoleOutput,
   RunMeta,
+  salvageIdeaRoleOutputModel,
   VerificationSet,
 } from '../src/schemas/index.js';
 
@@ -149,6 +151,54 @@ describe('RoleOutput (workflow-discriminated union)', () => {
       ...modelOutput,
       evidence: [{ ...modelOutput.evidence[0], support: 'POSITIVE', freshness: 'recent' }],
     }).success).toBe(false);
+  });
+
+  it('canonicalizes case variants of exact enum words, still rejecting prose', () => {
+    const { workflow: _workflow, ...modelOutput } = idea;
+    const parsed = IdeaRoleOutputModel.parse({
+      ...modelOutput,
+      evidence: [{ ...modelOutput.evidence[0], support: 'supports', freshness: 'Current' }],
+    });
+
+    expect(parsed.evidence[0]).toMatchObject({ support: 'SUPPORTS', freshness: 'CURRENT' });
+    expect(IdeaRoleOutputModel.safeParse({
+      ...modelOutput,
+      evidence: [{ ...modelOutput.evidence[0], support: 'The vendor retains data for two years.' }],
+    }).success).toBe(false);
+  });
+
+  it('salvage drops still-invalid evidence cards and scrubs their position references', () => {
+    const { workflow: _workflow, ...modelOutput } = idea;
+    const broken = {
+      ...modelOutput,
+      evidence: [
+        modelOutput.evidence[0],
+        { ...modelOutput.evidence[0], id: 'E2', support: 'Teachers must handle escalations.' },
+      ],
+      positions: [{ ...modelOutput.positions[0], evidence_ids: ['E1', 'E2'] }],
+    };
+
+    expect(IdeaRoleOutputModel.safeParse(broken).success).toBe(false);
+    const salvaged = IdeaRoleOutputModel.parse(salvageIdeaRoleOutputModel(broken));
+    expect(salvaged.evidence.map((card) => card.id)).toEqual(['E1']);
+    expect(salvaged.positions[0]!.evidence_ids).toEqual(['E1']);
+  });
+
+  it('salvage never touches positions — a broken claim set stays a hard failure', () => {
+    const { workflow: _workflow, ...modelOutput } = idea;
+    const broken = { ...modelOutput, positions: [{ ...modelOutput.positions[0], stance: 'strongly agree' }] };
+
+    expect(IdeaRoleOutputModel.safeParse(salvageIdeaRoleOutputModel(broken)).success).toBe(false);
+  });
+
+  it('replays the 20260712-0011 failed Gemini repair: prose cards drop, all positions survive', () => {
+    const raw = JSON.parse(readFileSync(new URL('./fixtures/s4-repair-prose-enums.json', import.meta.url), 'utf8'));
+
+    expect(IdeaRoleOutputModel.safeParse(raw).success).toBe(false);
+    const salvaged = IdeaRoleOutputModel.parse(salvageIdeaRoleOutputModel(raw));
+    expect(salvaged.positions).toHaveLength(6);
+    expect(salvaged.evidence).toHaveLength(0);
+    expect(salvaged.positions.every((position) => position.evidence_ids.length === 0)).toBe(true);
   });
 
   it('rejects position references to missing evidence', () => {
