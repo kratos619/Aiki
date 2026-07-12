@@ -3,6 +3,21 @@
 ## Unreleased
 
 ### Added
+- **Startup preflight** — typing bare `aiki` now runs the full doctor before the home screen: per-provider
+  progress rows checking CLI presence, version, and auth/quota (smoke, cached 6h). Fewer than 2 providers
+  ready shows a failure screen with the exact fix per provider; a single degraded provider shows a warning
+  on the home screen and the council continues with the remaining quorum.
+- **Idea-lane bench resume** — `aiki bench idea-refinement --set build --resume [--yes]` continues the
+  latest campaign file in `bench/results/`: completed case×rotation pairs are kept (never re-paid), missing
+  or failed pairs re-run, and new observations append to the same file. The dry-run estimate reflects only
+  what is left to run. `--case <id>` restricts the metered run to one build case (an unknown id fails loud
+  with the list of valid cases), and a run that completes `low_diversity` (a scout seat died mid-run) is
+  rejected instead of being recorded — it is not a valid rotation sample.
+- **Adjudication import** — `aiki bench idea-refinement --import <file>` (offline, no provider calls)
+  imports blind adjudications: each `{ case_id, rotation, adjudication }` entry flows through the frozen R0
+  scorer and fills that pair's null recall/precision in the campaign file. Unknown pairs fail loud;
+  re-scoring an already-scored pair is refused (blind adjudication is one pass); when every pair is scored
+  it prints the lane default selection.
 - **Contextual intent preflight** — idea-refinement now starts with an S0 run brief: the analyst generates
   3-4 context-specific questions, the TUI asks them before the main council work, and the answers are
   persisted in `00b-run-brief.json` and included in downstream prompts.
@@ -13,13 +28,29 @@
   call/provider receipt. The Markdown copy button includes the expanded brief.
 
 ### Changed
+- **Three-level decision report** — idea-refinement's final report is restructured: (1) a one-screen
+  terminal summary (verdict, status, structural confidence, consensus counts, primary reason, dissent,
+  verification checks, next action) printed after `aiki run`; (2) a 12-section Multi-Model Decision Report
+  markdown (`final-report.md`): metadata, executive verdict, problem interpretation, per-model positions,
+  claim-level consensus map, key agreements/disagreements, minority report, verification results, final
+  synthesis, risks, audit; (3) machine-readable `10-decision-report.json` the markdown is rendered from, so
+  the two can never disagree. Statuses are ACCEPTED / ACCEPTED_WITH_CONDITIONS / INCONCLUSIVE / REJECTED
+  (mapped from the judge's recommendation). Confidence is structural — 40% verification coverage + 25%
+  independent convergence + 20% evidence quality + 15% stability − critical-risk penalty; model
+  self-confidence never enters it and consensus alone can never reach the High band. Labeled a heuristic in
+  the report until benchmark-calibrated.
 - Idea-refinement run estimate is now ~12 provider calls / ~4 Claude-Opus calls because S0 writes the
   intent preflight and the judge seat also writes the validation plan. The default budget is now 13 so
   a normal run still has room for one repair without skipping the validation plan.
 
 ### Fixed
-- Idea analyst outputs now canonicalize the observed Gemini evidence enum aliases (`SUPPORT` and lowercase
-  `current`) before strict validation, while unknown enum values still fail the schema boundary.
+- Idea analyst outputs now canonicalize the observed Gemini evidence enum aliases before strict validation:
+  any casing of the exact enum word (`SUPPORT`, `current`, `Current`) maps to the canonical value, while
+  prose or unknown values still fail the schema boundary.
+- A failed S4 repair no longer kills the run when the damage is limited to evidence cards: a deterministic
+  salvage drops the still-invalid cards and scrubs their references (positions are never altered — a broken
+  claim set stays fatal). Applies both when the repair output fails validation and when the repair call
+  itself dies (e.g. quota), and costs no extra provider call.
 - Codex provider smoke no longer crashes in non-git folders; Aiki now passes Codex's verified
   `--skip-git-repo-check` flag while keeping `-s read-only`.
 - `aiki --version` now reads from `package.json`, preventing CLI/package version drift.

@@ -159,6 +159,7 @@ describe('graph-backed report semantics', () => {
     const ctx = {
       runId: 'test-run', flags: new Set<string>(), calls: [], budget: { limit: 12, used: 0 },
       available: () => ['agy', 'codex'],
+      roles: { analyst: 'agy', judge: 'claude', verifier: 'codex', s4: ['agy', 'codex'] },
     } as unknown as RunCtx;
     const report = renderReport(ctx, {
       contract: { task: 'evaluate the fee', task_type: 'idea-refinement', constraints: [], unknowns: [], success_criteria: [] },
@@ -168,7 +169,8 @@ describe('graph-backed report semantics', () => {
       judgeReport: { adjudications: [], verdict: 'Do not proceed.', dissent: ['Costs could fall.'], confidence_notes: 'High.' },
     });
 
-    expect(report).toContain('## Shared concerns');
-    expect(report).not.toContain('## The debate');
+    // Shared skepticism is an agreement (both models hold the concern), never a disagreement.
+    expect(report).toContain('### Agreement 1: The fee does not cover loaded costs.');
+    expect(report).not.toContain('### Disagreement 1');
   });
 });

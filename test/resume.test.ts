@@ -156,7 +156,7 @@ describe('resume: call replay', () => {
     expect(resumed.ok).toBe(true);
     expect(c2.n).toBe(0); // ZERO real calls — proves replay + run-dir path normalization across ids
     expect(resumed.callCount).toBe(0);
-    await expect(readFile(join(resumed.dir, 'final-report.md'), 'utf8')).resolves.toContain('# Decision Brief');
+    await expect(readFile(join(resumed.dir, 'final-report.md'), 'utf8')).resolves.toContain('# Multi-Model Decision Report');
   });
 
   it('a run that died at S9 resumes and re-calls ONLY the judge (S1–S8 replayed)', async () => {
@@ -171,7 +171,7 @@ describe('resume: call replay', () => {
     const resumed = await executeRun(makeCtx(c2, { replay: cache }), INPUT, runIdeaRefinement);
     expect(resumed.ok).toBe(true);
     expect(c2.n).toBe(2); // judge + action planner re-called; everything before them replayed
-    await expect(readFile(join(resumed.dir, 'final-report.md'), 'utf8')).resolves.toContain('# Decision Brief');
+    await expect(readFile(join(resumed.dir, 'final-report.md'), 'utf8')).resolves.toContain('# Multi-Model Decision Report');
   });
 });
 

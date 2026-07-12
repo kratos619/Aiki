@@ -16,8 +16,15 @@ export async function jsonCall<T>(
   stage: string,
   prompt: string,
   schema: z.ZodType<T, z.ZodTypeDef, unknown>,
-  opts: { cwd?: string; repair?: boolean } = {},
+  opts: { cwd?: string; repair?: boolean; salvage?: (json: unknown) => unknown } = {},
 ): Promise<T> {
+  // Deterministic last resort once the repair path is spent: transform + re-validate, no extra call.
+  const trySalvage = (json: unknown): T | undefined => {
+    if (!opts.salvage) return undefined;
+    const saved = schema.safeParse(opts.salvage(json));
+    return saved.success ? saved.data : undefined;
+  };
+
   const first = await ctx.call(handle, { prompt, expectJson: true, cwd: opts.cwd }, stage);
   if (!first.ok) {
     // AUTH/QUOTA/NOT_FOUND fail fast; TIMEOUT/CRASH/BAD_OUTPUT were already retried once by the adapter.
@@ -36,11 +43,15 @@ export async function jsonCall<T>(
     `Output ONLY the corrected JSON, nothing else.`;
   const second = await ctx.call(handle, { prompt: repairPrompt, expectJson: true, cwd: opts.cwd }, `${stage}-repair`);
   if (!second.ok) {
+    const saved = trySalvage(first.json); // quota can kill the repair call itself; the first output may still salvage
+    if (saved !== undefined) return saved;
     throw new StageError(stage, second.error, `repair retry failed (${second.error})`);
   }
   const reparsed = schema.safeParse(second.json);
   if (reparsed.success) return reparsed.data;
 
+  const saved = trySalvage(second.json) ?? trySalvage(first.json);
+  if (saved !== undefined) return saved;
   throw new StageError(stage, 'BAD_OUTPUT', `output failed validation after repair: ${zodMessage(reparsed.error)}`);
 }
 

@@ -1,0 +1,214 @@
+{
+  "task_echo": "The task is to decide whether to adopt a $96/student generative-AI algebra tutor for 600 ninth graders, given a $65k budget, 28% failure rate, and limited staff tutoring capacity. The decision must weigh the lack of independent efficacy data against equity, privacy, accessibility, teacher capacity, total cost, and stop rules.",
+  "strongest_version": "The strongest version of this idea is a targeted, supplementary intervention for 600 ninth graders struggling with algebra. Given the 28% failure rate and a staff tutoring capacity of only 120 students, the AI tutor provides immediate, scalable assistance that the district otherwise cannot afford or staff. At $96 per student ($57,600 total), it fits well within the $65,000 budget, leaving some room for contingencies. By handling routine questions and practice, the AI allows the limited human tutoring resources to be focused on the most critical cases, potentially reversing the high failure rate through personalized, on-demand support.",
+  "positions": [
+    {
+      "local_id": "P1",
+      "proposition": "The $96 per student cost for 600 students ($57,600) leaves insufficient margin in the $65,000 budget to cover necessary implementation, training, and operational costs.",
+      "dimension_id": "R5",
+      "stance": "OPPOSE",
+      "basis": "INFERENCE",
+      "load_bearing": true,
+      "if_false": "PIVOT",
+      "reasoning": "The hard tool cost consumes 88% of the budget. It is highly improbable that the remaining $7,400 can cover integration, teacher training, escalation management overhead, and potential vendor onboarding fees.",
+      "evidence_ids": [
+        "E1"
+      ],
+      "depends_on": []
+    },
+    {
+      "local_id": "P2",
+      "proposition": "The vendor's policy of retaining de-identified student conversations for two years violates standard school data governance and presents unacceptable FERPA/COPPA compliance risks.",
+      "dimension_id": "R6",
+      "stance": "OPPOSE",
+      "basis": "ASSUMPTION",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "reasoning": "Schools rarely permit vendors to train models on student data, even de-identified. If legal counsel flags this as a compliance violation, the procurement cannot proceed regardless of efficacy.",
+      "evidence_ids": [
+        "E2"
+      ],
+      "depends_on": []
+    },
+    {
+      "local_id": "P3",
+      "proposition": "Teacher escalation capacity will be rapidly overwhelmed if the AI error rate exceeds a very low threshold, rendering the tool counterproductive.",
+      "dimension_id": "D2",
+      "stance": "OPPOSE",
+      "basis": "INFERENCE",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "reasoning": "With 600 students and only enough staff capacity to tutor 120, even a 5% escalation rate on daily interactions would flood teachers with review tasks, completely breaking the operational model.",
+      "evidence_ids": [
+        "E1",
+        "E3"
+      ],
+      "depends_on": []
+    },
+    {
+      "local_id": "P4",
+      "proposition": "The intervention can be scaled technically to 600 students without infrastructure changes, assuming existing 1:1 device programs and sufficient bandwidth.",
+      "dimension_id": "R11",
+      "stance": "SUPPORT",
+      "basis": "ASSUMPTION",
+      "load_bearing": false,
+      "if_false": "MINOR",
+      "reasoning": "Web-based or app-based AI tutors generally scale elastically on the vendor's side. The bottleneck is the school's device availability and network, which are typically baseline requirements for such pilots.",
+      "evidence_ids": [],
+      "depends_on": []
+    },
+    {
+      "local_id": "P5",
+      "proposition": "A decisive kill criterion is an escalation rate exceeding 10% of total interactions during the first two weeks of use.",
+      "dimension_id": "R7",
+      "stance": "SUPPORT",
+      "basis": "INFERENCE",
+      "load_bearing": true,
+      "if_false": "CONDITION",
+      "reasoning": "If the tool requires human intervention for more than 1 in 10 interactions, it fails as an automated tutor and becomes a workload generator, triggering an immediate halt.",
+      "evidence_ids": [
+        "E3"
+      ],
+      "depends_on": [
+        "P3"
+      ]
+    },
+    {
+      "local_id": "P6",
+      "proposition": "The lack of independent efficacy data and unknown algorithmic bias require a measured pilot rather than a full 600-student launch.",
+      "dimension_id": "R12",
+      "stance": "MIXED",
+      "basis": "INFERENCE",
+      "load_bearing": true,
+      "if_false": "PIVOT",
+      "reasoning": "Deploying an unproven AI to half the ninth-grade population without baseline equity data risks exacerbating the 28% failure rate if the tool hallucinates or struggles with ELL/neurodivergent inputs.",
+      "evidence_ids": [
+        "E4"
+      ],
+      "depends_on": []
+    }
+  ],
+  "evidence": [
+    {
+      "id": "E1",
+      "source_kind": "USER",
+      "claim_supported": "Budget and capacity constraints.",
+      "support": "$65,000 budget, $96/student cost, 120-student staff tutoring capacity.",
+      "freshness": "Current"
+    },
+    {
+      "id": "E2",
+      "source_kind": "USER",
+      "claim_supported": "Vendor data retention policy.",
+      "support": "Vendor retains de-identified student conversations for two years to improve models.",
+      "freshness": "Current"
+    },
+    {
+      "id": "E3",
+      "source_kind": "USER",
+      "claim_supported": "Teacher escalation requirement.",
+      "support": "Teachers must handle escalations when the tutor is uncertain or a student reports an unsafe/incorrect response.",
+      "freshness": "Current"
+    },
+    {
+      "id": "E4",
+      "source_kind": "USER",
+      "claim_supported": "Unknown efficacy and bias.",
+      "support": "Lack of independent outcome data; AI performance across demographics is unknown.",
+      "freshness": "Current"
+    }
+  ],
+  "coverage": [
+    {
+      "dimension_id": "R4",
+      "status": "NOT_APPLICABLE",
+      "position_ids": [],
+      "rationale": "Technical feasibility of building the tool is not applicable as it is a vendor procurement, not an in-house build."
+    },
+    {
+      "dimension_id": "R5",
+      "status": "COVERED",
+      "position_ids": [
+        "P1"
+      ],
+      "rationale": "Cost and resources are covered in P1 regarding the tight budget margin."
+    },
+    {
+      "dimension_id": "R6",
+      "status": "COVERED",
+      "position_ids": [
+        "P2"
+      ],
+      "rationale": "Compliance risk is covered in P2 regarding the data retention policy."
+    },
+    {
+      "dimension_id": "R7",
+      "status": "COVERED",
+      "position_ids": [
+        "P5"
+      ],
+      "rationale": "Kill criteria are defined in P5 regarding escalation thresholds."
+    },
+    {
+      "dimension_id": "R8",
+      "status": "NOT_APPLICABLE",
+      "position_ids": [],
+      "rationale": "Business model/monetization is not applicable as the district is the buyer, not the seller."
+    },
+    {
+      "dimension_id": "R11",
+      "status": "COVERED",
+      "position_ids": [
+        "P4"
+      ],
+      "rationale": "Scalability is covered in P4 regarding infrastructure."
+    },
+    {
+      "dimension_id": "R12",
+      "status": "COVERED",
+      "position_ids": [
+        "P6"
+      ],
+      "rationale": "Key assumptions to validate are covered in P6 regarding efficacy and bias."
+    },
+    {
+      "dimension_id": "D2",
+      "status": "COVERED",
+      "position_ids": [
+        "P3"
+      ],
+      "rationale": "Teacher escalation capacity is covered in P3."
+    }
+  ],
+  "decision_questions": [
+    {
+      "id": "Q1",
+      "question": "Has legal counsel explicitly approved the vendor's 2-year data retention policy under FERPA and local district policies?",
+      "claim_ids": [
+        "P2"
+      ]
+    },
+    {
+      "id": "Q2",
+      "question": "Will the total cost of implementation, including required teacher training for the escalation protocol, exceed the remaining $7,400 in the budget?",
+      "claim_ids": [
+        "P1"
+      ]
+    },
+    {
+      "id": "Q3",
+      "question": "Can the vendor guarantee an escalation/error rate below 5% based on deployments in similar demographics?",
+      "claim_ids": [
+        "P3",
+        "P5"
+      ]
+    },
+    {
+      "id": "Q4",
+      "question": "Are there automated safeguards that block the AI from returning a response if confidence is low, rather than immediately routing to a teacher?",
+      "claim_ids": [
+        "P3"
+      ]
+    }
+  ]
+}

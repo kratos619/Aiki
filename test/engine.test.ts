@@ -214,12 +214,15 @@ describe('executeRun happy path (§24 T7: artifacts 00–10, end-to-end)', () =>
     const plan = JSON.parse(await readFile(join(dir, '09b-action-plan.json'), 'utf8'));
     expect(plan.actions[0]).toMatchObject({ validates: 'Q:who is the target user?' });
 
-    // S10: final decision brief rendered, with the code-derived audit + display names.
+    // S10: three-level report rendered — 12-section markdown + machine-readable JSON.
     const report = await readFile(join(dir, 'final-report.md'), 'utf8');
-    expect(report).toContain('# Decision Brief');
-    expect(report).toContain('## Validation plan');
-    expect(report).toContain('## Decision audit');
+    expect(report).toContain('# Multi-Model Decision Report');
+    expect(report).toContain('## 5. Consensus Map');
+    expect(report).toContain('## 10. Final Synthesis');
     expect(report).toContain('Gemini'); // agy shown as its DISPLAY_NAME (user-facing)
+    const decisionReport = JSON.parse(await readFile(join(dir, '10-decision-report.json'), 'utf8'));
+    expect(decisionReport).toMatchObject({ verdict: { status: 'ACCEPTED_WITH_CONDITIONS' } });
+    expect(decisionReport.claims.length).toBeGreaterThan(0);
 
     const meta = JSON.parse(await readFile(join(dir, 'meta.json'), 'utf8'));
     expect(meta.exit_status).toBe('ok');

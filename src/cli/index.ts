@@ -107,8 +107,10 @@ program
   .option('--set <name>', 'task set: build | holdout', 'build')
   .option('--resume', 'continue the latest results file: keep already-scored case×arm pairs, retry the rest')
   .option('--yes', 'actually run; without it, print the pre-run Opus-call estimate and exit')
-  .action(async (workflow: string, opts: { arms?: string; set?: string; resume?: boolean; yes?: boolean }) => {
-    process.exit(await benchCommand(workflow, { arms: opts.arms, set: opts.set, resume: opts.resume, yes: opts.yes }));
+  .option('--import <file>', 'idea-refinement: import blind adjudications into the latest campaign file (offline, frozen R0 scorer)')
+  .option('--case <id>', 'idea-refinement: restrict the metered run to one build case (combine with --resume)')
+  .action(async (workflow: string, opts: { arms?: string; set?: string; resume?: boolean; yes?: boolean; import?: string; case?: string }) => {
+    process.exit(await benchCommand(workflow, { arms: opts.arms, set: opts.set, resume: opts.resume, yes: opts.yes, import: opts.import, case: opts.case }));
   });
 
 program

@@ -6,7 +6,7 @@
 import { planBench, renderTable, runBench, type BenchPlan } from '../bench/harness.js';
 import type { ArmId } from '../bench/arms.js';
 import { setupProviders } from '../orchestration/context.js';
-import { chooseLaneDefault, planIdeaLaneBench, runIdeaLaneBench } from '../bench/idea-lane-rotation.js';
+import { chooseLaneDefault, importLaneAdjudications, planIdeaLaneBench, runIdeaLaneBench } from '../bench/idea-lane-rotation.js';
 
 const VALID_ARMS: ArmId[] = ['A', 'B', 'C', 'D', 'E', 'L'];
 
@@ -21,26 +21,59 @@ function renderPlan(plan: BenchPlan): string {
 
 export async function benchCommand(
   workflow: string,
-  opts: { arms?: string; set?: string; resume?: boolean; yes?: boolean } = {},
+  opts: { arms?: string; set?: string; resume?: boolean; yes?: boolean; import?: string; case?: string } = {},
 ): Promise<number> {
   if (workflow === 'idea-refinement') {
     if (opts.set && opts.set !== 'build') {
       process.stderr.write('idea lane rotation is build-set-only; holdout remains sealed\n');
       return 1;
     }
+    // --import is offline: blind adjudications → frozen R0 scorer → filled campaign metrics. No provider calls.
+    if (opts.import) {
+      try {
+        const { path, scored, observations } = await importLaneAdjudications({ importPath: opts.import });
+        for (const o of scored) {
+          process.stdout.write(`scored ${o.case_id}/${o.rotation} — recall ${o.decision_critical_recall} · evidence precision ${o.evidence_precision}\n`);
+        }
+        const pending = observations.filter((o) => o.decision_critical_recall === null || o.evidence_precision === null).length;
+        const selected = pending === 0 ? chooseLaneDefault(observations) : null;
+        process.stdout.write(`\nresults: ${path}\n`);
+        process.stdout.write(selected
+          ? `default lane assignment: ${selected}\n\n`
+          : pending > 0
+            ? `${pending} pair(s) still unscored — the lane default stays provisional until every pair is adjudicated.\n\n`
+            : 'all pairs scored but no winner (incomplete matrix or exact tie) — default stays provisional.\n\n');
+        return 0;
+      } catch (error) {
+        process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+        return 1;
+      }
+    }
     const handles = await setupProviders();
-    const plan = await planIdeaLaneBench({ handles });
+    let plan;
+    try {
+      plan = await planIdeaLaneBench({ handles, resume: opts.resume, caseId: opts.case });
+    } catch (error) {
+      process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+      return 1;
+    }
     if (plan.cases.length === 0) {
       process.stderr.write('no cases found in bench/sets/idea-refinement/build/\n');
       return 1;
     }
     process.stdout.write(`\nidea lane rotation — ${plan.cases.length} case(s) × 2 assignments\n`);
+    if (plan.resumedFrom) process.stdout.write(`resume: continuing ${plan.resumedFrom} — completed pairs are kept, not re-run\n`);
     process.stdout.write(`to run: ${plan.runs.length} council run(s) → ≈${plan.estimatedCalls} provider call(s)\n`);
-    if (!opts.yes) {
-      process.stdout.write('\nRe-run with --yes to execute. Paid calls are never started by this dry-run.\n\n');
+    if (plan.runs.length === 0) {
+      process.stdout.write('\nnothing to run — every case×rotation pair is already recorded.\n\n');
       return 0;
     }
-    const result = await runIdeaLaneBench({ handles });
+    if (!opts.yes) {
+      const resumeHint = opts.resume ? '' : ' (add --resume to continue a partial run across quota windows)';
+      process.stdout.write(`\nRe-run with --yes to execute${resumeHint}. Paid calls are never started by this dry-run.\n\n`);
+      return 0;
+    }
+    const result = await runIdeaLaneBench({ handles, resume: opts.resume, caseId: opts.case });
     const selected = chooseLaneDefault(result.observations);
     process.stdout.write(`\nresults: ${result.path}\n`);
     process.stdout.write(selected
