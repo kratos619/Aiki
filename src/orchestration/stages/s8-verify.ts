@@ -125,9 +125,31 @@ export async function s8Verify(ctx: RunCtx, graph: DecisionGraph): Promise<Claim
     return empty;
   }
 
+  const unavailable = (): ClaimVerificationSetT => ({
+    verifications: escalations.map((escalation) => {
+      const checks = graph.calculation_checks.filter((check) => check.claim_id === escalation.claim_id);
+      return {
+        claim_id: escalation.claim_id,
+        status: 'UNVERIFIABLE',
+        reasoning: 'Independent verification was unavailable or skipped to preserve required calls.',
+        evidence_ids: [],
+        calculation_check: checks.length === 0 ? 'NOT_APPLICABLE' as const
+          : checks.some((check) => check.status === 'FAIL') ? 'FAIL' as const : 'PASS' as const,
+        missing_evidence: ['independent verification'],
+      };
+    }),
+  });
+  if (ctx.optionalCallsRemaining() === 0) {
+    ctx.addFlag('verification_skipped');
+    const skipped = unavailable();
+    await ctx.writer.writeJson('verifications', skipped);
+    return skipped;
+  }
+
   try {
     const input = verifierInput(graph);
-    const result = await jsonCall(ctx, ctx.handle(ctx.roles.verifier), 'S8', input.prompt, ClaimVerificationSet);
+    // Optional work gets no model repair: one logical optional call must remain one call.
+    const result = await jsonCall(ctx, ctx.handle(ctx.roles.verifier), 'S8', input.prompt, ClaimVerificationSet, { repair: false });
     const translated: ClaimVerificationSetT = {
       verifications: result.verifications.map((verification) => ({
         ...verification,
@@ -140,21 +162,8 @@ export async function s8Verify(ctx: RunCtx, graph: DecisionGraph): Promise<Claim
     return translated;
   } catch (error) {
     if (isFatal(error)) throw error;
-    const unavailable: ClaimVerificationSetT = {
-      verifications: escalations.map((escalation) => {
-        const checks = graph.calculation_checks.filter((check) => check.claim_id === escalation.claim_id);
-        return {
-          claim_id: escalation.claim_id,
-          status: 'UNVERIFIABLE',
-          reasoning: 'Verifier unavailable or returned invalid references.',
-          evidence_ids: [],
-          calculation_check: checks.length === 0 ? 'NOT_APPLICABLE' as const
-            : checks.some((check) => check.status === 'FAIL') ? 'FAIL' as const : 'PASS' as const,
-          missing_evidence: ['independent verification'],
-        };
-      }),
-    };
-    await ctx.writer.writeJson('verifications', unavailable);
-    return unavailable;
+    const failed = unavailable();
+    await ctx.writer.writeJson('verifications', failed);
+    return failed;
   }
 }

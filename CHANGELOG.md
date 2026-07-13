@@ -3,10 +3,24 @@
 ## Unreleased
 
 ### Added
+- **Explicit idea modes and adaptive budgets (R6)** — `aiki run idea-refinement --mode
+  quick|council|research` defaults to council without a learned router. Quick is one structured analyst and
+  never presents itself as a council; council uses a 6-call base with at most two graph-triggered extras;
+  research permits up to four extras and enables the verified `codex --search exec ...` capability only on
+  Codex scout calls while retaining `-s read-only`. Mode-aware defaults are 4/10/12 calls respectively.
+- **Two-view decision preflight (R6)** — two readings run in parallel and deterministically merge into one
+  user-confirmed or visibly headless/defaulted decision contract. The old S1/S2/S3 model calls are gone;
+  analyst prompts are filled deterministically. Receipts split calls into discovery, verification, repair,
+  and planning, and resume preserves the original mode.
 - **Evidence and calculation integrity (R4)** — idea runs accept `--evidence <file|directory>` and persist
   only source paths + SHA-256 hashes; evidence cards enforce source/freshness rules; derived numeric claims
   can carry a pure arithmetic ledger whose values/units are recomputed; S8 emits typed claim verification;
   and invalid evidence references are rejected before the chair call.
+- **Selective rebuttal and evidence-linked chair (R5)** — only verdict-flipping graph nodes enter one
+  anonymous rebuttal round; council coverage-fill and rebuttal share a two-call cap while chair/planner
+  budget stays reserved; responses append as immutable `08b-rebuttals.json` events; and the chair must emit
+  graph-linked rulings, recommendation reasons, conditions, pivots, and strongest counter-cases. A judge-
+  authored node is excluded before the chair prompt and remains unresolved under degradation.
 - **Startup preflight** — typing bare `aiki` now runs the full doctor before the home screen: per-provider
   progress rows checking CLI presence, version, and auth/quota (smoke, cached 6h). Fewer than 2 providers
   ready shows a failure screen with the exact fix per provider; a single degraded provider shows a warning
@@ -22,9 +36,8 @@
   scorer and fills that pair's null recall/precision in the campaign file. Unknown pairs fail loud;
   re-scoring an already-scored pair is refused (blind adjudication is one pass); when every pair is scored
   it prints the lane default selection.
-- **Contextual intent preflight** — idea-refinement now starts with an S0 run brief: the analyst generates
-  3-4 context-specific questions, the TUI asks them before the main council work, and the answers are
-  persisted in `00b-run-brief.json` and included in downstream prompts.
+- **Contextual intent questions** — the merged idea preflight generates 3-4 context-specific questions, the
+  TUI asks them before the main work, and answers persist in `00b-run-brief.json`.
 - **Idea report v3** — idea-refinement reports now emit an explicit BLUF recommendation
   (`PROCEED`, `PROCEED_WITH_CONDITIONS`, `PIVOT`, `STOP`), conditions when needed, a best-effort
   12-dimension scorecard, assumption audit table in HTML, deterministic debate narrative, anchored
@@ -43,9 +56,8 @@
   independent convergence + 20% evidence quality + 15% stability − critical-risk penalty; model
   self-confidence never enters it and consensus alone can never reach the High band. Labeled a heuristic in
   the report until benchmark-calibrated.
-- Idea-refinement run estimate is now ~12 provider calls / ~4 Claude-Opus calls because S0 writes the
-  intent preflight and the judge seat also writes the validation plan. The default budget is now 13 so
-  a normal run still has room for one repair without skipping the validation plan.
+- Idea-refinement estimates are mode-aware: quick ≈3 calls / 1 Claude-Opus; council 6–8 / ~2 Opus; research
+  8–10 / ~2 Opus. Chair and planner calls are reserved before optional graph work.
 
 ### Fixed
 - Idea analyst outputs now canonicalize the observed Gemini evidence enum aliases before strict validation:

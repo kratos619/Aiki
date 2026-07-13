@@ -51,6 +51,11 @@ export async function resumeCommand(runArg: string | undefined, opts: { root?: s
     }
     workflow = meta.workflow;
   }
+  const previousMeta = await readJsonArtifact<RunMeta>(oldDir, 'meta.json');
+  if (!previousMeta) {
+    process.stderr.write(`cannot read meta.json for ${oldId} — nothing to resume.\n`);
+    return 1;
+  }
 
   // Recover the original input the run was started with.
   const inputFile = workflow === 'code-review' ? 'diff.patch' : 'idea.md';
@@ -91,6 +96,7 @@ export async function resumeCommand(runArg: string | undefined, opts: { root?: s
 
   process.stdout.write(`  resuming ${oldId} (${workflow}) — replaying ${replay.size} completed call(s); only the rest will hit a model.\n`);
   const outcome = await runEngine(workflow, input, {
+    mode: previousMeta.mode,
     budget: cfg.budget,
     deadlineMs: cfg.deadlineMs,
     roleOverrides: cfg.roles,

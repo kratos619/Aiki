@@ -4,7 +4,7 @@
 // the judge — §624). A truly missing required field is a template bug (fail loudly); degraded-but-valid
 // states (S8 skipped, items UNVERIFIED, empty consensus) render normally. User-facing → DISPLAY_NAME.
 
-import type { ActionPlanArtifact, ClaimVerificationSet, IntentContract, JudgeReport, Recommendation, VerificationSet } from '../../schemas/index.js';
+import type { ActionPlanArtifact, ClaimVerificationSet, IdeaMode, IntentContract, JudgeReport, Recommendation, VerificationSet } from '../../schemas/index.js';
 import type { ProviderId } from '../../providers/types.js';
 import { DISPLAY_NAME } from '../../providers/types.js';
 import type { RunCtx } from '../context.js';
@@ -12,6 +12,7 @@ import { overlap, tokenize } from '../cluster.js';
 import type { SeatOutput } from './s4-analyze.js';
 import type { RubricItem } from './s7-decision-graph.js';
 import type { DecisionGraph } from '../decision-graph.js';
+import { callCategory } from '../modes.js';
 
 export interface AuditRow {
   id: string;
@@ -95,6 +96,13 @@ export interface S10Args {
   original?: string; // raw user input; contract.task (normalized) is the fallback
 }
 
+function receiptCategories(ctx: RunCtx): { discovery: number; verification: number; repair: number; planning: number } {
+  if (typeof ctx.receipt === 'function') return ctx.receipt();
+  const categories = { discovery: 0, verification: 0, repair: 0, planning: 0 };
+  for (const call of ctx.calls) categories[call.category ?? callCategory(call.stage)]++;
+  return categories;
+}
+
 function mdCell(s: string): string {
   return s.replaceAll('\n', ' ').replaceAll('|', '\\|');
 }
@@ -161,13 +169,14 @@ type ClaimRuling = 'ACCEPTED' | 'REJECTED' | 'CONDITIONAL' | 'UNRESOLVED';
 export interface DecisionReportJson {
   reportId: string;
   generatedAt: string;
-  task: { original: string; normalized: string; type: string; constraints: string[]; successCriteria: string[] };
+  mode: IdeaMode;
+  task: { original: string; normalized: string; type: string; constraints: string[]; successCriteria: string[]; confirmation?: string };
   verdict: {
     status: ReportStatus;
     summary: string;
     confidence: number; // 0–1
     confidenceLabel: 'High' | 'Medium' | 'Low';
-    consensusType: 'unanimous' | 'convergent_with_unresolved_claims' | 'majority_with_dissent' | 'contested';
+    consensusType: 'single_analyst' | 'unanimous' | 'convergent_with_unresolved_claims' | 'majority_with_dissent' | 'contested';
     conditions: string[];
     primaryReason: string;
     criticalWarning: string | null;
@@ -184,7 +193,13 @@ export interface DecisionReportJson {
   recommendedActions: Array<{ order: number; action: string; why: string; effort: string; killSignal: string }>;
   openQuestions: string[];
   flags: string[];
-  receipt: { calls: number; budget: number; byProvider: Record<string, number>; modelTimeMs: number };
+  receipt: {
+    calls: number;
+    budget: number;
+    byProvider: Record<string, number>;
+    modelTimeMs: number;
+    categories: { discovery: number; verification: number; repair: number; planning: number };
+  };
 }
 
 const STANCE_MAP: Record<string, MapStance> = { SUPPORT: 'AGREE', OPPOSE: 'DISAGREE', MIXED: 'CONDITIONAL', UNKNOWN: 'UNKNOWN' };
@@ -205,6 +220,7 @@ function claimRuling(claim: DecisionGraph['claims'][number], adjudication?: { ru
 /** Assemble the machine-readable report deterministically from the run's persisted artifacts. */
 export function buildDecisionReport(ctx: RunCtx, args: S10Args): DecisionReportJson {
   const { contract, seats, graph, verifications, judgeReport, actionPlan } = args;
+  const mode = ctx.mode ?? 'council';
   const flags = new Set(ctx.flags);
   const confidence = computeConfidence(graph, flags);
   const status = statusFrom(judgeReport);
@@ -255,7 +271,7 @@ export function buildDecisionReport(ctx: RunCtx, args: S10Args): DecisionReportJ
     .map((position) => ({ provider: disp(position.provider), proposition: position.proposition }));
 
   const unresolvedDecisive = disagreements.some((d) => d.status === 'UNRESOLVED' && claimById.get(d.id)?.sensitivity === 'DECISIVE');
-  const consensusType = disagreements.length === 0
+  const consensusType = mode === 'quick' ? 'single_analyst' as const : disagreements.length === 0
     ? (claims.some((claim) => claim.ruling === 'UNRESOLVED') ? 'convergent_with_unresolved_claims' as const : 'unanimous' as const)
     : disagreements.every((d) => d.status === 'RESOLVED') ? 'majority_with_dissent' as const : 'contested' as const;
 
@@ -295,10 +311,11 @@ export function buildDecisionReport(ctx: RunCtx, args: S10Args): DecisionReportJ
   }
 
   const roles = ctx.roles;
-  const models = ctx.available().map((provider) => ({
+  const reportProviders = mode === 'quick' ? [...new Set(seats.map((seat) => seat.provider))] : ctx.available();
+  const models = reportProviders.map((provider) => ({
     provider,
     name: disp(provider),
-    roles: [
+    roles: mode === 'quick' ? ['single analyst'] : [
       ...(roles.analyst === provider ? ['analyst'] : []),
       ...(roles.judge === provider ? ['judge'] : []),
       ...(roles.verifier === provider ? ['verifier'] : []),
@@ -323,12 +340,14 @@ export function buildDecisionReport(ctx: RunCtx, args: S10Args): DecisionReportJ
   return {
     reportId: ctx.runId,
     generatedAt: new Date().toISOString(),
+    mode,
     task: {
       original: args.original ?? contract.task,
       normalized: contract.task,
       type: contract.task_type,
       constraints: contract.constraints,
       successCriteria: contract.success_criteria,
+      ...('confirmation' in contract && typeof contract.confirmation === 'string' ? { confirmation: contract.confirmation } : {}),
     },
     verdict: {
       status,
@@ -369,7 +388,7 @@ export function buildDecisionReport(ctx: RunCtx, args: S10Args): DecisionReportJ
       : [],
     openQuestions: mergeOpenQuestions(seats),
     flags: [...ctx.flags],
-    receipt: { calls: ctx.calls.length, budget: ctx.budget.limit, byProvider, modelTimeMs },
+    receipt: { calls: ctx.calls.length, budget: ctx.budget.limit, byProvider, modelTimeMs, categories: receiptCategories(ctx) },
   };
 }
 
@@ -381,8 +400,10 @@ function receiptLines(ctx: RunCtx): string[] {
     ms += c.durationMs;
   }
   const providerCounts = [...byProvider.entries()].map(([p, n]) => `${disp(p)} ${n}`).join(', ') || 'none';
+  const categories = receiptCategories(ctx);
   return [
     `- Calls: ${ctx.calls.length}/${ctx.budget.limit}`,
+    `- Categories: discovery ${categories.discovery} · verification ${categories.verification} · repair ${categories.repair} · planning ${categories.planning}`,
     `- By provider: ${providerCounts}`,
     `- Recorded model time: ${(ms / 1000).toFixed(1)}s`,
   ];
@@ -397,8 +418,9 @@ export function renderReport(ctx: RunCtx, args: S10Args): string {
   const { seats, graph, judgeReport, actionPlan } = args;
   const scorecard = args.rubric ? deriveScorecard(args.rubric, graph) : [];
   const L: string[] = [];
+  const quick = report.mode === 'quick';
 
-  L.push('# Multi-Model Decision Report', '');
+  L.push(quick ? '# Single-Model Decision Report' : '# Multi-Model Decision Report', '');
 
   // 1 ────────────────────────────────────────────────────────────────────────
   L.push('## 1. Report Metadata', '');
@@ -406,9 +428,13 @@ export function renderReport(ctx: RunCtx, args: S10Args): string {
   L.push(`- Generated at: ${report.generatedAt}`);
   L.push(`- User task: ${mdCell(report.task.original)}`);
   L.push(`- Workflow: ${report.task.type}`);
-  L.push('- Models used:');
+  L.push(`- Mode: ${report.mode}`);
+  if (report.task.confirmation) L.push(`- Intent: ${report.task.confirmation}`);
+  L.push(quick ? '- Analyst used:' : '- Models used:');
   for (const model of report.models) L.push(`  - ${model.name} — ${model.roles.join(', ') || 'scout'}`);
-  L.push('- Debate protocol: independent analysis → anonymized cross-examination → verification → adjudication');
+  L.push(quick
+    ? '- Protocol: one structured analyst; no council, consensus, or independent-verification claim'
+    : '- Debate protocol: independent analysis → graph audit → selective verification/rebuttal → chair → planner');
   L.push(`- Provider calls: ${report.receipt.calls}/${report.receipt.budget} · recorded model time ${(report.receipt.modelTimeMs / 1000).toFixed(1)}s`);
   L.push(`- Final status: ${report.verdict.status}`);
   if (report.flags.length) L.push(`- ⚠ Degradation flags: ${report.flags.join(', ')}`);
@@ -431,7 +457,9 @@ export function renderReport(ctx: RunCtx, args: S10Args): string {
   L.push(`- Evidence quality beyond model memory: ${pct(c.evidenceQuality)} (weight 20)`);
   L.push(`- Result stability: ${pct(c.stability)} (weight 15)`);
   L.push(`- Critical-risk penalty: −${c.criticalRiskPenalty}`);
-  L.push('', '> Heuristic, not a calibrated probability. Consensus alone never yields HIGH.', '');
+  L.push('', quick
+    ? '> Heuristic, not a calibrated probability. Quick mode receives no independent-convergence credit.'
+    : '> Heuristic, not a calibrated probability. Consensus alone never yields HIGH.', '');
   L.push('### Most important reason', '', report.verdict.primaryReason, '');
   L.push('### Critical warning', '', report.verdict.criticalWarning ?? 'None identified.', '');
 
@@ -461,16 +489,18 @@ export function renderReport(ctx: RunCtx, args: S10Args): string {
   }
 
   // 4 ────────────────────────────────────────────────────────────────────────
-  L.push('## 4. Individual Model Positions', '');
+  L.push(quick ? '## 4. Analyst Position' : '## 4. Individual Model Positions', '');
   L.push('| Model | Initial conclusion | Main argument | Key risk identified | Final position |', '|---|---|---|---|---|');
   for (const position of report.positions) {
     L.push(`| ${position.name} | ${mdCell(position.initialConclusion)} | ${mdCell(position.mainArgument)} | ${mdCell(position.keyRisk)} | ${position.finalPosition} |`);
   }
-  L.push('', '_Positions were produced blind (no seat saw another) and anonymized during adjudication._', '');
+  L.push('', quick
+    ? '_One analyst produced these positions. They were not independently corroborated._'
+    : '_Positions were produced blind (no seat saw another) and anonymized during adjudication._', '');
 
   // 5 ────────────────────────────────────────────────────────────────────────
   const providers = report.models.map((model) => model.provider);
-  L.push('## 5. Consensus Map', '');
+  L.push(quick ? '## 5. Claim Map' : '## 5. Consensus Map', '');
   L.push('Legend: AGREE · DISAGREE · CONDITIONAL · UNKNOWN (model did not address the claim)', '');
   L.push(`| Claim | ${providers.map(disp).join(' | ')} | Verification | Final ruling |`, `|---|${providers.map(() => '---|').join('')}---|---|`);
   for (const claim of report.claims) {
@@ -478,7 +508,7 @@ export function renderReport(ctx: RunCtx, args: S10Args): string {
     L.push(`| ${claim.id}: ${mdCell(claim.text)} | ${stanceCells.join(' | ')} | ${claim.verification} | ${claim.ruling} |`);
   }
   const summary = report.consensusSummary;
-  L.push('', '### Consensus summary', '');
+  L.push('', quick ? '### Claim summary' : '### Consensus summary', '');
   L.push(`- Unanimous claims: ${summary.unanimous}`);
   L.push(`- Accepted claims: ${summary.accepted}`);
   L.push(`- Conditional claims: ${summary.conditional}`);
@@ -492,12 +522,12 @@ export function renderReport(ctx: RunCtx, args: S10Args): string {
   }
 
   // 6 ────────────────────────────────────────────────────────────────────────
-  L.push('## 6. Key Agreements', '');
+  L.push(quick ? '## 6. Key Claims' : '## 6. Key Agreements', '');
   const agreements = report.claims.filter((claim) => {
     const state = graph.claims.find((item) => item.id === claim.id)?.state;
     return state === 'CONSENSUS' || state === 'SHARED_CONCERN';
   });
-  if (agreements.length === 0) L.push('No multi-model agreements were reached.', '');
+  if (agreements.length === 0) L.push(quick ? 'No claims were independently corroborated in quick mode.' : 'No multi-model agreements were reached.', '');
   agreements.slice(0, 6).forEach((claim, index) => {
     L.push(`### Agreement ${index + 1}: ${mdCell(claim.text)}`, '');
     L.push(`- Models: ${Object.keys(claim.stances).map((provider) => disp(provider as ProviderId)).join(', ')}`);
@@ -506,8 +536,8 @@ export function renderReport(ctx: RunCtx, args: S10Args): string {
   });
 
   // 7 ────────────────────────────────────────────────────────────────────────
-  L.push('## 7. Key Disagreements', '');
-  if (report.disagreements.length === 0) L.push('No genuine cross-model disagreements survived claim grouping.', '');
+  L.push(quick ? '## 7. Unresolved Tensions' : '## 7. Key Disagreements', '');
+  if (report.disagreements.length === 0) L.push(quick ? 'Quick mode does not run cross-model disagreement analysis.' : 'No genuine cross-model disagreements survived claim grouping.', '');
   report.disagreements.forEach((disagreement, index) => {
     L.push(`### Disagreement ${index + 1}: ${mdCell(disagreement.topic)}`, '');
     for (const side of disagreement.sides) {
@@ -610,9 +640,11 @@ export function renderReport(ctx: RunCtx, args: S10Args): string {
   }
   L.push('');
   L.push('### Report-generation policy', '');
-  L.push('- Initial answers were generated independently — no seat saw another before claim extraction.');
-  L.push('- Provider identities were hidden during verification and adjudication.');
-  L.push('- Claims were judged individually, never by whole-answer voting.');
+  L.push(quick
+    ? '- This is one structured analyst output, not a cross-provider council result.'
+    : '- Initial answers were generated independently — no seat saw another before claim extraction.');
+  if (!quick) L.push('- Provider identities were hidden during verification and adjudication.');
+  if (!quick) L.push('- Claims were judged individually, never by whole-answer voting.');
   L.push('- Verified evidence had priority over model confidence.');
   L.push('- Meaningful minority opinions were preserved above.');
   L.push('');
@@ -638,12 +670,12 @@ export function renderTerminalSummary(report: DecisionReportJson, paths: { markd
     '[WARN] Confidence score is heuristic — not yet benchmark-calibrated',
   ];
   return [
-    'MULTI-MODEL DECISION REPORT',
+    report.mode === 'quick' ? 'SINGLE-MODEL DECISION REPORT' : 'MULTI-MODEL DECISION REPORT',
     RULE,
     `Verdict: ${report.verdict.summary}`,
     `Status: ${report.verdict.status}`,
     `Confidence: ${c.score}/100 (${c.label})`,
-    `Consensus: ${report.verdict.consensusType.replaceAll('_', ' ')} — ${summary.accepted} accepted · ${summary.rejected} rejected · ${summary.unresolved} unresolved`,
+    `${report.mode === 'quick' ? 'Claims' : 'Consensus'}: ${report.verdict.consensusType.replaceAll('_', ' ')} — ${summary.accepted} accepted · ${summary.rejected} rejected · ${summary.unresolved} unresolved`,
     '',
     'Primary reason:',
     report.verdict.primaryReason,

@@ -42,7 +42,7 @@ describe('idea lane build-set rotation harness', () => {
     expect(plan.runs).toHaveLength(16);
     expect(plan.runs[0]).toMatchObject({ rotation: 'agy-market', s4: ['agy', 'codex'] });
     expect(plan.runs[1]).toMatchObject({ rotation: 'codex-market', s4: ['codex', 'agy'] });
-    expect(plan.estimatedCalls).toBe(208);
+    expect(plan.estimatedCalls).toBe(128);
   });
 
   it('chooses the assignment by recall, then evidence precision and operating metrics', () => {
@@ -180,7 +180,7 @@ describe('idea lane build-set rotation harness', () => {
 
     expect(plan.runs).toHaveLength(15);
     expect(plan.runs.map((r) => `${r.case}:${r.rotation}`)).not.toContain('school-ai-tutor:agy-market');
-    expect(plan.estimatedCalls).toBe(195);
+    expect(plan.estimatedCalls).toBe(120);
     expect(plan.resumedFrom).toBe(resultsPath);
   });
 
@@ -264,7 +264,7 @@ describe('idea lane build-set rotation harness', () => {
       caseId: 'school-ai-tutor',
     });
     expect(plan.runs).toEqual([{ case: 'school-ai-tutor', rotation: 'codex-market', s4: ['codex', 'agy'] }]);
-    expect(plan.estimatedCalls).toBe(13);
+    expect(plan.estimatedCalls).toBe(8);
 
     const seen: string[] = [];
     const result = await runIdeaLaneBench({

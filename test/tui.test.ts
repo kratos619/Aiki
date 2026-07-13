@@ -33,13 +33,13 @@ describe('timeline: provider resolution + skeleton', () => {
     expect(stageProviders(null, roles, [...available])).toEqual([]);
   });
 
-  it('builds the 12-row skeleton all pending, providers resolved (S0/S1 = analyst, S7/S9b = judge, S5 = —)', () => {
+  it('builds the simplified 10-row skeleton with the selective-rebuttal scouts resolved', () => {
     const rows = initTimeline(IDEA_STAGES, roles, [...available]);
-    expect(rows).toHaveLength(12);
+    expect(rows).toHaveLength(10);
     expect(rows.every((r) => r.status === 'pending')).toBe(true);
-    expect(rows.find((r) => r.id === 'S0')!.providers).toEqual(['agy']);
-    expect(rows.find((r) => r.id === 'S1')!.providers).toEqual(['agy']);
-    expect(rows.find((r) => r.id === 'S7')!.providers).toEqual(['claude']); // makes the grouping call
+    expect(rows.find((r) => r.id === 'S0')!.providers).toEqual(['agy', 'codex']);
+    expect(rows.find((r) => r.id === 'S7')!.providers).toEqual([]); // graph audit is deterministic
+    expect(rows.find((r) => r.id === 'S8b')!.providers).toEqual(['agy', 'codex']);
     expect(rows.find((r) => r.id === 'S9b')!.providers).toEqual(['claude']);
     expect(rows.find((r) => r.id === 'S5')!.providers).toEqual([]);
   });
@@ -48,10 +48,10 @@ describe('timeline: provider resolution + skeleton', () => {
 describe('timeline: state transitions + elapsed', () => {
   it('marks running then done with timing', () => {
     let rows = initTimeline(IDEA_STAGES, roles, [...available]);
-    rows = markStart(rows, 'S1', 1000);
-    expect(rows.find((r) => r.id === 'S1')).toMatchObject({ status: 'running', startedAt: 1000 });
-    rows = markEnd(rows, 'S1', 'done', 3500);
-    expect(rows.find((r) => r.id === 'S1')).toMatchObject({ status: 'done', endedAt: 3500 });
+    rows = markStart(rows, 'S4', 1000);
+    expect(rows.find((r) => r.id === 'S4')).toMatchObject({ status: 'running', startedAt: 1000 });
+    rows = markEnd(rows, 'S4', 'done', 3500);
+    expect(rows.find((r) => r.id === 'S4')).toMatchObject({ status: 'done', endedAt: 3500 });
   });
 
   it('elapsedLabel: final duration when done, live seconds when running, blank when pending', () => {
@@ -157,8 +157,12 @@ describe('run-screen life: phrases + progress + total time (V10)', () => {
     expect(runningPhrase('S9b', 0)).toBe('planning decisive validation');
   });
 
+  it('runningPhrase covers selective rebuttal', () => {
+    expect(runningPhrase('S8b', 0)).toBe('rebutting only what could flip the verdict');
+  });
+
   it('runningPhrase covers the intent preflight stage', () => {
-    expect(runningPhrase('S0', 0)).toBe('grilling the intent');
+    expect(runningPhrase('S0', 0)).toBe('comparing two readings of your decision');
   });
 
   it('progressBar counts done/failed/skipped as finished', () => {

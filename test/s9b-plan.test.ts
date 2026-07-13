@@ -158,16 +158,12 @@ describe('s9bPlan', () => {
     expect(prompts[1]).toContain('Valid graph claim ids: D1');
   });
 
-  it('skips the planner when fewer than two calls remain', async () => {
+  it('uses the one reserved planner call without requiring repair headroom', async () => {
     const ctx = makeCtx(() => ok(goodPlan), 1);
     const plan = await s9bPlan(ctx, contract, seats, graph, judge);
-    expect(ctx.calls).toHaveLength(0);
-    expect(ctx.flags.has('plan_skipped')).toBe(true);
-    expect(plan).toEqual({
-      kind: 'PlannerUnavailable',
-      reason: 'budget_exhausted',
-      unresolved_questions: ['Which target user has this pain?'],
-    });
+    expect(ctx.calls).toHaveLength(1);
+    expect(ctx.flags.has('plan_skipped')).toBe(false);
+    expect(plan).toEqual(goodPlan);
   });
 
   it('records explicit unavailability when the planner call crashes', async () => {

@@ -72,8 +72,8 @@ Verified from the installed CLIs' complete `--help` output; no model calls and n
   advertise a dedicated web/search/research flag. Do not assume a research tool is available. Aiki keeps
   `--permission-mode plan`; no R4 adapter flag changed.
 - **Codex CLI 0.144.1:** root `codex --help` explicitly exposes `--search` (live web search); `codex exec
-  --help` does not list a separate research flag. The capability is recorded only — R4 does not enable it
-  before the explicit `research` mode planned in R6. Existing calls stay `-s read-only`.
+  --help` does not list a separate research flag. R6 verifies placement as `codex --search exec ...`;
+  aiki enables it only for Codex scout calls in explicit `research` mode. Existing `-s read-only` stays.
 - **Antigravity `agy` 1.1.1:** help exposes `--sandbox` but no explicit web/search/research flag. Do not
   infer provider-native investigation beyond prompt-visible local files.
 
@@ -98,5 +98,5 @@ dangerous bypass, write permission, credential directory, or unverified flag was
 | 2026-07-06 | agy | 1.0.16 | model selection (V8) | `--model <id>` AND `agy models` LISTS available (e.g. "Gemini 3.1 Pro (High)", "Claude Opus 4.6 (Thinking)", "GPT-OSS 120B (Medium)" — ids have spaces/parens, pass as one argv elem) | adapter `--model`; `aiki models` runs `agy models` | ✔ only CLI that enumerates |
 | 2026-07-09 | codex | 0.142.5 | run-anywhere smoke in arbitrary cwd | `--skip-git-repo-check` present on `codex exec`; without it, non-git cwd fails: "Not inside a trusted directory..." | adapter always adds `--skip-git-repo-check` after `exec` | read-only unchanged: still uses `-s read-only`; no dangerous bypass |
 | 2026-07-11 | codex | 0.142.5→**0.144.1** | configured CLI-default model `gpt-5.6-sol` | 0.142.5 returned HTTP 400: model requires newer Codex; `codex update` installed 0.144.1 | no adapter flag change | version probe green; live retry remains USER-approved only |
-| 2026-07-13 | codex | 0.144.1 | provider-native investigation | root help exposes verified `--search`; `exec` help has no separate research flag | recorded only; defer enablement to R6 research mode | existing `-s read-only` unchanged |
+| 2026-07-13 | codex | 0.144.1 | provider-native investigation | root help exposes verified `--search`; `codex --search exec --help` succeeds while `codex exec --search --help` rejects the option | enable only on explicit R6 research scout calls | existing `-s read-only` unchanged |
 | 2026-07-13 | claude / agy | 2.1.204 / 1.1.1 | provider-native investigation | no dedicated web/search/research flag in complete help output | none | existing `plan` / `sandbox` enforcement unchanged |

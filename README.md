@@ -195,8 +195,9 @@ Plain text is never charged silently — you get a confirm step before any run s
 
 ```bash
 aiki run idea-refinement "a fridge-photo-to-recipe app for busy parents"
+aiki run idea-refinement "an early idea" --mode quick             # one structured analyst; no council claim
 aiki run idea-refinement ./idea.md
-aiki run idea-refinement ./idea.md --evidence ./research/  # local sources: paths+hashes stored, contents not copied
+aiki run idea-refinement ./idea.md --mode research --evidence ./research/  # grounded, source-verifying council
 aiki run code-review --base main             # review this branch vs main
 aiki run code-review --diff ./changes.patch  # review a patch file
 aiki run code-review --cheap                 # Gemini+Codex review, Claude judges only disputes (~⅓ the Opus)
@@ -219,9 +220,11 @@ reads provider credential directories.
 real line in the diff) → mutual adversarial cross-examination → consensus/dispute map → the judge adjudicates
 only the disputes → report.
 
-**Idea refinement** — a contextual preflight (a few sharp questions to pin down what you actually mean) →
-intent contract → misunderstanding guard → parallel adversarial analysis → disagreement map → verifier →
-judge → a validation planner. The report is a **decision brief**, not an essay:
+**Idea refinement** — two independent preflight readings → one confirmed/defaulted decision contract →
+complementary analyst lanes → deterministic claim/evidence graph audit → only decision-critical verification
+or rebuttal → evidence-linked chair → validation planner. The report is a **decision brief**, not an essay.
+Choose `--mode quick` for one structured analyst, `--mode council` (default) for the full decision council,
+or `--mode research` for source-grounded current-fact work. Aiki never chooses a mode with a learned router:
 
 - a **BLUF recommendation** — `PROCEED` / `PROCEED WITH CONDITIONS` / `PIVOT` / `STOP`
 - the **chairman's reasoning** (what decided it, where the models split, whose side the judge took)
@@ -302,9 +305,10 @@ This is the part that makes aiki trustworthy to point at a real repo:
 
 ## Costs & limits
 
-- **Runs cost real model calls** against your existing CLI subscriptions/quota. Idea refinement is about
-  **12 provider calls** (~4 on Claude/Opus); code review is about **5**. `aiki run` shows an estimate and asks
-  to confirm (skip with `--yes`).
+- **Runs cost real model calls** against your existing CLI subscriptions/quota. Idea refinement is nominally
+  **3 calls in quick**, **6–8 in council**, or **8–10 in research** (schema repairs can add calls within the
+  mode-aware budget); code review is about **5**. `aiki run` shows the mode, range, budget, and reserved
+  chair/planner calls before asking to confirm (skip with `--yes`).
 - **Not a general assistant.** Questions and "explore my whole codebase" requests are redirected, not answered
   — aiki reviews a *diff* and vets a *stated idea*.
 - **Analysis, not advice.** Every report is a decision aid. Verify before acting.

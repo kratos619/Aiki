@@ -10,22 +10,25 @@ import type { Adapter, ProviderId, RunResultAdapter } from '../src/providers/typ
 import type { EvidencePack } from '../src/orchestration/evidence-pack.js';
 
 // A scripted adapter that answers each stage by inspecting the prompt. Records call count.
-function fakeAdapter(id: ProviderId): Adapter {
+function fakeAdapter(id: ProviderId, opts: { obvious?: boolean } = {}): Adapter {
   return {
     id,
     run: async (req): Promise<RunResultAdapter> => {
       const p = req.prompt;
       let obj: unknown;
-      if (p.includes('intent preflight analyst')) {
+      if (p.includes('TWO-VIEW PREFLIGHT')) {
         obj = {
           subject: 'local multi-model orchestration CLI',
-          decision_frame: 'decide whether to build the tool as specified',
-          evaluation_lens: 'developer-tool viability and risk',
+          interpretation: 'decide whether to build a local multi model orchestration cli',
+          normalized_decision: 'decide whether to build a local multi model orchestration cli',
+          alternatives: ['build it', 'do not build it'],
           target_user: 'developers already paying for multiple AI subscriptions',
           constraints: ['no API keys', 'read-only'],
+          success_bar: 'a defensible build or stop recommendation',
+          success_criteria: ['a verdict'],
           claims_to_test: ['1.3x bug-catch rate'],
           evidence_supplied: [],
-          missing_axes: ['pricing'],
+          missing_evidence: ['pricing evidence'],
           domain_dimensions: [
             { id: 'D1', label: 'provider interoperability', rationale: 'The idea depends on installed provider CLIs.' },
             { id: 'D2', label: 'workflow adoption', rationale: 'Developers must change review habits.' },
@@ -37,28 +40,30 @@ function fakeAdapter(id: ProviderId): Adapter {
             { id: 'Q3', axis: 'success_bar', question: 'What success bar should be used?', why_it_matters: 'The judge needs a bar.', suggested_answers: ['Beat one strong model', 'Find fatal risks'] },
           ],
         };
-      } else if (p.includes('intake analyst')) {
-        obj = { task: 'build a local multi-model orchestration CLI', task_type: 'idea-refinement', constraints: [], unknowns: ['target user'], success_criteria: ['a verdict'] };
-      } else if (p.includes('their request could be misread')) {
-        obj = { my_interpretation: 'build a local multi model orchestration cli', plausible_misreadings: ['a cloud chat product'] };
-      } else if (p.includes('Fill the role prompt templates')) {
-        obj = { prompts: { analyst: 'ROLE: analyst. Task fully specified, no slots remain.' } };
-      } else if (p.includes('Task fully specified')) {
-        // S4 analyst seat — the filled analyst prompt. Model JSON carries NO `workflow` field.
+      } else if (p.includes('ROLE: Independent analyst')) {
+        // S4 analyst seat — the deterministically filled analyst prompt. Model JSON carries NO `workflow` field.
         obj = {
           task_echo: 'build a local multi-model orchestration CLI',
           strongest_version: 'A local CLI that orchestrates installed AI CLIs for cross-model review.',
           positions: [
             { local_id: 'P1', proposition: 'developers want local multi model orchestration', dimension_id: 'R1', stance: 'SUPPORT', basis: 'EVIDENCE', load_bearing: true, if_false: 'STOP', reasoning: 'The supplied request demonstrates demand.', evidence_ids: ['E1'], depends_on: [] },
-            { local_id: 'P2', proposition: 'installed CLIs expose stable machine readable output', dimension_id: 'R4', stance: id === 'agy' ? 'SUPPORT' : 'OPPOSE', basis: 'EVIDENCE', load_bearing: true, if_false: 'CONDITION', reasoning: id === 'agy' ? 'Probe-time formats can be pinned.' : 'CLI output formats drift between versions.', evidence_ids: ['E2'], depends_on: [] },
+            { local_id: 'P2', proposition: 'installed CLIs expose stable machine readable output', dimension_id: 'R4', stance: opts.obvious || id === 'agy' ? 'SUPPORT' : 'OPPOSE', basis: 'EVIDENCE', load_bearing: true, if_false: 'CONDITION', reasoning: opts.obvious || id === 'agy' ? 'Probe-time formats can be pinned.' : 'CLI output formats drift between versions.', evidence_ids: ['E2'], depends_on: [] },
           ],
           evidence: [
             { id: 'E1', claim_supported: 'developers want local multi model orchestration', source_kind: 'USER', support: 'SUPPORTS', freshness: 'CURRENT' },
-            { id: 'E2', claim_supported: 'installed CLIs expose stable machine readable output', source_kind: 'USER', support: id === 'agy' ? 'SUPPORTS' : 'CONTRADICTS', freshness: 'CURRENT' },
+            { id: 'E2', claim_supported: 'installed CLIs expose stable machine readable output', source_kind: 'USER', support: opts.obvious || id === 'agy' ? 'SUPPORTS' : 'CONTRADICTS', freshness: 'CURRENT' },
           ],
           coverage: [
             { dimension_id: 'R1', status: 'COVERED', position_ids: ['P1'], rationale: 'P1 covers target users.' },
             { dimension_id: 'R4', status: 'COVERED', position_ids: ['P2'], rationale: 'P2 covers feasibility.' },
+            ...(opts.obvious
+              ? ['R2', 'R3', 'R5', 'R6', 'R7', 'R8', 'R9', 'R10', 'R11', 'R12', 'R13', 'D1', 'D2', 'D3'].map((dimension_id) => ({
+                  dimension_id,
+                  status: 'NOT_APPLICABLE' as const,
+                  position_ids: [],
+                  rationale: `${dimension_id} does not add a decision-critical claim in this obvious fixture.`,
+                }))
+              : []),
           ],
           decision_questions: [{ id: 'Q1', question: 'who is the target user?', claim_ids: ['P1'] }],
         };
@@ -77,16 +82,28 @@ function fakeAdapter(id: ProviderId): Adapter {
           })),
           decision_questions: [],
         };
-      } else if (p.includes('Group anonymous positions')) {
-        obj = { groups: [['P1', 'P3'], ['P2', 'P4']] };
       } else if (p.includes('ROLE: Independent verifier')) {
         obj = { verifications: [{ claim_id: 'G2', status: 'CONTRADICTED', reasoning: 'the format is pinned at probe time', evidence_ids: ['E2'], calculation_check: 'NOT_APPLICABLE', missing_evidence: [] }] };
+      } else if (p.includes('ROLE: Scout rebuttal')) {
+        obj = { events: [{ claim_id: 'G2', response: id === 'agy' ? 'CONCEDE' : 'COUNTER', reasoning: 'The probe-time evidence narrows the format-drift concern.', evidence_ids: ['E1'] }] };
       } else if (p.includes('ROLE: Judge')) {
-        obj = {
-          adjudications: [{ id: 'G2', ruling: 'REJECT', reasoning: 'the drift risk is mitigated by the flag probe', evidence_ids: ['E1'] }],
+        obj = opts.obvious ? {
+          adjudications: [],
+          verdict: 'Proceed with the compatibility probe already specified.',
+          recommendation: 'PROCEED',
+          recommendation_claim_ids: ['G1', 'G2'],
+          strongest_counter_case: { claim_ids: ['G2'], reasoning: 'Provider formats may still drift.' },
+          key_points: ['The two independent seats support the load-bearing claims.'],
+          dissent: ['Provider formats may still drift faster than probes adapt.'],
+          confidence_notes: 'Medium because supplied evidence is user evidence.',
+        } : {
+          adjudications: [{ claim_id: 'G2', ruling: 'HOLDS', reasoning: 'the drift risk is mitigated by the flag probe', evidence_ids: ['E1'], effect_on_decision: 'The idea can proceed behind a compatibility guard.' }],
           verdict: 'Viable as a local orchestration layer; ship behind a provider-probe guard.',
           recommendation: 'PROCEED_WITH_CONDITIONS',
           conditions: ['Proceed only if provider output probing stays stable across versions.'],
+          recommendation_claim_ids: ['G1', 'G2'],
+          condition_claim_ids: ['G2'],
+          strongest_counter_case: { claim_ids: ['G2'], reasoning: 'Provider formats may drift faster than probes can adapt.' },
           key_points: ['The provider-probe guard addresses the main dispute.'],
           dissent: ['May not beat a single strong model on subjective synthesis.'],
           confidence_notes: 'HIGH on the consensus claims; MEDIUM on the contested one.',
@@ -111,11 +128,11 @@ function fakeAdapter(id: ProviderId): Adapter {
   };
 }
 
-function handle(id: ProviderId): ProviderHandle {
+function handle(id: ProviderId, opts: { obvious?: boolean } = {}): ProviderHandle {
   const readOnly = id === 'claude' ? 'plan' : 'sandbox';
   return {
     id,
-    adapter: fakeAdapter(id),
+    adapter: fakeAdapter(id, opts),
     flags: { id, jsonOutput: id === 'claude', readOnlyFlag: readOnly },
     readOnly,
     version: '9.9.9',
@@ -126,8 +143,8 @@ const INPUT = '# my idea\nbuild a local orchestration CLI that binds installed A
 
 let root: string;
 
-function makeCtx(budget?: number, evidencePack?: EvidencePack): RunCtx {
-  const handles = [handle('agy'), handle('codex'), handle('claude')];
+function makeCtx(budget?: number, evidencePack?: EvidencePack, opts: { obvious?: boolean } = {}): RunCtx {
+  const handles = [handle('agy', opts), handle('codex', opts), handle('claude', opts)];
   const runId = makeRunId('idea-refinement');
   const roles = resolveRoles('idea-refinement', handles.map((h) => h.id));
   const writer = new RunWriter(runId, root);
@@ -150,6 +167,16 @@ describe('role assignment (§10, decided T5)', () => {
 });
 
 describe('executeRun happy path (§24 T7: artifacts 00–10, end-to-end)', () => {
+  it('keeps a nominal obvious council run to the six-call base', async () => {
+    const ctx = makeCtx(undefined, undefined, { obvious: true });
+    const outcome = await executeRun(ctx, INPUT, runIdeaRefinement);
+
+    expect(outcome.ok).toBe(true);
+    expect(outcome.callCount).toBe(6);
+    expect(ctx.calls.map((call) => call.stage)).toEqual(expect.arrayContaining(['P0-1', 'P0-2', 'S4-agy', 'S4-codex', 'S9', 'S9b-plan']));
+    expect(ctx.calls.some((call) => call.stage === 'S7-coverage-fill' || call.stage === 'S8' || call.stage.startsWith('S8b-'))).toBe(false);
+  });
+
   it('produces the S1–S10 artifacts + final report on sample input', async () => {
     const ctx = makeCtx(undefined, {
       root: '/tmp/research',
@@ -158,7 +185,7 @@ describe('executeRun happy path (§24 T7: artifacts 00–10, end-to-end)', () =>
     const outcome = await executeRun(ctx, INPUT, runIdeaRefinement);
 
     expect(outcome.ok).toBe(true);
-    expect(outcome.callCount).toBe(13); // prior 12 + one targeted coverage-fill call
+    expect(outcome.callCount).toBe(8); // 6-call base + coverage fill + verifier; chair/planner preserved
 
     const dir = ctx.writer.dir;
     expect(await readFile(join(dir, '00-original.md'), 'utf8')).toBe(INPUT);
@@ -172,9 +199,9 @@ describe('executeRun happy path (§24 T7: artifacts 00–10, end-to-end)', () =>
     expect(contract.task_type).toBe('idea-refinement');
     expect(contract.domain_dimensions.map((dimension: { id: string }) => dimension.id)).toEqual(['D1', 'D2', 'D3']);
 
-    const guard = JSON.parse(await readFile(join(dir, '02-misunderstanding-guard.json'), 'utf8'));
-    expect(guard.interpretations).toHaveLength(3);
-    expect(guard.chosen.how).toBe('single-cluster'); // identical restatements → one cluster
+    const preflight = JSON.parse(await readFile(join(dir, '02-preflight-readings.json'), 'utf8'));
+    expect(preflight.readings).toHaveLength(2);
+    expect(preflight.chosen.how).toBe('single-cluster');
 
     await expect(stat(join(dir, '03-prompts', 'analyst.md'))).resolves.toBeDefined();
 
@@ -210,6 +237,10 @@ describe('executeRun happy path (§24 T7: artifacts 00–10, end-to-end)', () =>
     expect(verif.verifications).toHaveLength(1);
     expect(verif.verifications[0]).toMatchObject({ claim_id: 'G2', status: 'CONTRADICTED', evidence_ids: ['agy/E2'] });
 
+    const rebuttals = JSON.parse(await readFile(join(dir, '08b-rebuttals.json'), 'utf8'));
+    expect(rebuttals.events).toHaveLength(0);
+    expect(rebuttals.stop_reason).toBe('CALL_CAP_REACHED');
+
     // S9: judge adjudicated the dispute only; non-empty dissent.
     const judge = JSON.parse(await readFile(join(dir, '09-judge-report.json'), 'utf8'));
     expect(judge.adjudications).toHaveLength(1);
@@ -232,14 +263,16 @@ describe('executeRun happy path (§24 T7: artifacts 00–10, end-to-end)', () =>
 
     const meta = JSON.parse(await readFile(join(dir, 'meta.json'), 'utf8'));
     expect(meta.exit_status).toBe('ok');
-    expect(meta.call_count).toBe(13);
+    expect(meta.call_count).toBe(8);
+    expect(meta.mode).toBe('council');
+    expect(meta.receipt).toEqual({ discovery: 5, verification: 2, repair: 0, planning: 1 });
     expect(meta.roles).toMatchObject({ analyst: 'agy', judge: 'claude', s4_1: 'agy', s4_2: 'codex' });
   });
 });
 
 describe('executeRun budget breach (§24 T5: aborts gracefully)', () => {
   it('fails gracefully with partial, valid artifacts + finalized meta', async () => {
-    const ctx = makeCtx(1); // S0 uses the only call; S1 breaches
+    const ctx = makeCtx(1); // the second parallel preflight reading breaches
     const outcome = await executeRun(ctx, INPUT, runIdeaRefinement);
 
     expect(outcome.ok).toBe(false);
@@ -247,14 +280,14 @@ describe('executeRun budget breach (§24 T5: aborts gracefully)', () => {
 
     const dir = ctx.writer.dir;
     const entries = await readdir(dir);
-    expect(entries).toContain('00b-run-brief.json'); // S0 landed before the breach
-    expect(entries).not.toContain('01-intent-contract.json'); // S1 never completed
-    expect(entries).not.toContain('02-misunderstanding-guard.json'); // S2 never completed
+    expect(entries).not.toContain('00b-run-brief.json'); // the two-view boundary never completed
+    expect(entries).not.toContain('01-intent-contract.json');
+    expect(entries).not.toContain('02-preflight-readings.json');
     expect(entries.some((e) => e.endsWith('.tmp'))).toBe(false); // no half-written files
 
     const meta = JSON.parse(await readFile(join(dir, 'meta.json'), 'utf8'));
     expect(meta.exit_status).toBe('failed');
-    expect(meta.call_count).toBe(1); // only S1's call was accounted (breach throws pre-increment)
+    expect(meta.call_count).toBe(1); // one preflight call completed; the second breached pre-spawn
     expect(meta.budget).toEqual({ limit: 1, used: 1 });
   });
 });

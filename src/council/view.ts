@@ -2,7 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { DISPLAY_NAME, type ProviderId } from '../providers/types.js';
 import type { WorkflowId } from '../orchestration/context.js';
-import { RoleOutput as RoleOutputSchema, type ActionPlanArtifact, type AnnotatedFinding, type DecisionGraph, type DisagreementMap, type JudgeReport, type Recommendation, type ReviewMap, type RoleOutput, type RunMeta } from '../schemas/index.js';
+import { RoleOutput as RoleOutputSchema, type ActionPlanArtifact, type AnnotatedFinding, type DecisionGraph, type DisagreementMap, type IdeaMode, type JudgeReport, type Recommendation, type ReviewMap, type RoleOutput, type RunMeta } from '../schemas/index.js';
 import { deriveAudit, deriveScorecard, mergeOpenQuestions, type AuditRow, type ScorecardRow } from '../orchestration/stages/s10-render.js';
 import type { SeatOutput } from '../orchestration/stages/s4-analyze.js';
 import { IDEA_RUBRIC } from '../workflows/idea-refinement.js';
@@ -31,6 +31,7 @@ export interface DebateItem { claim: string; claimantProviders: ProviderId[]; at
 export interface CouncilView {
   runId: string;
   workflow: WorkflowId;
+  mode?: IdeaMode;
   verdict: string;
   keyPoints: string[]; // chairman's bulleted reasoning (idea); [] for code-review
   confidence: string;
@@ -209,6 +210,7 @@ function receiptLines(meta: RunMeta): string[] {
     .join(' · ');
   return [
     `Calls: ${meta.call_count ?? calls.length}/${meta.budget?.limit ?? '?'}`,
+    ...(meta.receipt ? [`Categories: discovery ${meta.receipt.discovery} · verification ${meta.receipt.verification} · repair ${meta.receipt.repair} · planning ${meta.receipt.planning}`] : []),
     `Per-provider: ${providerCounts}`,
     `Recorded model time: ${(ms / 1000).toFixed(1)}s`,
     profiles ? `Models: ${profiles}` : '',
@@ -337,6 +339,7 @@ export async function loadCouncilView(runId: string, dir: string): Promise<Counc
   return {
     runId,
     workflow: meta.workflow,
+    mode: meta.mode,
     verdict,
     keyPoints: judge?.key_points ?? [],
     confidence: judge?.confidence_notes ?? '',
@@ -590,14 +593,41 @@ function renderIdeaBody(view: CouncilView): string {
   `;
 }
 
+function renderQuickIdeaBody(view: CouncilView): string {
+  const tone = recommendationTone(view.recommendation, view.signal?.tone ?? 'caution');
+  const label = recommendationLabel(view.recommendation, view.signal?.label ?? 'Quick analysis');
+  const conditions = view.conditions?.length
+    ? `<div class="conditions"><span class="fk">Conditions</span><ul>${view.conditions.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul></div>`
+    : '';
+  const hero = `<section class="verdict tone-${tone} reveal" style="animation-delay:60ms"><span class="pill">${escapeHtml(label)}</span><p class="verdict-text">${escapeHtml(view.verdict)}</p>${conditions}</section>`;
+  const reasoning = view.keyPoints.length
+    ? `<ul class="reasons">${view.keyPoints.map((point) => `<li>${escapeHtml(point)}</li>`).join('')}</ul>`
+    : '<p class="muted">No structured reasoning recorded.</p>';
+  const risks = view.risks?.length
+    ? `<ul class="checks">${view.risks.map((risk) => `<li>${escapeHtml(risk.assumption)} — ${escapeHtml(risk.challenge)}</li>`).join('')}</ul>`
+    : '<p class="muted">No load-bearing risk was supported strongly enough to list.</p>';
+  const plan = view.actionPlan && !('kind' in view.actionPlan)
+    ? `<ul class="checks">${view.actionPlan.actions.map((action) => `<li><strong>${escapeHtml(action.action)}</strong> — ${escapeHtml(action.kill_signal)}</li>`).join('')}</ul>`
+    : '<p class="muted">No executable plan was produced.</p>';
+  const analyst = view.columns.map((column) => `<article class="card model-card"><h3>${escapeHtml(column.title)}</h3><ul class="model-lines">${column.lines.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul></article>`).join('');
+  const receipt = view.receipt?.length ? `<div class="receipt">${view.receipt.map((line) => `<span>${escapeHtml(line)}</span>`).join('')}</div>` : '';
+  return `${hero}
+    ${section('01', 'Analyst reasoning', reasoning, 100, 'One structured analyst; no council or independent-consensus claim.')}
+    ${section('02', 'Load-bearing risks', risks, 180)}
+    ${section('03', 'Validation plan', plan, 240)}
+    ${receipt ? section('04', 'Receipt', receipt, 300) : ''}
+    ${section('05', 'Analyst output', `<div class="model-grid">${analyst}</div>`, 360)}`;
+}
+
 /** Serialize a council view to clean Markdown — for the HTML "Copy" button (paste into a coding assistant). */
 function councilMarkdown(view: CouncilView): string {
   const isIdea = view.workflow !== 'code-review';
+  const quick = isIdea && view.mode === 'quick';
   const reportV3 = isIdea && Boolean(view.recommendation || view.actionPlan);
   const L: string[] = [];
   L.push(`# ${isIdea && view.topic ? cleanTopic(view.topic) : isIdea ? 'Idea refinement' : 'Code review'}`, '');
   const panel = view.columns.map((c) => c.title).join(', ');
-  if (panel) L.push(`Panel: ${panel}${view.moderator ? ` · Chair: ${view.moderator}` : ''}`, '');
+  if (panel) L.push(quick ? `Analyst: ${panel}` : `Panel: ${panel}${view.moderator ? ` · Chair: ${view.moderator}` : ''}`, '');
   if (view.recommendation) {
     L.push('## Bottom line', '', `**${recommendationLabel(view.recommendation, '')}** — ${view.verdict}`, '');
     if (view.conditions?.length) {
@@ -609,7 +639,7 @@ function councilMarkdown(view: CouncilView): string {
     L.push('## Verdict', '', view.verdict, '');
   }
   if (view.keyPoints?.length) {
-    L.push("## Chairman's reasoning", '');
+    L.push(quick ? '## Analyst reasoning' : "## Chairman's reasoning", '');
     if (view.flags.includes('synthesis_suspect')) L.push('⚠ synthesis_suspect — the chair output required deterministic repair or degradation handling.', '');
     for (const p of view.keyPoints) L.push(`- ${p}`);
     L.push('');
@@ -667,7 +697,7 @@ function councilMarkdown(view: CouncilView): string {
       L.push('');
     }
     if (view.columns.length) {
-      L.push('## How each model saw it', '');
+      L.push(quick ? '## Analyst output' : '## How each model saw it', '');
       for (const c of view.columns) {
         L.push(`### ${c.title}`);
         for (const l of c.lines.slice(0, 10)) L.push(`- ${l}`);
@@ -748,7 +778,7 @@ function renderTechnical(view: CouncilView): string {
   const dissent = view.dissent.length ? `<ul>${view.dissent.map((d) => `<li>${escapeHtml(d)}</li>`).join('')}</ul>` : '<p class="muted">None recorded.</p>';
   return `
   <details class="fold reveal" style="animation-delay:0ms">
-    <summary>Full council analysis (technical)</summary>
+    <summary>${view.mode === 'quick' ? 'Full single-analyst output (technical)' : 'Full council analysis (technical)'}</summary>
     <div class="fold-body">
       <h4 class="fold-h">Each model, in its own words</h4>
       <div class="cols">${columns || '<p class="muted">No model output recorded.</p>'}</div>
@@ -762,18 +792,19 @@ function renderTechnical(view: CouncilView): string {
 
 export function renderCouncilHtml(view: CouncilView): string {
   const isIdea = view.workflow !== 'code-review';
-  const kicker = isIdea ? 'aiki · idea refinement' : 'aiki · code review';
+  const quick = isIdea && view.mode === 'quick';
+  const kicker = quick ? 'aiki · quick analysis' : isIdea ? 'aiki · idea refinement' : 'aiki · code review';
   const title = isIdea && view.topic ? cleanTopic(view.topic) : (isIdea ? 'Idea refinement' : 'Code review');
   const panel = view.columns.map((c) => c.title);
   const metaBits = [
-    panel.length ? `Panel: ${panel.join(' · ')}` : '',
-    view.moderator ? `Chair: ${view.moderator}` : '',
+    panel.length ? `${quick ? 'Analyst' : 'Panel'}: ${panel.join(' · ')}` : '',
+    !quick && view.moderator ? `Chair: ${view.moderator}` : '',
     view.calls,
   ].filter(Boolean);
   const flags = view.flags.length
     ? `<div class="warns">${view.flags.map((f) => `<span class="warn">⚑ ${escapeHtml(f.replaceAll('_', ' '))}</span>`).join('')}</div>`
     : '';
-  const body = isIdea ? renderIdeaBody(view) : renderReviewBody(view);
+  const body = quick ? renderQuickIdeaBody(view) : isIdea ? renderIdeaBody(view) : renderReviewBody(view);
   // Embed the report as Markdown for the Copy button. Escape "<" so a "</script>" in content can't break out.
   const md = JSON.stringify(councilMarkdown(view)).replace(/</g, '\\u003c');
 
@@ -782,7 +813,7 @@ export function renderCouncilHtml(view: CouncilView): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeHtml(isIdea ? 'Idea refinement' : 'Code review')} — aiki council</title>
+<title>${escapeHtml(quick ? 'Quick analysis' : isIdea ? 'Idea refinement' : 'Code review')} — aiki</title>
 <style>
 :root{
   color-scheme: light;
@@ -959,7 +990,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-fa
     ${flags}
   </header>
   ${body}
-  <footer>Generated by aiki · ${escapeHtml(view.runId)} · a local model council. This is analysis, not advice — verify before acting.</footer>
+  <footer>Generated by aiki · ${escapeHtml(view.runId)} · ${quick ? 'single-model quick analysis' : 'a local model council'}. This is analysis, not advice — verify before acting.</footer>
 </main>
 <script>
 const REPORT_MD = ${md};

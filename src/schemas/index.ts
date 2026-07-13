@@ -23,6 +23,9 @@ export const TaskTypeSchema = z.enum(['idea-refinement', 'code-review', 'other']
 /** The two runnable v1 workflows (§12). Discriminates RoleOutput and tags RunMeta. */
 export const WorkflowIdSchema = z.enum(['idea-refinement', 'code-review']);
 
+/** Explicit user-selected idea protocol. There is deliberately no learned mode router. */
+export const IdeaModeSchema = z.enum(['quick', 'council', 'research']);
+
 export const DomainDimension = z
   .object({
     id: z.string().regex(/^D[1-5]$/),
@@ -43,6 +46,20 @@ export const IntentContract = z
     domain_dimensions: z.array(DomainDimension).min(3).max(5).optional(), // required by the idea preflight; optional for old/code-review contracts
   })
   .strict();
+
+/** R6 decision contract: the two-view preflight's single downstream boundary. */
+export const DecisionContract = IntentContract.extend({
+  alternatives: z.array(z.string().min(1)).max(8),
+  success_bar: z.string().min(1),
+  evidence_supplied: z.array(z.string().min(1)).max(12),
+  missing_evidence: z.array(z.string().min(1)).max(12),
+  core_rubric: z.array(z.string().min(1)).min(1),
+  user_confirmed: z.boolean(),
+  confirmation: z.enum(['user-confirmed', 'headless-defaulted']),
+}).strict();
+
+/** Code review and old idea runs keep the smaller v1 contract. */
+export const DecisionContractArtifact = z.union([DecisionContract, IntentContract]);
 
 // ── S2: Interpretation — per provider (§13) ─────────────────────────────────
 
@@ -147,6 +164,36 @@ export const RunBrief = RunBriefDraftBase.extend({
     }
   }
 });
+
+/** One of the two independent R6 preflight readings. */
+export const PreflightReading = z.object({
+  subject: z.string().min(1),
+  interpretation: z.string().min(1),
+  normalized_decision: z.string().min(1),
+  alternatives: z.array(z.string().min(1)).max(8),
+  target_user: z.string().min(1).nullable(),
+  constraints: z.array(z.string().min(1)).max(10),
+  success_bar: z.string().min(1),
+  success_criteria: z.array(z.string().min(1)).max(8),
+  claims_to_test: z.array(z.string().min(1)).max(8),
+  evidence_supplied: z.array(z.string().min(1)).max(8),
+  missing_evidence: z.array(z.string().min(1)).max(8),
+  domain_dimensions: z.array(DomainDimension).min(3).max(5),
+  questions: z.array(RunBriefQuestion).min(3).max(4),
+}).strict().superRefine((reading, ctx) => {
+  checkQuestionIds(reading.questions, ctx);
+  checkDomainDimensionIds(reading.domain_dimensions, ctx);
+});
+
+export const PreflightArtifact = z.object({
+  readings: z.array(z.object({ provider: ProviderIdSchema, reading: PreflightReading }).strict()).min(1).max(2),
+  clusters: z.array(z.object({ members: z.array(z.string()), representative: z.string().min(1) }).strict()),
+  chosen: z.object({
+    interpretation: z.string().min(1),
+    how: z.enum(['single-cluster', 'majority-cluster', 'user-selected', 'user-combined', 'user-typed']),
+  }).strict(),
+  dropped: z.array(z.object({ provider: ProviderIdSchema, error: z.string().min(1) }).strict()),
+}).strict();
 
 // ── S4: RoleOutput — workflow-discriminated union (§12, §13) ─────────────────
 //
@@ -577,6 +624,58 @@ export const ClaimVerificationSet = z.object({
   verifications: z.array(ClaimVerification),
 }).strict();
 
+// ── R5: bounded, append-only rebuttal events ───────────────────────────────
+
+const RebuttalResponseBase = z.object({
+  claim_id: z.string().min(1),
+  response: z.enum(['CONCEDE', 'COUNTER', 'NARROW', 'UNRESOLVED']),
+  reasoning: z.string().min(1),
+  evidence_ids: z.array(z.string().min(1)),
+  narrowed_proposition: z.string().min(1).optional(),
+}).strict();
+
+const checkNarrowedRebuttal = (
+  event: z.infer<typeof RebuttalResponseBase>,
+  ctx: z.RefinementCtx,
+): void => {
+  if (event.response === 'NARROW' && !event.narrowed_proposition) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['narrowed_proposition'],
+      message: 'NARROW requires narrowed_proposition',
+    });
+  }
+};
+
+export const RebuttalResponse = RebuttalResponseBase.superRefine(checkNarrowedRebuttal);
+
+/** Exact model output for one scout's single rebuttal round. */
+export const RebuttalResponseSet = z.object({
+  events: z.array(RebuttalResponse).max(3),
+}).strict();
+
+export const RebuttalEvent = RebuttalResponseBase.extend({
+  id: z.string().min(1),
+  round: z.literal(1),
+  responder: ProviderIdSchema,
+  target_position_ids: z.array(z.string().min(1)),
+}).superRefine(checkNarrowedRebuttal);
+
+/** Persisted separately from DecisionGraph so original claims/evidence remain immutable. */
+export const RebuttalEventSet = z.object({
+  round: z.literal(1),
+  selected_claim_ids: z.array(z.string().min(1)).max(3),
+  events: z.array(RebuttalEvent).max(6),
+  stop_reason: z.enum([
+    'NO_ESCALATIONS',
+    'NO_ELIGIBLE_SCOUT',
+    'BUDGET_RESERVED',
+    'ROUND_COMPLETE',
+    'NO_NEW_EVIDENCE',
+    'CALL_CAP_REACHED',
+  ]),
+}).strict();
+
 /** Shared artifact slot: code review keeps the v1 cross-exam shape; idea refinement uses R4 claims. */
 export const VerificationArtifact = z.union([VerificationSet, ClaimVerificationSet]);
 
@@ -665,6 +764,8 @@ const Adjudication = z
     reasoning: z.string().min(1), // ≤3 sentences
     evidence_cited: z.string().min(1).optional(), // code-review / legacy idea artifacts
     evidence_ids: z.array(z.string().min(1)).optional(), // R4 idea chair citations, validated by reference
+    effect_on_decision: z.string().min(1).optional(), // R5 idea chair; optional for legacy/code-review artifacts
+    what_would_change_it: z.string().min(1).optional(), // required by S9 when an idea ruling is UNRESOLVED
   })
   .strict()
   .refine((item) => item.evidence_cited || item.evidence_ids?.length, { message: 'adjudication requires evidence' });
@@ -677,6 +778,16 @@ const JudgeReportBase = z
     verdict: z.string().min(1), // the recommendation + core reason (idea: 2-5 sentences; grounded in adjudicated + consensus claims)
     recommendation: Recommendation.optional(), // idea workflow; code-review omits it
     conditions: z.array(z.string().min(1)).max(6).optional(), // present only for PROCEED_WITH_CONDITIONS
+    recommendation_claim_ids: z.array(z.string().min(1)).min(1).max(8).optional(),
+    condition_claim_ids: z.array(z.string().min(1)).min(1).max(8).optional(),
+    pivot: z.object({
+      changed_claim_id: z.string().min(1),
+      new_risk_claim_id: z.string().min(1),
+    }).strict().optional(),
+    strongest_counter_case: z.object({
+      claim_ids: z.array(z.string().min(1)).min(1).max(4),
+      reasoning: z.string().min(1),
+    }).strict().optional(),
     key_points: z.array(z.string()).max(10).optional(), // chairman's bulleted reasoning (idea workflow); code-review omits it
     dissent: z.array(z.string()).min(1), // ≥1 — empty dissent is invalid (§9); strongest counter-argument
     confidence_notes: z.string().min(1), // which conclusions are HIGH/MEDIUM/LOW and why
@@ -707,6 +818,29 @@ export const JudgeReport = JudgeReportBase.superRefine((r, ctx) => {
  *  Recommendation/condition consistency is also enforced inside idea S9, not by this relaxed schema. */
 export const JudgeReportModel = JudgeReportBase.extend({
   dissent: z.array(z.string()),
+});
+
+/** R5 idea-chair boundary. Persisted JudgeReport keeps its legacy adjudication names so code-review
+ *  and old run readers stay compatible; S9 translates only after this exact model shape validates. */
+export const IdeaChairRuling = z.object({
+  claim_id: z.string().min(1),
+  ruling: z.enum(['HOLDS', 'FAILS', 'UNRESOLVED']),
+  reasoning: z.string().min(1),
+  evidence_ids: z.array(z.string().min(1)).min(1),
+  effect_on_decision: z.string().min(1),
+  what_would_change_it: z.string().min(1).optional(),
+}).strict().superRefine((ruling, ctx) => {
+  if (ruling.ruling === 'UNRESOLVED' && !ruling.what_would_change_it) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['what_would_change_it'],
+      message: 'UNRESOLVED requires what_would_change_it',
+    });
+  }
+});
+
+export const IdeaChairReportModel = JudgeReportModel.omit({ adjudications: true }).extend({
+  adjudications: z.array(IdeaChairRuling),
 });
 
 // ── S9b: ActionPlan (idea-refinement report v3) ─────────────────────────────
@@ -740,6 +874,26 @@ export const PlannerUnavailable = z.object({
 
 export const ActionPlanArtifact = z.union([ActionPlan, PlannerUnavailable]);
 
+/** R6 quick mode: one strong analyst produces the analysis, recommendation, and plan in one call. */
+export const QuickDecisionModel = z.object({
+  analysis: IdeaRoleOutputModel,
+  verdict: z.string().min(1),
+  recommendation: Recommendation,
+  conditions: z.array(z.string().min(1)).max(6),
+  key_points: z.array(z.string().min(1)).min(2).max(8),
+  dissent: z.array(z.string().min(1)).min(1).max(4),
+  confidence_notes: z.string().min(1),
+  action_plan: ActionPlan,
+}).strict().superRefine((decision, ctx) => {
+  const hasConditions = decision.conditions.length > 0;
+  if (decision.recommendation === 'PROCEED_WITH_CONDITIONS' && !hasConditions) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['conditions'], message: 'conditions are required for PROCEED_WITH_CONDITIONS' });
+  }
+  if (decision.recommendation !== 'PROCEED_WITH_CONDITIONS' && hasConditions) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['conditions'], message: 'conditions are only valid for PROCEED_WITH_CONDITIONS' });
+  }
+});
+
 // ── RunMeta (§15, §16) ──────────────────────────────────────────────────────
 //
 // Written by the artifact writer; assembled by the engine's RunCtx (T5). Internal → not strict.
@@ -748,6 +902,7 @@ export const ActionPlanArtifact = z.union([ActionPlan, PlannerUnavailable]);
 export const CallRecord = z.object({
   provider: ProviderIdSchema,
   stage: z.string(), // e.g. "S4", "S1"
+  category: z.enum(['discovery', 'verification', 'repair', 'planning']).optional(),
   durationMs: z.number().nonnegative(),
   error: z.enum(['NOT_FOUND', 'AUTH', 'QUOTA', 'TIMEOUT', 'BAD_OUTPUT', 'CRASH']).optional(),
 });
@@ -766,6 +921,7 @@ const FlagProfileSchema = z.object({
 export const RunMeta = z.object({
   run_id: z.string().min(1), // encodes the timestamp (e.g. 20260702-1412-idea-refinement-a3f9)
   workflow: WorkflowIdSchema,
+  mode: IdeaModeSchema.optional(),
   provider_versions: z.record(ProviderIdSchema, z.string()), // detected `--version` strings
   flag_profiles: z.record(ProviderIdSchema, FlagProfileSchema),
   roles: z.record(z.string(), ProviderIdSchema), // role name → assigned provider
@@ -773,22 +929,41 @@ export const RunMeta = z.object({
   calls: z.array(CallRecord),
   call_count: z.number().int().nonnegative(),
   budget: z.object({ limit: z.number().int().positive(), used: z.number().int().nonnegative() }),
+  receipt: z.object({
+    discovery: z.number().int().nonnegative(),
+    verification: z.number().int().nonnegative(),
+    repair: z.number().int().nonnegative(),
+    planning: z.number().int().nonnegative(),
+  }).optional(),
   exit_status: z.enum(['ok', 'failed', 'aborted', 'partial']),
   aborted: z.boolean(), // §16: Ctrl+C finalizes meta with aborted:true
   // §16 report-header flags; absent = none.
-  flags: z.array(z.enum(['synthesis_suspect', 'low_diversity', 'plan_skipped', 'plan_fallback'])).optional(),
+  flags: z.array(z.enum([
+    'synthesis_suspect',
+    'low_diversity',
+    'plan_skipped',
+    'plan_fallback',
+    'headless_intent',
+    'verification_skipped',
+    'research_ungrounded',
+    'single_model',
+  ])).optional(),
 });
 
 // ── Inferred types ──────────────────────────────────────────────────────────
 
 export type IntentContract = z.infer<typeof IntentContract>;
+export type DecisionContract = z.infer<typeof DecisionContract>;
 export type DomainDimension = z.infer<typeof DomainDimension>;
+export type IdeaMode = z.infer<typeof IdeaModeSchema>;
 export type Interpretation = z.infer<typeof Interpretation>;
 export type GrillQuestionAxis = z.infer<typeof GrillQuestionAxis>;
 export type RunBriefQuestion = z.infer<typeof RunBriefQuestion>;
 export type RunBriefDraft = z.infer<typeof RunBriefDraft>;
 export type GrillAnswer = z.infer<typeof GrillAnswer>;
 export type RunBrief = z.infer<typeof RunBrief>;
+export type PreflightReading = z.infer<typeof PreflightReading>;
+export type PreflightArtifact = z.infer<typeof PreflightArtifact>;
 export type StagePrompts = z.infer<typeof StagePrompts>;
 export type RoleOutput = z.infer<typeof RoleOutput>;
 export type IdeaRoleOutput = z.infer<typeof IdeaRoleOutput>;
@@ -816,14 +991,21 @@ export type Verification = z.infer<typeof Verification>;
 export type VerificationSet = z.infer<typeof VerificationSet>;
 export type ClaimVerification = z.infer<typeof ClaimVerification>;
 export type ClaimVerificationSet = z.infer<typeof ClaimVerificationSet>;
+export type RebuttalResponse = z.infer<typeof RebuttalResponse>;
+export type RebuttalResponseSet = z.infer<typeof RebuttalResponseSet>;
+export type RebuttalEvent = z.infer<typeof RebuttalEvent>;
+export type RebuttalEventSet = z.infer<typeof RebuttalEventSet>;
 export type Claim = z.infer<typeof Claim>;
 export type Contradiction = z.infer<typeof Contradiction>;
 export type DisagreementMap = z.infer<typeof DisagreementMap>;
 export type Recommendation = z.infer<typeof Recommendation>;
 export type JudgeReport = z.infer<typeof JudgeReport>;
 export type JudgeReportModel = z.infer<typeof JudgeReportModel>;
+export type IdeaChairRuling = z.infer<typeof IdeaChairRuling>;
+export type IdeaChairReportModel = z.infer<typeof IdeaChairReportModel>;
 export type ActionPlan = z.infer<typeof ActionPlan>;
 export type PlannerUnavailable = z.infer<typeof PlannerUnavailable>;
 export type ActionPlanArtifact = z.infer<typeof ActionPlanArtifact>;
+export type QuickDecisionModel = z.infer<typeof QuickDecisionModel>;
 export type RunMeta = z.infer<typeof RunMeta>;
 export type CallRecord = z.infer<typeof CallRecord>;
