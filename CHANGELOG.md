@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### Added
+- **Evidence and calculation integrity (R4)** — idea runs accept `--evidence <file|directory>` and persist
+  only source paths + SHA-256 hashes; evidence cards enforce source/freshness rules; derived numeric claims
+  can carry a pure arithmetic ledger whose values/units are recomputed; S8 emits typed claim verification;
+  and invalid evidence references are rejected before the chair call.
 - **Startup preflight** — typing bare `aiki` now runs the full doctor before the home screen: per-provider
   progress rows checking CLI presence, version, and auth/quota (smoke, cached 6h). Fewer than 2 providers
   ready shows a failure screen with the exact fix per provider; a single degraded provider shows a warning

@@ -99,6 +99,8 @@ export function adaptLegacyDecisionGraph(map: DisagreementMap): DecisionGraph {
   return {
     positions: claims.flatMap((item) => item.positions),
     evidence: [],
+    calculations: [],
+    calculation_checks: [],
     claims: claims.map((item) => item.claim),
     edges: [],
     holes: {

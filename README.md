@@ -196,6 +196,7 @@ Plain text is never charged silently — you get a confirm step before any run s
 ```bash
 aiki run idea-refinement "a fridge-photo-to-recipe app for busy parents"
 aiki run idea-refinement ./idea.md
+aiki run idea-refinement ./idea.md --evidence ./research/  # local sources: paths+hashes stored, contents not copied
 aiki run code-review --base main             # review this branch vs main
 aiki run code-review --diff ./changes.patch  # review a patch file
 aiki run code-review --cheap                 # Gemini+Codex review, Claude judges only disputes (~⅓ the Opus)
@@ -203,6 +204,10 @@ aiki show <run-id> --html --open             # open the shareable decision brief
 ```
 
 An idea run **auto-opens** its report in your browser when it finishes.
+
+`--evidence` accepts one local file or directory already in your scope. Aiki records absolute paths and
+SHA-256 hashes in the run, gives those paths to the read-only scouts, and never copies the source files or
+reads provider credential directories.
 
 ## The two workflows
 

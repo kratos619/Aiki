@@ -38,7 +38,8 @@ ${holes.map((hole) => `- ${hole.dimension_id}: ${hole.label}`).join('\n')}
 
 Output ONLY the idea analyst JSON schema. Emit positions/evidence only when needed. Include one explicit
 COVERED entry anchored to a position, or a reasoned NOT_APPLICABLE entry, for every listed dimension.
-Required top-level keys: task_echo, strongest_version, positions, evidence, coverage, decision_questions.
+Required top-level keys: task_echo, strongest_version, positions, evidence, calculations, coverage, decision_questions.
+Use calculations: [] unless a new position makes a derived numeric claim.
 Use the same position and evidence-card shapes as the initial analysis; JSON only.`;
 }
 

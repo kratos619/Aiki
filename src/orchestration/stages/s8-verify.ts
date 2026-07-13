@@ -1,26 +1,49 @@
-// S8 — independently verify only genuine disagreements and load-bearing unique positions. Shared
-// concerns are settled context, not manufactured debate. All provider identity stays hidden.
+// S8 — independently verify graph-selected claims from stored evidence/calculation references.
+// Provider identity stays hidden; model output is translated back to graph evidence IDs before S9.
 
 import type { DecisionGraph } from '../decision-graph.js';
 import { selectEscalations } from '../decision-graph.js';
-import type { VerificationSet as VerificationSetT } from '../../schemas/index.js';
-import { VerificationSet } from '../../schemas/index.js';
-import { isFatal, type RunCtx } from '../context.js';
+import type { ClaimVerificationSet as ClaimVerificationSetT } from '../../schemas/index.js';
+import { ClaimVerificationSet } from '../../schemas/index.js';
+import { isFatal, StageError, type RunCtx } from '../context.js';
 import { jsonCall } from '../jsonStage.js';
 
-const S8_PROMPT = `ROLE: Independent verifier. Check each anonymous decision claim below.
-For a disagreement, decide which position the available evidence supports. For a unique load-bearing
-claim, try to falsify it independently. Output ONLY JSON:
-{"verifications": [{"target_id": "<id>", "verdict": "CONFIRM|REFUTE|UNCERTAIN",
-  "evidence": "<your independent evidence/reasoning>", "note": "<≤2 sentences>"}]}
-CONFIRM = the challenged concern is supported. REFUTE = it is not supported. UNCERTAIN = evidence
-cannot decide. Judge each item independently; no verdict quota. JSON only.
+const S8_PROMPT = `ROLE: Independent verifier. Check each anonymous decision claim below against the
+provided evidence cards and deterministic calculation checks. Output ONLY JSON:
+{"verifications": [{"claim_id": "<G-id>", "status": "VERIFIED|PARTIAL|CONTRADICTED|UNVERIFIABLE",
+  "reasoning": "<concise reason>", "evidence_ids": ["<E-id>"],
+  "calculation_check": "PASS|FAIL|NOT_APPLICABLE", "missing_evidence": ["<gap>"]}]}
+VERIFIED = the proposition is supported. CONTRADICTED = it is refuted. PARTIAL = evidence is mixed or
+incomplete. UNVERIFIABLE = the supplied sources cannot decide. Cite only supplied evidence IDs. Model
+knowledge cannot verify a current, numeric, legal, medical, financial, market, or regulatory fact.
+Judge each item independently; no verdict quota. JSON only.
 ITEMS: {{ITEMS_JSON}}`;
 
-export function buildVerifierPrompt(graph: DecisionGraph): string {
+interface VerifierInput {
+  prompt: string;
+  evidenceRefs: Map<string, string>;
+}
+
+function evidenceIdsForClaim(graph: DecisionGraph, claimId: string): Set<string> {
   const positionById = new Map(graph.positions.map((position) => [position.id, position]));
+  const claim = graph.claims.find((item) => item.id === claimId);
+  const positionEvidence = claim?.position_ids.flatMap((id) => {
+    const position = positionById.get(id);
+    return position?.evidence_ids.map((evidenceId) => `${position.source_id}/${evidenceId}`) ?? [];
+  }) ?? [];
+  const calculationEvidence = graph.calculations.filter((calculation) => calculation.claim_id === claimId)
+    .flatMap((calculation) => calculation.inputs.flatMap((input) => input.evidence_ids));
+  return new Set([...positionEvidence, ...calculationEvidence]);
+}
+
+function verifierInput(graph: DecisionGraph): VerifierInput {
+  const positionById = new Map(graph.positions.map((position) => [position.id, position]));
+  const evidenceRefs = new Map(graph.evidence.map((evidence, index) => [`E${index + 1}`, evidence.id]));
+  const aliasByEvidence = new Map([...evidenceRefs].map(([alias, id]) => [id, alias]));
+  const evidenceById = new Map(graph.evidence.map((evidence) => [evidence.id, evidence]));
   const items = selectEscalations(graph, { max: 8 }).map((escalation) => {
     const claim = graph.claims.find((item) => item.id === escalation.claim_id)!;
+    const linkedEvidenceIds = evidenceIdsForClaim(graph, claim.id);
     return {
       id: claim.id,
       kind: escalation.kind,
@@ -29,32 +52,107 @@ export function buildVerifierPrompt(graph: DecisionGraph): string {
         const position = positionById.get(id)!;
         return { stance: position.stance, reasoning: position.reasoning };
       }),
+      evidence: [...linkedEvidenceIds].flatMap((id) => {
+        const evidence = evidenceById.get(id);
+        if (!evidence) return [];
+        const { provider: _provider, source_id: _sourceId, ...card } = evidence;
+        return [{ ...card, id: aliasByEvidence.get(id)! }];
+      }),
+      calculations: graph.calculations.filter((calculation) => calculation.claim_id === claim.id).map((calculation, index) => ({
+        id: `C${index + 1}`,
+        inputs: calculation.inputs.map((input) => ({
+          ...input,
+          evidence_ids: input.evidence_ids.map((id) => aliasByEvidence.get(id)).filter((id): id is string => id !== undefined),
+        })),
+        steps: calculation.steps,
+        result_step: calculation.result_step,
+        deterministic_check: (() => {
+          const check = graph.calculation_checks.find((item) => item.calculation_id === calculation.id);
+          return check ? { status: check.status, issues: check.issues } : undefined;
+        })(),
+      })),
+      evidence_hole: graph.holes.evidence.find((hole) => hole.claim_id === claim.id)?.reason,
     };
   });
-  return S8_PROMPT.replace('{{ITEMS_JSON}}', JSON.stringify(items, null, 2));
+  return { prompt: S8_PROMPT.replace('{{ITEMS_JSON}}', JSON.stringify(items, null, 2)), evidenceRefs };
 }
 
-export async function s8Verify(ctx: RunCtx, graph: DecisionGraph): Promise<VerificationSetT> {
+export function buildVerifierPrompt(graph: DecisionGraph): string {
+  return verifierInput(graph).prompt;
+}
+
+/** Validate every S8 claim/evidence reference before the chair can see it. */
+export function claimVerificationRefIssues(
+  graph: DecisionGraph,
+  verifications: ClaimVerificationSetT,
+  expectedIds: Iterable<string> = selectEscalations(graph, { max: 8 }).map((item) => item.claim_id),
+): string[] {
+  const expected = new Set(expectedIds);
+  const evidence = new Map(graph.evidence.map((item) => [item.id, item]));
+  const seen = new Set<string>();
+  const issues: string[] = [];
+  for (const verification of verifications.verifications) {
+    if (!expected.has(verification.claim_id)) issues.push(`unknown claim id: ${verification.claim_id}`);
+    if (seen.has(verification.claim_id)) issues.push(`duplicate claim verification: ${verification.claim_id}`);
+    seen.add(verification.claim_id);
+    const cards = verification.evidence_ids.map((id) => evidence.get(id));
+    for (const [index, card] of cards.entries()) if (!card) issues.push(`unknown evidence id for ${verification.claim_id}: ${verification.evidence_ids[index]}`);
+    const linkedEvidence = evidenceIdsForClaim(graph, verification.claim_id);
+    for (const id of verification.evidence_ids) if (evidence.has(id) && !linkedEvidence.has(id)) issues.push(`unrelated evidence id for ${verification.claim_id}: ${id}`);
+    if (verification.status !== 'UNVERIFIABLE' && verification.evidence_ids.length === 0) {
+      issues.push(`${verification.claim_id}: ${verification.status} requires evidence ids`);
+    }
+    const evidenceHole = graph.holes.evidence.find((hole) => hole.claim_id === verification.claim_id);
+    const onlyModelKnowledge = cards.length > 0 && cards.every((card) => card?.source_kind === 'MODEL_KNOWLEDGE');
+    if (verification.status === 'VERIFIED' && evidenceHole && onlyModelKnowledge) {
+      issues.push(`${verification.claim_id}: model knowledge cannot close its evidence hole`);
+    }
+    const calculationChecks = graph.calculation_checks.filter((check) => check.claim_id === verification.claim_id);
+    if (calculationChecks.some((check) => check.status === 'FAIL')) {
+      if (verification.calculation_check !== 'FAIL') issues.push(`${verification.claim_id}: failed deterministic calculation must be reported`);
+      if (verification.status === 'VERIFIED') issues.push(`${verification.claim_id}: failed deterministic calculation cannot be verified`);
+    }
+  }
+  for (const id of expected) if (!seen.has(id)) issues.push(`missing claim verification: ${id}`);
+  return issues;
+}
+
+export async function s8Verify(ctx: RunCtx, graph: DecisionGraph): Promise<ClaimVerificationSetT> {
   const escalations = selectEscalations(graph, { max: 8 });
   if (escalations.length === 0) {
-    const empty: VerificationSetT = { verifications: [] };
+    const empty: ClaimVerificationSetT = { verifications: [] };
     await ctx.writer.writeJson('verifications', empty);
     return empty;
   }
 
   try {
-    const result = await jsonCall(ctx, ctx.handle(ctx.roles.verifier), 'S8', buildVerifierPrompt(graph), VerificationSet);
-    await ctx.writer.writeJson('verifications', result);
-    return result;
+    const input = verifierInput(graph);
+    const result = await jsonCall(ctx, ctx.handle(ctx.roles.verifier), 'S8', input.prompt, ClaimVerificationSet);
+    const translated: ClaimVerificationSetT = {
+      verifications: result.verifications.map((verification) => ({
+        ...verification,
+        evidence_ids: verification.evidence_ids.map((id) => input.evidenceRefs.get(id) ?? id),
+      })),
+    };
+    const issues = claimVerificationRefIssues(graph, translated, escalations.map((item) => item.claim_id));
+    if (issues.length) throw new StageError('S8', 'BAD_OUTPUT', issues.join('; '));
+    await ctx.writer.writeJson('verifications', translated);
+    return translated;
   } catch (error) {
     if (isFatal(error)) throw error;
-    const unavailable: VerificationSetT = {
-      verifications: escalations.map((escalation) => ({
-        target_id: escalation.claim_id,
-        verdict: 'UNCERTAIN',
-        evidence: '(verifier unavailable — unverified)',
-        note: '',
-      })),
+    const unavailable: ClaimVerificationSetT = {
+      verifications: escalations.map((escalation) => {
+        const checks = graph.calculation_checks.filter((check) => check.claim_id === escalation.claim_id);
+        return {
+          claim_id: escalation.claim_id,
+          status: 'UNVERIFIABLE',
+          reasoning: 'Verifier unavailable or returned invalid references.',
+          evidence_ids: [],
+          calculation_check: checks.length === 0 ? 'NOT_APPLICABLE' as const
+            : checks.some((check) => check.status === 'FAIL') ? 'FAIL' as const : 'PASS' as const,
+          missing_evidence: ['independent verification'],
+        };
+      }),
     };
     await ctx.writer.writeJson('verifications', unavailable);
     return unavailable;

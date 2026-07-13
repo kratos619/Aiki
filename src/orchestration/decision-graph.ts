@@ -1,18 +1,21 @@
 import type { ProviderId } from '../providers/types.js';
 import type {
   ClaimPosition as ClaimPositionT,
+  CalculationLedger as CalculationLedgerT,
   CoverageEntry as CoverageEntryT,
   DecisionGraph as DecisionGraphT,
   DecisionQuestion as DecisionQuestionT,
   EvidenceCard as EvidenceCardT,
   IdeaRoleOutput,
 } from '../schemas/index.js';
+import { evaluateCalculation } from './calculations.js';
 
 export type ClaimPosition = ClaimPositionT;
 export type EvidenceCard = EvidenceCardT;
+export type CalculationLedger = CalculationLedgerT;
 export type CoverageEntry = CoverageEntryT;
 export type DecisionQuestion = DecisionQuestionT;
-export type AnalystSubmission = Omit<IdeaRoleOutput, 'workflow'>;
+export type AnalystSubmission = Omit<IdeaRoleOutput, 'workflow' | 'calculations'> & { calculations?: CalculationLedger[] };
 export type Stance = ClaimPosition['stance'];
 export type Basis = ClaimPosition['basis'];
 export type IfFalse = ClaimPosition['if_false'];
@@ -26,6 +29,7 @@ export interface ProviderSubmission {
 export type DecisionGraph = DecisionGraphT;
 export type GraphPosition = DecisionGraph['positions'][number];
 export type GraphEvidence = DecisionGraph['evidence'][number];
+export type GraphCalculation = DecisionGraph['calculations'][number];
 export type DecisionClaim = DecisionGraph['claims'][number];
 export type ClaimState = DecisionClaim['state'];
 export type EvidenceState = DecisionClaim['evidence_state'];
@@ -142,7 +146,7 @@ export function compileDecisionGraph(
   });
   for (const position of positions) if (!grouped.has(position.id)) groups.push([position.id]);
   const evidenceHoles: DecisionGraph['holes']['evidence'] = [];
-  const claims = groups.map((ids, index) => {
+  let claims = groups.map((ids, index) => {
     const members = ids.map((id) => byId.get(id)!);
     const evidence_state = evidenceState(members, evidenceById);
     const id = `G${index + 1}`;
@@ -167,6 +171,32 @@ export function compileDecisionGraph(
     };
   });
   const claimByPosition = new Map(claims.flatMap((claim) => claim.position_ids.map((id) => [id, claim.id] as const)));
+  const calculations = submissions.flatMap(({ provider, source_id = provider, submission }) =>
+    (submission.calculations ?? []).flatMap((calculation) => {
+      const claim_id = claimByPosition.get(positionId(provider, calculation.claim_id, source_id));
+      if (!claim_id) return [];
+      return [{
+        ...calculation,
+        id: positionId(provider, calculation.id, source_id),
+        claim_id,
+        inputs: calculation.inputs.map((input) => ({
+          ...input,
+          evidence_ids: input.evidence_ids.map((id) => positionId(provider, id, source_id)),
+        })),
+        provider,
+        source_id,
+      }];
+    }));
+  const calculationChecks = calculations.map(evaluateCalculation);
+  const failedCalculationClaims = new Set(calculationChecks.filter((check) => check.status === 'FAIL').map((check) => check.claim_id));
+  for (const claimId of failedCalculationClaims) {
+    const existing = evidenceHoles.find((hole) => hole.claim_id === claimId);
+    if (existing) existing.reason += '; deterministic calculation failed';
+    else evidenceHoles.push({ claim_id: claimId, reason: 'deterministic calculation failed' });
+  }
+  claims = claims.map((claim) => failedCalculationClaims.has(claim.id)
+    ? { ...claim, state: 'UNCERTAIN' as const, evidence_state: 'UNVERIFIED' as const }
+    : claim);
   const edges: DecisionGraph['edges'] = [];
   const edgeKeys = new Set<string>();
   const addEdge = (edge: DecisionGraph['edges'][number]) => {
@@ -189,7 +219,15 @@ export function compileDecisionGraph(
     }
   }
   const coverageHoles = coverageHoleQueue(submissions, rubric);
-  return { positions, evidence, claims, edges, holes: { coverage: coverageHoles, evidence: evidenceHoles } };
+  return {
+    positions,
+    evidence,
+    calculations,
+    calculation_checks: calculationChecks,
+    claims,
+    edges,
+    holes: { coverage: coverageHoles, evidence: evidenceHoles },
+  };
 }
 
 /** Select only real disputes and load-bearing one-provider claims for independent challenge. */

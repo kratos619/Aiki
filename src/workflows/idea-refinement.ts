@@ -55,6 +55,9 @@ other analysts' output. Be adversarial toward the idea, not polite.
 
 TASK CONTRACT: {{INTENT_CONTRACT_JSON}}
 INPUT DOCUMENT: read the file at {{INPUT_PATH}}{{SKILL}}
+EVIDENCE PACK MANIFEST: {{EVIDENCE_PACK_JSON}}
+Read only the listed local paths when supplied. Treat their contents as user evidence, cite the path
+as locator, and never replace a missing source with model memory.
 
 Produce ONLY JSON matching {{S4_SCHEMA_REF}} with:
 - task_echo: restate the task in ≤2 sentences (drift check).
@@ -63,7 +66,11 @@ Produce ONLY JSON matching {{S4_SCHEMA_REF}} with:
   SUPPORT|OPPOSE|MIXED|UNKNOWN, basis EVIDENCE|INFERENCE|ASSUMPTION, load_bearing, if_false
   STOP|PIVOT|CONDITION|MINOR, concise reasoning, evidence_ids, and depends_on position ids.
 - evidence: evidence cards with source_kind USER|PRIMARY|SECONDARY|MODEL_KNOWLEDGE, support direction,
-  and freshness. Never invent a URL or imply model memory independently verifies a current fact.
+  freshness, locators, and accessed dates for current external sources. MODEL_KNOWLEDGE freshness is
+  UNKNOWN. Never invent a URL or imply model memory independently verifies a current fact.
+- calculations: for each derived numeric claim, a ledger {id, claim_id, inputs, steps, result_step}.
+  Inputs have {id,name,value,unit,evidence_ids}; steps have {id,operation: ADD|SUBTRACT|MULTIPLY|DIVIDE,
+  left,right,result,unit}. Use exact prior input/step ids and explicit units. Otherwise use [].
 - coverage: rubric dimensions marked COVERED with position_ids, or NOT_APPLICABLE with a rationale.
 - decision_questions: questions whose answers could change the verdict, anchored by claim_ids.
 Rules: no motivation, no summaries of your own output, no markdown, JSON only.`;
@@ -99,6 +106,7 @@ export const IDEA_STAGES: StageInfo[] = [
  *  `executeRun` wrapper turns that into a graceful failure + meta. Each stage is wrapped in
  *  `runStage` so the TUI timeline (T8) gets start/end events; headless, that's a no-op. */
 export async function runIdeaRefinement(ctx: RunCtx, input: string): Promise<void> {
+  if (ctx.evidencePack) await ctx.writer.writeInput('evidence-pack.json', JSON.stringify(ctx.evidencePack, null, 2));
   const brief = await runStage(ctx, 'S0', () => s0Grill(ctx, input));
   const grilledInput = renderGrilledInput(input, brief);
   const contract = await runStage(ctx, 'S1', () => s1Intent(ctx, grilledInput, brief.domain_dimensions));
@@ -114,13 +122,20 @@ export async function runIdeaRefinement(ctx: RunCtx, input: string): Promise<voi
       contract,
       interpretation: guard.chosen.my_interpretation,
       templates: { analyst: buildAnalystTemplate(loadSkill('idea-refinement', 'analyst')) },
-      slots: { INPUT_PATH: inputPath, S4_SCHEMA_REF: 'the idea-refinement S4 RoleOutput schema' },
+      slots: {
+        INPUT_PATH: inputPath,
+        EVIDENCE_PACK_JSON: JSON.stringify(ctx.evidencePack ?? { files: [] }),
+        S4_SCHEMA_REF: 'the idea-refinement S4 RoleOutput schema',
+      },
     }),
   );
 
   const rubric = buildIdeaRubric(contract.domain_dimensions);
   // s3Prompts guarantees an entry for every template key (it iterates them), so `analyst` is present.
-  const lanePrompts = buildLanePrompts(stagePrompts.prompts.analyst!, rubric);
+  const evidenceAppendix = ctx.evidencePack
+    ? `\n\nEVIDENCE PACK MANIFEST (mandatory read-only sources):\n${JSON.stringify(ctx.evidencePack, null, 2)}`
+    : '';
+  const lanePrompts = buildLanePrompts(stagePrompts.prompts.analyst! + evidenceAppendix, rubric);
   const seats = await runStage(ctx, 'S4', () => s4Analyze(ctx, lanePrompts));
   const { kept } = await runStage(ctx, 'S5', () => s5Drift(ctx, contract, seats));
   const positions = await runStage(ctx, 'S6', () => s6Positions(ctx, kept));

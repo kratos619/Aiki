@@ -19,6 +19,7 @@ import { detect } from '../providers/detect.js';
 import { probeFlags } from '../providers/probe.js';
 import type { RunWriter } from '../storage/runs.js';
 import { replayKey } from '../storage/replay.js';
+import type { EvidencePack } from './evidence-pack.js';
 
 export type WorkflowId = 'idea-refinement' | 'code-review';
 
@@ -135,6 +136,7 @@ export interface RunCtxOpts {
   events?: RunEvents; // TUI observation/interaction seam (T8); absent = headless
   now?: () => number; // injectable clock (tests)
   replay?: Map<string, string>; // resume (V6.3): (provider,prompt)→prior output; matched calls skip the model
+  evidencePack?: EvidencePack; // R4: user-scoped local paths + hashes; contents are not copied
 }
 
 export class RunCtx {
@@ -144,6 +146,7 @@ export class RunCtx {
   readonly writer: RunWriter;
   readonly cwd: string;
   readonly events?: RunEvents;
+  readonly evidencePack?: EvidencePack;
   readonly budget: { limit: number; used: number };
   readonly calls: CallRecord[] = [];
   /** §16 report-header flags accumulated by stages (S4 → low_diversity, S7 → low_diversity,
@@ -165,6 +168,7 @@ export class RunCtx {
     this.writer = opts.writer;
     this.cwd = opts.cwd;
     this.events = opts.events;
+    this.evidencePack = opts.evidencePack;
     this.budget = { limit: opts.budget ?? DEFAULT_BUDGET, used: 0 };
     this.handles = new Map(opts.handles.map((h) => [h.id, h]));
     this.signal = opts.signal;
