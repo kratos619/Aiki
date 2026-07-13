@@ -169,8 +169,9 @@ describe('graph-backed report semantics', () => {
       judgeReport: { adjudications: [], verdict: 'Do not proceed.', dissent: ['Costs could fall.'], confidence_notes: 'High.' },
     });
 
-    // Shared skepticism is an agreement (both models hold the concern), never a disagreement.
-    expect(report).toContain('### Agreement 1: The fee does not cover loaded costs.');
-    expect(report).not.toContain('### Disagreement 1');
+    // Shared skepticism is a shared concern, never a genuine disagreement.
+    expect(report).toContain('Shared concerns:');
+    expect(report).toContain('The fee does not cover loaded costs.');
+    expect(report).not.toContain('**G1: The fee does not cover loaded costs.**');
   });
 });
