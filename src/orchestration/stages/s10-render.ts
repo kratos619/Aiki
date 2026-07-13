@@ -1,10 +1,10 @@
 // S10 — artifact rendering (§9, §12.1, §307). Pure code → `final-report.md`, a DECISION BRIEF, not a
-// smoothed essay (§263). Every section is assembled deterministically from prior artifacts; the only
-// computed content is the assumption-audit status/confidence, which is DERIVED here (not taken from
-// the judge — §624). A truly missing required field is a template bug (fail loudly); degraded-but-valid
+// smoothed essay (§263). Every section is assembled deterministically from prior artifacts; audit,
+// sensitivity, coverage, contribution, and confidence are DERIVED here rather than invented by the judge.
+// A truly missing required field is a template bug (fail loudly); degraded-but-valid
 // states (S8 skipped, items UNVERIFIED, empty consensus) render normally. User-facing → DISPLAY_NAME.
 
-import type { ActionPlanArtifact, ClaimVerificationSet, IdeaMode, IntentContract, JudgeReport, Recommendation, VerificationSet } from '../../schemas/index.js';
+import type { ActionPlanArtifact, ClaimVerificationSet, IdeaMode, IntentContract, JudgeReport, RebuttalEventSet, VerificationSet } from '../../schemas/index.js';
 import type { ProviderId } from '../../providers/types.js';
 import { DISPLAY_NAME } from '../../providers/types.js';
 import type { RunCtx } from '../context.js';
@@ -12,6 +12,7 @@ import { overlap, tokenize } from '../cluster.js';
 import type { SeatOutput } from './s4-analyze.js';
 import type { RubricItem } from './s7-decision-graph.js';
 import type { DecisionGraph } from '../decision-graph.js';
+import { renderDecisionDossierMarkdown } from '../decision-dossier.js';
 import { callCategory } from '../modes.js';
 
 export interface AuditRow {
@@ -49,7 +50,6 @@ export function deriveAudit(graph: DecisionGraph, judgeReport: JudgeReport): Aud
 }
 
 const disp = (id: ProviderId): string => DISPLAY_NAME[id];
-const attrib = (ps: ProviderId[]): string => ps.map(disp).join(', ');
 
 /** Union of the seats' decision questions, deduped by lexical similarity (≥0.85), capped. */
 export function mergeOpenQuestions(seats: SeatOutput[], cap = 10): string[] {
@@ -92,6 +92,7 @@ export interface S10Args {
   verifications: ClaimVerificationSet | VerificationSet;
   judgeReport: JudgeReport;
   actionPlan?: ActionPlanArtifact;
+  rebuttals?: RebuttalEventSet;
   rubric?: RubricItem[];
   original?: string; // raw user input; contract.task (normalized) is the fallback
 }
@@ -101,10 +102,6 @@ function receiptCategories(ctx: RunCtx): { discovery: number; verification: numb
   const categories = { discovery: 0, verification: 0, repair: 0, planning: 0 };
   for (const call of ctx.calls) categories[call.category ?? callCategory(call.stage)]++;
   return categories;
-}
-
-function mdCell(s: string): string {
-  return s.replaceAll('\n', ' ').replaceAll('|', '\\|');
 }
 
 function rulingPhrase(ruling: string | undefined): string {
@@ -166,6 +163,36 @@ export function computeConfidence(graph: DecisionGraph, flags: ReadonlySet<strin
 type MapStance = 'AGREE' | 'DISAGREE' | 'CONDITIONAL' | 'UNKNOWN';
 type ClaimRuling = 'ACCEPTED' | 'REJECTED' | 'CONDITIONAL' | 'UNRESOLVED';
 
+export interface DecisionDossier {
+  recommendation: {
+    status: ReportStatus;
+    summary: string;
+    reason: string;
+    claimIds: string[];
+    conditions: Array<{ text: string; claimIds: string[] }>;
+  };
+  claimChain: Array<{ claimId: string; text: string; ruling: ClaimRuling; evidenceStatus: string; dependsOn: string[] }>;
+  evidence: Array<{ id: string; source: string; sourceKind: string; date: string; freshness: string; verificationStatus: string; claimIds: string[] }>;
+  positionChanges: Array<{ eventId: string; claimId: string; responder: ProviderId; response: string; reasoning: string; evidenceIds: string[]; narrowedProposition?: string }>;
+  sharedConcerns: Array<{ claimId: string; text: string; providerIds: ProviderId[]; evidenceStatus: string }>;
+  uniqueSupportedInsights: Array<{ claimId: string; text: string; providerId: ProviderId; verificationStatus: string }>;
+  coverage: Array<{ dimensionId: string; label: string; status: 'COVERED' | 'NOT_APPLICABLE' | 'MISSING' | 'MISSING_EVIDENCE'; claimIds: string[] }>;
+  sensitivity: Array<{ claimId: string; fact: string; sensitivity: string; impactIfFalse: string; whatWouldChangeIt: string; linkedClaimIds: string[] }>;
+  experiments: {
+    status: 'AVAILABLE' | 'DEGRADED';
+    note: string;
+    actions: Array<{ order: number; action: string; why: string; validates: string; effort: string; killSignal: string }>;
+  };
+  counterCase: { available: boolean; reasoning: string; claimIds: string[] };
+  contributions: Array<{ provider: ProviderId; name: string; verifiedUniqueClaimIds: string[] }>;
+  technical: {
+    submissions: Array<{ provider: ProviderId; name: string; strongestVersion: string; positionIds: string[] }>;
+    positions: Array<{ id: string; provider: ProviderId; stance: string; proposition: string; evidenceIds: string[] }>;
+    edges: DecisionGraph['edges'];
+    events: DecisionDossier['positionChanges'];
+  };
+}
+
 export interface DecisionReportJson {
   reportId: string;
   generatedAt: string;
@@ -200,6 +227,7 @@ export interface DecisionReportJson {
     modelTimeMs: number;
     categories: { discovery: number; verification: number; repair: number; planning: number };
   };
+  dossier: DecisionDossier;
 }
 
 const STANCE_MAP: Record<string, MapStance> = { SUPPORT: 'AGREE', OPPOSE: 'DISAGREE', MIXED: 'CONDITIONAL', UNKNOWN: 'UNKNOWN' };
@@ -215,6 +243,237 @@ function claimRuling(claim: DecisionGraph['claims'][number], adjudication?: { ru
   }
   if (claim.state === 'UNCERTAIN') return 'UNRESOLVED';
   return claim.evidence_state === 'SUPPORTED' ? 'ACCEPTED' : 'CONDITIONAL';
+}
+
+function verificationStatusByClaim(verifications: ClaimVerificationSet | VerificationSet): Map<string, string> {
+  const statuses = new Map<string, string>();
+  for (const item of verifications.verifications) {
+    if ('claim_id' in item) statuses.set(item.claim_id, item.status);
+    else statuses.set(item.target_id, item.verdict === 'CONFIRM' ? 'VERIFIED' : item.verdict === 'REFUTE' ? 'CONTRADICTED' : 'PARTIAL');
+  }
+  return statuses;
+}
+
+function buildDossier(args: {
+  status: ReportStatus;
+  summary: string;
+  reason: string;
+  claims: DecisionReportJson['claims'];
+  models: DecisionReportJson['models'];
+  seats: SeatOutput[];
+  graph: DecisionGraph;
+  verifications: ClaimVerificationSet | VerificationSet;
+  judgeReport: JudgeReport;
+  actionPlan?: ActionPlanArtifact;
+  rebuttals?: RebuttalEventSet;
+  rubric: RubricItem[];
+}): DecisionDossier {
+  const { graph, judgeReport, actionPlan, rebuttals, seats } = args;
+  const claimById = new Map(graph.claims.map((claim) => [claim.id, claim]));
+  const reportClaimById = new Map(args.claims.map((claim) => [claim.id, claim]));
+  const positionById = new Map(graph.positions.map((position) => [position.id, position]));
+  const verificationById = verificationStatusByClaim(args.verifications);
+  const verifiedClaimIds = new Set([...verificationById].filter(([, status]) => status === 'VERIFIED').map(([id]) => id));
+
+  const dependencies = new Map<string, string[]>();
+  for (const edge of graph.edges) {
+    if (edge.type !== 'DEPENDS_ON' || !claimById.has(edge.from) || !claimById.has(edge.to)) continue;
+    const ids = dependencies.get(edge.from) ?? [];
+    if (!ids.includes(edge.to)) ids.push(edge.to);
+    dependencies.set(edge.from, ids);
+  }
+  const recommendationIds = (judgeReport.recommendation_claim_ids ?? [])
+    .filter((id) => claimById.has(id));
+  const anchors = recommendationIds.length
+    ? recommendationIds
+    : graph.claims.filter((claim) => claim.load_bearing).slice(0, 8).map((claim) => claim.id);
+  const chainIds: string[] = [];
+  const seen = new Set<string>();
+  const visit = (id: string): void => {
+    if (seen.has(id)) return;
+    seen.add(id);
+    for (const dependency of dependencies.get(id) ?? []) visit(dependency);
+    chainIds.push(id);
+  };
+  anchors.forEach(visit);
+  const claimChain = chainIds.flatMap((id) => {
+    const claim = reportClaimById.get(id);
+    return claim ? [{
+      claimId: id,
+      text: claim.text,
+      ruling: claim.ruling,
+      evidenceStatus: verificationById.get(id) ?? claim.verification,
+      dependsOn: dependencies.get(id) ?? [],
+    }] : [];
+  });
+
+  const evidence = graph.evidence.map((item) => {
+    const claimIds = graph.edges
+      .filter((edge) => edge.from === item.id && (edge.type === 'SUPPORTS' || edge.type === 'ATTACKS') && claimById.has(edge.to))
+      .map((edge) => edge.to);
+    const statuses = claimIds.map((id) => verificationById.get(id)).filter((status): status is string => Boolean(status));
+    const verificationStatus = statuses.includes('CONTRADICTED') ? 'CONTRADICTED'
+      : statuses.length > 0 && statuses.every((status) => status === 'VERIFIED') ? 'VERIFIED'
+        : statuses.includes('UNVERIFIABLE') ? 'UNVERIFIABLE'
+          : statuses.length ? 'PARTIAL' : 'NOT_CHECKED';
+    return {
+      id: item.id,
+      source: item.locator ?? (item.source_kind === 'MODEL_KNOWLEDGE' ? `${disp(item.provider)} model knowledge` : item.source_kind),
+      sourceKind: item.source_kind,
+      date: item.accessed_at ?? 'Not recorded',
+      freshness: item.freshness,
+      verificationStatus,
+      claimIds,
+    };
+  });
+
+  const positionChanges = (rebuttals?.events ?? []).map((event) => ({
+    eventId: event.id,
+    claimId: event.claim_id,
+    responder: event.responder,
+    response: event.response,
+    reasoning: event.reasoning,
+    evidenceIds: event.evidence_ids,
+    ...(event.narrowed_proposition ? { narrowedProposition: event.narrowed_proposition } : {}),
+  }));
+
+  const claimProviders = (claimId: string): ProviderId[] => {
+    const claim = claimById.get(claimId);
+    if (!claim) return [];
+    return [...new Set(claim.position_ids.map((id) => positionById.get(id)!.provider))];
+  };
+  const sharedConcerns = graph.claims.filter((claim) => claim.state === 'SHARED_CONCERN').map((claim) => ({
+    claimId: claim.id,
+    text: claim.proposition,
+    providerIds: claimProviders(claim.id),
+    evidenceStatus: verificationById.get(claim.id) ?? VERIFICATION_MAP[claim.evidence_state],
+  }));
+  const uniqueSupportedInsights = graph.claims.filter((claim) => claim.state === 'UNIQUE' && claim.evidence_state === 'SUPPORTED').flatMap((claim) => {
+    const providerId = claimProviders(claim.id)[0];
+    return providerId ? [{
+      claimId: claim.id,
+      text: claim.proposition,
+      providerId,
+      verificationStatus: verificationById.get(claim.id) ?? 'NOT_CHECKED',
+    }] : [];
+  });
+
+  const claimByPosition = new Map(graph.claims.flatMap((claim) => claim.position_ids.map((id) => [id, claim.id] as const)));
+  const missingCoverage = new Set(graph.holes.coverage.map((hole) => hole.dimension_id));
+  const missingEvidence = new Set(graph.holes.evidence.map((hole) => hole.claim_id));
+  const coverage = args.rubric.map((dimension) => {
+    const claimIds = [...new Set(graph.positions
+      .filter((position) => position.dimension_id === dimension.id)
+      .map((position) => claimByPosition.get(position.id))
+      .filter((id): id is string => Boolean(id)))];
+    const notApplicable = seats.some((seat) =>
+      seat.output.coverage.find((entry) => entry.dimension_id === dimension.id)?.status === 'NOT_APPLICABLE');
+    const status: DecisionDossier['coverage'][number]['status'] = missingCoverage.has(dimension.id) ? 'MISSING'
+      : claimIds.some((id) => missingEvidence.has(id)) ? 'MISSING_EVIDENCE'
+        : notApplicable && claimIds.length === 0 ? 'NOT_APPLICABLE' : 'COVERED';
+    return { dimensionId: dimension.id, label: dimension.label, status, claimIds };
+  });
+
+  const adjudicationById = new Map(judgeReport.adjudications.map((item) => [item.id, item]));
+  const sensitivity = graph.claims
+    .filter((claim) => claim.load_bearing && claim.sensitivity !== 'LOW')
+    .sort((a, b) => (a.sensitivity === 'DECISIVE' ? 0 : 1) - (b.sensitivity === 'DECISIVE' ? 0 : 1))
+    .map((claim) => {
+      const related = graph.edges
+        .filter((edge) => (edge.from === claim.id || edge.to === claim.id) && claimById.has(edge.from) && claimById.has(edge.to))
+        .map((edge) => edge.from === claim.id ? edge.to : edge.from);
+      const experiment = actionPlan && !('kind' in actionPlan)
+        ? actionPlan.actions.find((action) => action.validates === claim.id) : undefined;
+      const evidenceHole = graph.holes.evidence.find((hole) => hole.claim_id === claim.id);
+      return {
+        claimId: claim.id,
+        fact: claim.proposition,
+        sensitivity: claim.sensitivity,
+        impactIfFalse: claim.if_false,
+        whatWouldChangeIt: adjudicationById.get(claim.id)?.what_would_change_it
+          ?? experiment?.kill_signal
+          ?? evidenceHole?.reason
+          ?? `Resolve the evidence status for ${claim.id}.`,
+        linkedClaimIds: [...new Set(related)],
+      };
+    });
+
+  const experiments: DecisionDossier['experiments'] = actionPlan && !('kind' in actionPlan)
+    ? {
+        status: 'AVAILABLE',
+        note: actionPlan.sequencing_note,
+        actions: actionPlan.actions.map((action) => ({
+          order: action.order,
+          action: action.action,
+          why: action.why,
+          validates: action.validates,
+          effort: action.effort,
+          killSignal: action.kill_signal,
+        })),
+      }
+    : {
+        status: 'DEGRADED',
+        note: actionPlan && 'kind' in actionPlan
+          ? `Planner unavailable: ${actionPlan.reason}. Unresolved: ${actionPlan.unresolved_questions.join('; ')}`
+          : 'No planner artifact was recorded.',
+        actions: [],
+      };
+
+  const counter = judgeReport.strongest_counter_case;
+  const contributions = args.models.map((model) => ({
+    provider: model.provider,
+    name: model.name,
+    verifiedUniqueClaimIds: graph.claims
+      .filter((claim) => claim.state === 'UNIQUE' && verifiedClaimIds.has(claim.id) && claimProviders(claim.id).includes(model.provider))
+      .map((claim) => claim.id),
+  }));
+  const technicalPositions = graph.positions.map((position) => ({
+    id: position.id,
+    provider: position.provider,
+    stance: position.stance,
+    proposition: position.proposition,
+    evidenceIds: graph.evidence
+      .filter((evidence) => evidence.provider === position.provider
+        && evidence.source_id === position.source_id
+        && position.evidence_ids.some((id) => id === evidence.id || evidence.id.endsWith(`/${id}`)))
+      .map((evidence) => evidence.id),
+  }));
+
+  return {
+    recommendation: {
+      status: args.status,
+      summary: args.summary,
+      reason: args.reason,
+      claimIds: recommendationIds,
+      conditions: (judgeReport.conditions ?? []).map((text) => ({
+        text,
+        claimIds: (judgeReport.condition_claim_ids ?? []).filter((id) => claimById.has(id)),
+      })),
+    },
+    claimChain,
+    evidence,
+    positionChanges,
+    sharedConcerns,
+    uniqueSupportedInsights,
+    coverage,
+    sensitivity,
+    experiments,
+    counterCase: counter
+      ? { available: true, reasoning: counter.reasoning, claimIds: counter.claim_ids.filter((id) => claimById.has(id)) }
+      : { available: false, reasoning: 'No graph-anchored counter-case was recorded.', claimIds: [] },
+    contributions,
+    technical: {
+      submissions: seats.map((seat) => ({
+        provider: seat.provider,
+        name: disp(seat.provider),
+        strongestVersion: seat.output.strongest_version,
+        positionIds: graph.positions.filter((position) => position.provider === seat.provider).map((position) => position.id),
+      })),
+      positions: technicalPositions,
+      edges: graph.edges,
+      events: positionChanges,
+    },
+  };
 }
 
 /** Assemble the machine-readable report deterministically from the run's persisted artifacts. */
@@ -336,6 +595,20 @@ export function buildDecisionReport(ctx: RunCtx, args: S10Args): DecisionReportJ
       finalPosition: (oppose > support ? 'Oppose' : oppose > 0 || status === 'ACCEPTED_WITH_CONDITIONS' ? 'Conditional' : 'Support') as 'Support' | 'Oppose' | 'Conditional',
     };
   });
+  const dossier = buildDossier({
+    status,
+    summary: judgeReport.verdict,
+    reason: judgeReport.key_points?.[0] ?? judgeReport.verdict,
+    claims,
+    models,
+    seats,
+    graph,
+    verifications,
+    judgeReport,
+    actionPlan,
+    rebuttals: args.rebuttals,
+    rubric: args.rubric ?? [],
+  });
 
   return {
     reportId: ctx.runId,
@@ -389,272 +662,17 @@ export function buildDecisionReport(ctx: RunCtx, args: S10Args): DecisionReportJ
     openQuestions: mergeOpenQuestions(seats),
     flags: [...ctx.flags],
     receipt: { calls: ctx.calls.length, budget: ctx.budget.limit, byProvider, modelTimeMs, categories: receiptCategories(ctx) },
+    dossier,
   };
-}
-
-function receiptLines(ctx: RunCtx): string[] {
-  const byProvider = new Map<ProviderId, number>();
-  let ms = 0;
-  for (const c of ctx.calls) {
-    byProvider.set(c.provider, (byProvider.get(c.provider) ?? 0) + 1);
-    ms += c.durationMs;
-  }
-  const providerCounts = [...byProvider.entries()].map(([p, n]) => `${disp(p)} ${n}`).join(', ') || 'none';
-  const categories = receiptCategories(ctx);
-  return [
-    `- Calls: ${ctx.calls.length}/${ctx.budget.limit}`,
-    `- Categories: discovery ${categories.discovery} · verification ${categories.verification} · repair ${categories.repair} · planning ${categories.planning}`,
-    `- By provider: ${providerCounts}`,
-    `- Recorded model time: ${(ms / 1000).toFixed(1)}s`,
-  ];
 }
 
 const pct = (n: number): string => `${Math.round(n * 100)}%`;
 
-/** Level-2 report: the 12-section Multi-Model Decision Report markdown, rendered from the same
- *  machine-readable object (level 3) so the two can never disagree. */
+export { renderDecisionDossierMarkdown };
+
 export function renderReport(ctx: RunCtx, args: S10Args): string {
-  const report = buildDecisionReport(ctx, args);
-  const { seats, graph, judgeReport, actionPlan } = args;
-  const scorecard = args.rubric ? deriveScorecard(args.rubric, graph) : [];
-  const L: string[] = [];
-  const quick = report.mode === 'quick';
-
-  L.push(quick ? '# Single-Model Decision Report' : '# Multi-Model Decision Report', '');
-
-  // 1 ────────────────────────────────────────────────────────────────────────
-  L.push('## 1. Report Metadata', '');
-  L.push(`- Report ID: ${report.reportId}`);
-  L.push(`- Generated at: ${report.generatedAt}`);
-  L.push(`- User task: ${mdCell(report.task.original)}`);
-  L.push(`- Workflow: ${report.task.type}`);
-  L.push(`- Mode: ${report.mode}`);
-  if (report.task.confirmation) L.push(`- Intent: ${report.task.confirmation}`);
-  L.push(quick ? '- Analyst used:' : '- Models used:');
-  for (const model of report.models) L.push(`  - ${model.name} — ${model.roles.join(', ') || 'scout'}`);
-  L.push(quick
-    ? '- Protocol: one structured analyst; no council, consensus, or independent-verification claim'
-    : '- Debate protocol: independent analysis → graph audit → selective verification/rebuttal → chair → planner');
-  L.push(`- Provider calls: ${report.receipt.calls}/${report.receipt.budget} · recorded model time ${(report.receipt.modelTimeMs / 1000).toFixed(1)}s`);
-  L.push(`- Final status: ${report.verdict.status}`);
-  if (report.flags.length) L.push(`- ⚠ Degradation flags: ${report.flags.join(', ')}`);
-  L.push('');
-
-  // 2 ────────────────────────────────────────────────────────────────────────
-  L.push('## 2. Executive Verdict', '');
-  L.push('### Final conclusion', '', report.verdict.summary, '');
-  L.push('### Decision status', '', report.verdict.status, '');
-  if (report.verdict.conditions.length) {
-    L.push('Conditions:');
-    for (const condition of report.verdict.conditions) L.push(`- ${condition}`);
-    L.push('');
-  }
-  const c = report.confidenceBreakdown;
-  L.push('### Confidence', '', `**Confidence: ${c.score}/100 — ${c.label.toUpperCase()}**`, '');
-  L.push('Confidence is structural (never model self-confidence), based on:');
-  L.push(`- Verification coverage of load-bearing claims: ${pct(c.verificationCoverage)} (weight 40)`);
-  L.push(`- Independent convergence: ${pct(c.independentConvergence)} (weight 25)`);
-  L.push(`- Evidence quality beyond model memory: ${pct(c.evidenceQuality)} (weight 20)`);
-  L.push(`- Result stability: ${pct(c.stability)} (weight 15)`);
-  L.push(`- Critical-risk penalty: −${c.criticalRiskPenalty}`);
-  L.push('', quick
-    ? '> Heuristic, not a calibrated probability. Quick mode receives no independent-convergence credit.'
-    : '> Heuristic, not a calibrated probability. Consensus alone never yields HIGH.', '');
-  L.push('### Most important reason', '', report.verdict.primaryReason, '');
-  L.push('### Critical warning', '', report.verdict.criticalWarning ?? 'None identified.', '');
-
-  // 3 ────────────────────────────────────────────────────────────────────────
-  L.push('## 3. Problem Interpretation', '');
-  L.push('### Original request', '', `> ${report.task.original.replaceAll('\n', '\n> ')}`, '');
-  L.push('### Normalized question', '', report.task.normalized, '');
-  if (report.task.successCriteria.length) {
-    L.push('### Expected deliverable', '');
-    for (const item of report.task.successCriteria) L.push(`- ${item}`);
-    L.push('');
-  }
-  if (report.task.constraints.length) {
-    L.push('### Constraints', '');
-    for (const item of report.task.constraints) L.push(`- ${item}`);
-    L.push('');
-  }
-  const assumptions = seats.flatMap((seat) => seat.output.positions.filter((position) => position.basis === 'ASSUMPTION')
-    .map((position) => ({ seat: disp(seat.provider), position })));
-  if (assumptions.length) {
-    L.push('### Assumptions', '', '| # | Assumption | Source | Impact if incorrect |', '|---|---|---|---|');
-    assumptions.forEach(({ seat, position }, index) => {
-      const impact = position.if_false === 'STOP' ? 'High' : position.if_false === 'MINOR' ? 'Low' : 'Medium';
-      L.push(`| A${index + 1} | ${mdCell(position.proposition)} | ${seat} | ${impact} |`);
-    });
-    L.push('');
-  }
-
-  // 4 ────────────────────────────────────────────────────────────────────────
-  L.push(quick ? '## 4. Analyst Position' : '## 4. Individual Model Positions', '');
-  L.push('| Model | Initial conclusion | Main argument | Key risk identified | Final position |', '|---|---|---|---|---|');
-  for (const position of report.positions) {
-    L.push(`| ${position.name} | ${mdCell(position.initialConclusion)} | ${mdCell(position.mainArgument)} | ${mdCell(position.keyRisk)} | ${position.finalPosition} |`);
-  }
-  L.push('', quick
-    ? '_One analyst produced these positions. They were not independently corroborated._'
-    : '_Positions were produced blind (no seat saw another) and anonymized during adjudication._', '');
-
-  // 5 ────────────────────────────────────────────────────────────────────────
-  const providers = report.models.map((model) => model.provider);
-  L.push(quick ? '## 5. Claim Map' : '## 5. Consensus Map', '');
-  L.push('Legend: AGREE · DISAGREE · CONDITIONAL · UNKNOWN (model did not address the claim)', '');
-  L.push(`| Claim | ${providers.map(disp).join(' | ')} | Verification | Final ruling |`, `|---|${providers.map(() => '---|').join('')}---|---|`);
-  for (const claim of report.claims) {
-    const stanceCells = providers.map((provider) => claim.stances[provider] ?? 'UNKNOWN');
-    L.push(`| ${claim.id}: ${mdCell(claim.text)} | ${stanceCells.join(' | ')} | ${claim.verification} | ${claim.ruling} |`);
-  }
-  const summary = report.consensusSummary;
-  L.push('', quick ? '### Claim summary' : '### Consensus summary', '');
-  L.push(`- Unanimous claims: ${summary.unanimous}`);
-  L.push(`- Accepted claims: ${summary.accepted}`);
-  L.push(`- Conditional claims: ${summary.conditional}`);
-  L.push(`- Unresolved claims: ${summary.unresolved}`);
-  L.push(`- Rejected claims: ${summary.rejected}`);
-  L.push('');
-  if (scorecard.length) {
-    L.push('### Dimension coverage', '', '| Dimension | Status |', '|---|---|');
-    for (const row of scorecard) L.push(`| ${mdCell(row.label)} | ${row.status} |`);
-    L.push('');
-  }
-
-  // 6 ────────────────────────────────────────────────────────────────────────
-  L.push(quick ? '## 6. Key Claims' : '## 6. Key Agreements', '');
-  const agreements = report.claims.filter((claim) => {
-    const state = graph.claims.find((item) => item.id === claim.id)?.state;
-    return state === 'CONSENSUS' || state === 'SHARED_CONCERN';
-  });
-  if (agreements.length === 0) L.push(quick ? 'No claims were independently corroborated in quick mode.' : 'No multi-model agreements were reached.', '');
-  agreements.slice(0, 6).forEach((claim, index) => {
-    L.push(`### Agreement ${index + 1}: ${mdCell(claim.text)}`, '');
-    L.push(`- Models: ${Object.keys(claim.stances).map((provider) => disp(provider as ProviderId)).join(', ')}`);
-    L.push(`- Verification: ${claim.verification} · Sensitivity: ${claim.sensitivity} · Ruling: ${claim.ruling}`);
-    L.push('');
-  });
-
-  // 7 ────────────────────────────────────────────────────────────────────────
-  L.push(quick ? '## 7. Unresolved Tensions' : '## 7. Key Disagreements', '');
-  if (report.disagreements.length === 0) L.push(quick ? 'Quick mode does not run cross-model disagreement analysis.' : 'No genuine cross-model disagreements survived claim grouping.', '');
-  report.disagreements.forEach((disagreement, index) => {
-    L.push(`### Disagreement ${index + 1}: ${mdCell(disagreement.topic)}`, '');
-    for (const side of disagreement.sides) {
-      L.push(`#### ${side.stance} — ${side.providers.join(', ')}`, '');
-      for (const reason of side.reasoning) L.push(`- ${reason}`);
-      L.push('');
-    }
-    L.push(`#### Adjudicator ruling`, '', `${disagreement.ruling}${disagreement.reasoning ? ` — ${disagreement.reasoning}` : ''}`, '');
-    L.push(`#### Resolution status`, '', disagreement.status, '');
-  });
-
-  // 8 ────────────────────────────────────────────────────────────────────────
-  L.push('## 8. Minority Report', '');
-  L.push('### Preserved dissent', '');
-  for (const dissent of report.minority.dissent) L.push(`- ${dissent}`);
-  L.push('');
-  if (report.minority.uniqueOppositions.length) {
-    L.push('### Unique objections (single model)', '');
-    for (const objection of report.minority.uniqueOppositions) L.push(`- **${objection.provider}:** ${objection.proposition}`);
-    L.push('');
-  }
-  L.push('### Should this dissent block the decision?', '', report.minority.blocksDecision, '');
-  L.push(`_${judgeReport.confidence_notes}_`, '');
-
-  // 9 ────────────────────────────────────────────────────────────────────────
-  L.push('## 9. Verification Results', '');
-  if (report.verification.results.length) {
-    L.push('| Claim tested | Method | Result | Evidence |', '|---|---|---|---|');
-    for (const result of report.verification.results) {
-      L.push(`| ${mdCell(result.claim)} | ${result.method} | ${result.verdict} | ${mdCell(result.evidence)} |`);
-    }
-    L.push('', `Summary: ${report.verification.confirmed} confirmed · ${report.verification.refuted} refuted · ${report.verification.uncertain} uncertain`, '');
-  } else {
-    L.push('No claims escalated to the independent verifier in this run.', '');
-  }
-  if (graph.holes.evidence.length) {
-    L.push('### Unverifiable claims', '');
-    for (const hole of graph.holes.evidence) {
-      const claim = graph.claims.find((item) => item.id === hole.claim_id);
-      L.push(`- ${claim?.proposition ?? hole.claim_id} — ${hole.reason}`);
-    }
-    L.push('');
-  }
-
-  // 10 ───────────────────────────────────────────────────────────────────────
-  L.push('## 10. Final Synthesis', '');
-  L.push('### Recommended answer', '', report.verdict.summary, '');
-  if (judgeReport.key_points?.length) {
-    L.push('### Why this answer was selected', '');
-    if (report.flags.includes('synthesis_suspect')) {
-      L.push('> ⚠ synthesis_suspect — the chair output required deterministic repair or degradation handling.', '');
-    }
-    judgeReport.key_points.forEach((point, index) => L.push(`${index + 1}. ${point}`));
-    L.push('');
-  } else if (report.flags.includes('synthesis_suspect')) {
-    L.push('### Why this answer was selected', '', '> ⚠ synthesis_suspect — no reliable chairman reasoning was produced.', '');
-  }
-  L.push('### Strongest version per model (alternatives considered)', '');
-  for (const position of report.positions) L.push(`- **${position.name}:** ${position.initialConclusion}`);
-  L.push('');
-  if (report.recommendedActions.length) {
-    L.push('### Implementation / next steps', '', '| # | Action | Why | Effort | Kill signal |', '|---|---|---|---|---|');
-    for (const action of report.recommendedActions) {
-      L.push(`| ${action.order} | ${mdCell(action.action)} | ${mdCell(action.why)} | ${action.effort} | ${mdCell(action.killSignal)} |`);
-    }
-    if (actionPlan && !('kind' in actionPlan)) L.push('', actionPlan.sequencing_note);
-    L.push('');
-  } else if (actionPlan && 'kind' in actionPlan) {
-    const planFlags = report.flags.filter((flag) => flag === 'plan_fallback' || flag === 'plan_skipped');
-    L.push(`> ⚠ Planner unavailable: ${actionPlan.reason}${planFlags.length ? ` (${planFlags.join(', ')})` : ''}. Unresolved questions:`, '');
-    for (const question of actionPlan.unresolved_questions) L.push(`- ${question}`);
-    L.push('');
-  }
-
-  // 11 ───────────────────────────────────────────────────────────────────────
-  L.push('## 11. Risks and Unresolved Questions', '');
-  if (report.risks.length) {
-    L.push('| Risk | Severity |', '|---|---|');
-    for (const risk of report.risks) L.push(`| ${mdCell(risk.risk)} | ${risk.severity} |`);
-    L.push('');
-  } else {
-    L.push('No unsupported load-bearing risks remain.', '');
-  }
-  if (report.openQuestions.length) {
-    L.push('### Information still required', '');
-    for (const question of report.openQuestions) L.push(`- ${question}`);
-    L.push('');
-  }
-  if (graph.holes.coverage.length) {
-    L.push('### Dimensions never examined', '');
-    for (const hole of graph.holes.coverage) L.push(`- ${hole.label}`);
-    L.push('');
-  }
-
-  // 12 ───────────────────────────────────────────────────────────────────────
-  L.push('## 12. Audit Information', '');
-  L.push('### Agent activity', '', '| Model | Roles | Calls |', '|---|---|---|');
-  for (const model of report.models) {
-    L.push(`| ${model.name} | ${model.roles.join(', ') || 'scout'} | ${report.receipt.byProvider[model.provider] ?? 0} |`);
-  }
-  L.push('');
-  L.push('### Report-generation policy', '');
-  L.push(quick
-    ? '- This is one structured analyst output, not a cross-provider council result.'
-    : '- Initial answers were generated independently — no seat saw another before claim extraction.');
-  if (!quick) L.push('- Provider identities were hidden during verification and adjudication.');
-  if (!quick) L.push('- Claims were judged individually, never by whole-answer voting.');
-  L.push('- Verified evidence had priority over model confidence.');
-  L.push('- Meaningful minority opinions were preserved above.');
-  L.push('');
-  L.push('### Raw artifacts', '', ...receiptLines(ctx));
-  L.push(`- Run directory: ${'writer' in ctx && ctx.writer ? ctx.writer.dir : '.aiki/runs/' + ctx.runId}`);
-  L.push('');
-
-  return L.join('\n');
+  return renderDecisionDossierMarkdown(buildDecisionReport(ctx, args));
 }
-
 // ── Terminal summary (level 1) ───────────────────────────────────────────────
 
 const RULE = '─'.repeat(52);
@@ -692,6 +710,7 @@ export function renderTerminalSummary(report: DecisionReportJson, paths: { markd
 }
 
 export async function s10Render(ctx: RunCtx, args: S10Args): Promise<void> {
-  await ctx.writer.writeJson('decision-report', buildDecisionReport(ctx, args));
-  await ctx.writer.writeText('final-report', renderReport(ctx, args));
+  const report = buildDecisionReport(ctx, args);
+  await ctx.writer.writeJson('decision-report', report);
+  await ctx.writer.writeText('final-report', renderDecisionDossierMarkdown(report));
 }

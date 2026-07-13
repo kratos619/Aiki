@@ -148,7 +148,7 @@ export async function runIdeaRefinement(ctx: RunCtx, input: string): Promise<voi
       await ctx.writer.writeJson('verifications', result);
       return result;
     });
-    await runStage(ctx, 'S8b', async () => {
+    const rebuttals = await runStage(ctx, 'S8b', async () => {
       const result = { round: 1 as const, selected_claim_ids: [], events: [], stop_reason: 'NO_ESCALATIONS' as const };
       await ctx.writer.writeJson('rebuttals', result);
       return result;
@@ -163,7 +163,7 @@ export async function runIdeaRefinement(ctx: RunCtx, input: string): Promise<voi
       await ctx.writer.writeJson('action-plan', plan);
       return plan;
     });
-    await runStage(ctx, 'S10', () => s10Render(ctx, { contract, seats: kept, graph, verifications, judgeReport, actionPlan, rubric, original: input }));
+    await runStage(ctx, 'S10', () => s10Render(ctx, { contract, seats: kept, graph, verifications, rebuttals, judgeReport, actionPlan, rubric, original: input }));
     return;
   }
 
@@ -181,5 +181,5 @@ export async function runIdeaRefinement(ctx: RunCtx, input: string): Promise<voi
   const rebuttals = await runStage(ctx, 'S8b', () => s8bRebuttal(ctx, graph, verifications, ctx.mode));
   const judgeReport = await runStage(ctx, 'S9', () => s9Judge(ctx, contract, graph, verifications, rubric, rebuttals));
   const actionPlan = await runStage(ctx, 'S9b', () => s9bPlan(ctx, contract, kept, graph, judgeReport));
-  await runStage(ctx, 'S10', () => s10Render(ctx, { contract, seats: kept, graph, verifications, judgeReport, actionPlan, rubric, original: input }));
+  await runStage(ctx, 'S10', () => s10Render(ctx, { contract, seats: kept, graph, verifications, rebuttals, judgeReport, actionPlan, rubric, original: input }));
 }

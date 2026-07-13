@@ -3,7 +3,8 @@ import { basename, join } from 'node:path';
 import { DISPLAY_NAME, type ProviderId } from '../providers/types.js';
 import type { WorkflowId } from '../orchestration/context.js';
 import { RoleOutput as RoleOutputSchema, type ActionPlanArtifact, type AnnotatedFinding, type DecisionGraph, type DisagreementMap, type IdeaMode, type JudgeReport, type Recommendation, type ReviewMap, type RoleOutput, type RunMeta } from '../schemas/index.js';
-import { deriveAudit, deriveScorecard, mergeOpenQuestions, type AuditRow, type ScorecardRow } from '../orchestration/stages/s10-render.js';
+import { deriveAudit, deriveScorecard, mergeOpenQuestions, type AuditRow, type DecisionReportJson, type ScorecardRow } from '../orchestration/stages/s10-render.js';
+import { renderDecisionDossierMarkdown } from '../orchestration/decision-dossier.js';
 import type { SeatOutput } from '../orchestration/stages/s4-analyze.js';
 import { IDEA_RUBRIC } from '../workflows/idea-refinement.js';
 import { listArtifacts, readJsonArtifact } from '../storage/runs-read.js';
@@ -60,6 +61,7 @@ export interface CouncilView {
   actionPlan?: ActionPlanArtifact;
   openQuestions?: string[];
   receipt?: string[];
+  decisionReport?: DecisionReportJson;
 }
 
 function providerName(id: string): string {
@@ -282,11 +284,12 @@ async function loadRoleOutputs(dir: string): Promise<Array<{ provider: string; r
 export async function loadCouncilView(runId: string, dir: string): Promise<CouncilView | null> {
   const meta = await readJsonArtifact<RunMeta>(dir, 'meta.json');
   if (!meta) return null;
-  const [judge, actionPlan, roles, intent] = await Promise.all([
+  const [judge, actionPlan, roles, intent, decisionReport] = await Promise.all([
     readJsonArtifact<JudgeReport>(dir, '09-judge-report.json'),
     readJsonArtifact<ActionPlanArtifact>(dir, '09b-action-plan.json'),
     loadRoleOutputs(dir),
     readJsonArtifact<{ task?: string }>(dir, '01-intent-contract.json'),
+    readJsonArtifact<DecisionReportJson>(dir, '10-decision-report.json'),
   ]);
   const columns = roles.map(({ provider, role }) => roleColumn(provider, role));
   const verdict = judge?.verdict ?? (meta.exit_status === 'ok' ? 'Run completed without a judge verdict artifact.' : `Run ${meta.exit_status}.`);
@@ -349,8 +352,9 @@ export async function loadCouncilView(runId: string, dir: string): Promise<Counc
     stats,
     calls: `${meta.call_count}/${meta.budget.limit} provider calls`,
     flags: meta.flags ?? [],
-    topic: intent?.task,
+    topic: intent?.task ?? decisionReport?.task.original,
     moderator,
+    ...(decisionReport?.dossier ? { decisionReport } : {}),
     ...narrative,
   };
 }
@@ -393,6 +397,149 @@ function section(index: string, title: string, inner: string, delay: number, not
     ${note ? `<p class="lede">${escapeHtml(note)}</p>` : ''}
     ${inner}
   </section>`;
+}
+
+function dossierTable(headers: string[], rows: string[][]): string {
+  if (!rows.length) return '<p class="muted">None recorded.</p>';
+  return `<div class="table-wrap"><table class="data-table"><thead><tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join('')}</tr></thead><tbody>${rows
+    .map((row) => `<tr>${row.map((value) => `<td>${escapeHtml(value)}</td>`).join('')}</tr>`)
+    .join('')}</tbody></table></div>`;
+}
+
+function dossierRefs(ids: string[]): string {
+  return ids.length ? ids.join(', ') : 'none recorded';
+}
+
+function dossierPct(value: number): string {
+  return `${Math.round(value * 100)}%`;
+}
+
+function dossierWarning(report: DecisionReportJson, flags: string[]): string {
+  const active = flags.filter((flag) => report.flags.includes(flag));
+  return active.length ? `<div class="warns"><span class="warn">⚑ DEGRADED: ${escapeHtml(active.join(', '))}</span></div>` : '';
+}
+
+function renderDossierIdeaBody(report: DecisionReportJson): string {
+  const dossier = report.dossier;
+  const confidence = report.confidenceBreakdown;
+  const tone: Tone = dossier.recommendation.status === 'ACCEPTED' ? 'good'
+    : dossier.recommendation.status === 'REJECTED' ? 'risk' : 'caution';
+  const conditions = dossier.recommendation.conditions.length
+    ? `<div class="conditions"><span class="fk">Conditions</span><ul>${dossier.recommendation.conditions.map((condition) => `<li>${escapeHtml(condition.text)} <code>${escapeHtml(dossierRefs(condition.claimIds))}</code></li>`).join('')}</ul></div>`
+    : '';
+  const startHere = dossier.experiments.actions[0]?.action ?? 'No executable next step was produced.';
+  const recommendation = `<div class="verdict tone-${tone}">
+    <span class="pill">${escapeHtml(dossier.recommendation.status)}</span>
+    <p class="verdict-text">${escapeHtml(dossier.recommendation.summary)}</p>
+    <div class="glance">
+      <div class="stat ${confidence.label === 'High' ? 'good' : confidence.label === 'Low' ? 'risk' : 'caution'}"><span class="n">${confidence.score}</span><span class="k">confidence · ${escapeHtml(confidence.label)}</span></div>
+      <div class="stat good"><span class="n">${dossierPct(confidence.verificationCoverage)}</span><span class="k">load-bearing claims verified</span></div>
+      <div class="stat caution"><span class="n">${report.consensusSummary.unresolved}</span><span class="k">unresolved claims</span></div>
+    </div>
+    <p class="lede">Structural confidence heuristic, not an accuracy probability. Verification ${dossierPct(confidence.verificationCoverage)} · convergence ${dossierPct(confidence.independentConvergence)} · evidence quality ${dossierPct(confidence.evidenceQuality)} · stability ${dossierPct(confidence.stability)} · critical-risk penalty −${confidence.criticalRiskPenalty}.</p>
+    <div class="field"><span class="fk">Reason</span><p>${escapeHtml(dossier.recommendation.reason)}</p></div>
+    <div class="bottomline">
+      <div><span class="tag">Start here</span><p>${escapeHtml(startHere)}</p></div>
+      <div><span class="tag">Critical warning</span><p>${escapeHtml(report.verdict.criticalWarning ?? 'None recorded.')}</p></div>
+    </div>
+    ${conditions}
+    <div class="field"><span class="fk">Evidence anchors</span><p><code>${escapeHtml(dossierRefs(dossier.recommendation.claimIds))}</code></p></div>
+    ${dossierWarning(report, ['synthesis_suspect'])}
+    ${dossier.recommendation.claimIds.length ? '' : '<div class="warns"><span class="warn">⚑ DEGRADED: recommendation has no stored graph anchor</span></div>'}
+  </div>`;
+
+  const claimChain = dossierTable(
+    ['Claim ID', 'Claim', 'Ruling', 'Evidence status', 'Depends on'],
+    dossier.claimChain.map((claim) => [claim.claimId, claim.text, claim.ruling, claim.evidenceStatus, dossierRefs(claim.dependsOn)]),
+  );
+  const evidence = `${dossierWarning(report, ['verification_skipped', 'research_ungrounded'])}${dossierTable(
+    ['Evidence ID', 'Source', 'Date', 'Freshness', 'Verification', 'Linked claims'],
+    dossier.evidence.map((item) => [item.id, `${item.source} (${item.sourceKind})`, item.date, item.freshness, item.verificationStatus, dossierRefs(item.claimIds)]),
+  )}`;
+
+  const disagreementCards = report.disagreements.length
+    ? report.disagreements.map((item) => `<article class="card debate-card"><h3><code>${escapeHtml(item.id)}</code> ${escapeHtml(item.topic)}</h3>${item.sides.map((side) => `<div class="field"><span class="fk">${escapeHtml(side.stance)} · ${escapeHtml(side.providers.map(providerName).join(', '))}</span><p>${escapeHtml(side.reasoning.join(' '))}</p></div>`).join('')}<div class="field"><span class="fk">Ruling</span><p>${escapeHtml(item.status)} · ${escapeHtml(item.ruling)}</p></div>${item.reasoning ? `<div class="field"><span class="fk">Why</span><p>${escapeHtml(item.reasoning)}</p></div>` : ''}</article>`).join('')
+    : `<p class="muted">${report.mode === 'quick' ? 'No cross-model disagreement analysis runs in quick mode.' : 'No genuine disagreements were stored.'}</p>`;
+  const changes = dossier.positionChanges.length
+    ? dossierTable(
+        ['Event', 'Claim', 'Responder', 'Change', 'Evidence', 'Detail'],
+        dossier.positionChanges.map((event) => [event.eventId, event.claimId, providerName(event.responder), event.response, dossierRefs(event.evidenceIds), event.narrowedProposition ?? event.reasoning]),
+      )
+    : '<p class="muted">No CONCEDE, COUNTER, or NARROW event was recorded.</p>';
+  const minority = `<h3>Minority report</h3>${report.minority.dissent.length
+    ? `<ul class="checks">${report.minority.dissent.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`
+    : '<p class="muted">No minority dissent was recorded.</p>'}
+    ${report.minority.uniqueOppositions.length ? `<ul class="checks">${report.minority.uniqueOppositions.map((item) => `<li><strong>${escapeHtml(providerName(item.provider))}</strong> uniquely opposed: ${escapeHtml(item.proposition)}</li>`).join('')}</ul>` : ''}
+    <p class="lede">Decision-blocking status: <strong>${escapeHtml(report.minority.blocksDecision)}</strong></p>`;
+  const disagreement = `${dossierWarning(report, ['single_model', 'low_diversity'])}${disagreementCards}<h3>Position changes</h3>${changes}${minority}`;
+
+  const shared = dossier.sharedConcerns.length
+    ? `<h3>Shared concerns</h3><ul class="agree">${dossier.sharedConcerns.map((item) => `<li><p><code>${escapeHtml(item.claimId)}</code> ${escapeHtml(item.text)}</p><span class="who-names">${escapeHtml(item.providerIds.map(providerName).join(', '))} · ${escapeHtml(item.evidenceStatus)}</span></li>`).join('')}</ul>`
+    : '<h3>Shared concerns</h3><p class="muted">None recorded.</p>';
+  const unique = dossier.uniqueSupportedInsights.length
+    ? `<h3>Unique supported insights</h3><ul class="agree">${dossier.uniqueSupportedInsights.map((item) => `<li><p><code>${escapeHtml(item.claimId)}</code> ${escapeHtml(item.text)}</p><span class="who-names">${escapeHtml(providerName(item.providerId))} · ${escapeHtml(item.verificationStatus)}</span></li>`).join('')}</ul>`
+    : '<h3>Unique supported insights</h3><p class="muted">None recorded.</p>';
+
+  const coverage = dossierTable(
+    ['Dimension', 'Status', 'Claim IDs'],
+    dossier.coverage.map((item) => [item.label, item.status, dossierRefs(item.claimIds)]),
+  );
+  const sensitivity = dossierTable(
+    ['Claim ID', 'Fact', 'Sensitivity', 'If false', 'What would change it', 'Linked claims'],
+    dossier.sensitivity.map((item) => [item.claimId, item.fact, item.sensitivity, item.impactIfFalse, item.whatWouldChangeIt, dossierRefs(item.linkedClaimIds)]),
+  );
+  const experiments = `${dossierWarning(report, ['plan_fallback', 'plan_skipped'])}${dossier.experiments.status === 'DEGRADED' ? `<div class="warns"><span class="warn">⚑ DEGRADED: ${escapeHtml(dossier.experiments.note)}</span></div>` : ''}${dossierTable(
+    ['#', 'Experiment', 'Why', 'Validates', 'Effort', 'Kill signal'],
+    dossier.experiments.actions.map((action) => [String(action.order), action.action, action.why, action.validates, action.effort, action.killSignal]),
+  )}${dossier.experiments.actions.length ? `<p class="lede">${escapeHtml(dossier.experiments.note)}</p>` : ''}`;
+  const counterCase = dossier.counterCase.available
+    ? `<article class="card risk-card"><p>${escapeHtml(dossier.counterCase.reasoning)}</p><div class="field"><span class="fk">Evidence anchors</span><p><code>${escapeHtml(dossierRefs(dossier.counterCase.claimIds))}</code></p></div></article>`
+    : `<div class="warns"><span class="warn">⚑ DEGRADED: ${escapeHtml(dossier.counterCase.reasoning)}</span></div>`;
+  const contributions = `${dossierWarning(report, ['verification_skipped', 'single_model', 'low_diversity'])}<p class="lede">Only unique claims that survived independent verification receive credit.</p>${dossierTable(
+    ['Provider', 'Verified unique claim IDs', 'Count'],
+    dossier.contributions.map((item) => [item.name, dossierRefs(item.verifiedUniqueClaimIds), String(item.verifiedUniqueClaimIds.length)]),
+  )}`;
+  const receipt = `<div class="receipt">
+    <span>mode ${escapeHtml(report.mode)}</span><span>${report.receipt.calls}/${report.receipt.budget} provider calls</span>
+    <span>discovery ${report.receipt.categories.discovery}</span><span>verification ${report.receipt.categories.verification}</span>
+    <span>repair ${report.receipt.categories.repair}</span><span>planning ${report.receipt.categories.planning}</span>
+    <span>by provider ${escapeHtml(Object.entries(report.receipt.byProvider).map(([provider, count]) => `${providerName(provider)} ${count}`).join(', ') || 'none')}</span>
+    <span>model time ${(report.receipt.modelTimeMs / 1000).toFixed(1)}s</span>
+  </div>${report.flags.length ? `<div class="warns">${report.flags.map((flag) => `<span class="warn">⚑ ${escapeHtml(flag)}</span>`).join('')}</div>` : '<p class="muted">No degradation flags.</p>'}`;
+  const risks = dossierTable(
+    ['Risk', 'Severity'],
+    report.risks.map((item) => [item.risk, item.severity]),
+  );
+  const questions = report.openQuestions.length
+    ? `<ul class="checks">${report.openQuestions.map((question) => `<li>${escapeHtml(question)}</li>`).join('')}</ul>`
+    : '<p class="muted">No verdict-flipping open question was recorded.</p>';
+  const runDetails = `<article class="card">
+    <div class="field"><span class="fk">Report</span><p><code>${escapeHtml(report.reportId)}</code> · ${escapeHtml(report.generatedAt)}</p></div>
+    <div class="field"><span class="fk">Original task</span><p>${escapeHtml(report.task.original)}</p></div>
+    <div class="field"><span class="fk">Normalized question</span><p>${escapeHtml(report.task.normalized)}</p></div>
+    <div class="field"><span class="fk">Constraints</span><p>${escapeHtml(report.task.constraints.join('; ') || 'none recorded')}</p></div>
+    <div class="field"><span class="fk">Success criteria</span><p>${escapeHtml(report.task.successCriteria.join('; ') || 'none recorded')}</p></div>
+    <div class="field"><span class="fk">Models and roles</span><p>${escapeHtml(report.models.map((model) => `${model.name} (${model.roles.join(', ')})`).join(' · ') || 'none recorded')}</p></div>
+  </article>${receipt}`;
+  const technical = `<details class="fold"><summary>Original submissions and graph events</summary><div class="fold-body">
+    <h4 class="fold-h">Original submissions</h4><ul>${dossier.technical.submissions.map((item) => `<li><strong>${escapeHtml(item.name)}:</strong> ${escapeHtml(item.strongestVersion)} <code>${escapeHtml(dossierRefs(item.positionIds))}</code></li>`).join('') || '<li>none</li>'}</ul>
+    <h4 class="fold-h">Original positions</h4><ul>${dossier.technical.positions.map((position) => `<li><code>${escapeHtml(position.id)}</code> [${escapeHtml(providerName(position.provider))} ${escapeHtml(position.stance)}] ${escapeHtml(position.proposition)} · evidence <code>${escapeHtml(dossierRefs(position.evidenceIds))}</code></li>`).join('') || '<li>none</li>'}</ul>
+    <h4 class="fold-h">Graph edges</h4><ul>${dossier.technical.edges.map((edge) => `<li><code>${escapeHtml(edge.from)} —${escapeHtml(edge.type)}→ ${escapeHtml(edge.to)}</code></li>`).join('') || '<li>none</li>'}</ul>
+    <h4 class="fold-h">Position-change events</h4><ul>${dossier.technical.events.map((event) => `<li><code>${escapeHtml(event.eventId)}</code>: ${escapeHtml(providerName(event.responder))} ${escapeHtml(event.response)} <code>${escapeHtml(event.claimId)}</code> — ${escapeHtml(event.reasoning)}</li>`).join('') || '<li>none</li>'}</ul>
+  </div></details>`;
+
+  return [
+    section('01', 'Decision', recommendation, 60),
+    section('02', 'Action plan', experiments, 100, 'The smallest useful test, its effort, and the signal that should stop the idea.'),
+    section('03', 'Why this decision', claimChain, 140, 'The load-bearing claim chain behind the recommendation.'),
+    section('04', 'What could change the decision', `<h3>Decision-sensitive facts</h3>${sensitivity}<h3>Strongest counter-case</h3>${counterCase}`, 180),
+    section('05', 'Evidence and verification', evidence, 220),
+    section('06', 'Risks, gaps, and open questions', `<h3>Risks</h3>${risks}<h3>Coverage</h3>${coverage}<h3>Open questions</h3>${questions}`, 260),
+    section('07', 'Disagreement and dissent', disagreement, 300),
+    section('08', 'What the council added', `${shared}${unique}<h3>Verified unique contributions</h3>${contributions}`, 340),
+    section('09', 'Run details', runDetails, 380),
+    section('10', 'Technical audit', technical, 420),
+  ].join('');
 }
 
 function renderLegacyIdeaBody(view: CouncilView): string {
@@ -621,6 +768,7 @@ function renderQuickIdeaBody(view: CouncilView): string {
 
 /** Serialize a council view to clean Markdown — for the HTML "Copy" button (paste into a coding assistant). */
 function councilMarkdown(view: CouncilView): string {
+  if (view.decisionReport?.dossier) return renderDecisionDossierMarkdown(view.decisionReport);
   const isIdea = view.workflow !== 'code-review';
   const quick = isIdea && view.mode === 'quick';
   const reportV3 = isIdea && Boolean(view.recommendation || view.actionPlan);
@@ -804,7 +952,9 @@ export function renderCouncilHtml(view: CouncilView): string {
   const flags = view.flags.length
     ? `<div class="warns">${view.flags.map((f) => `<span class="warn">⚑ ${escapeHtml(f.replaceAll('_', ' '))}</span>`).join('')}</div>`
     : '';
-  const body = quick ? renderQuickIdeaBody(view) : isIdea ? renderIdeaBody(view) : renderReviewBody(view);
+  const body = isIdea && view.decisionReport?.dossier
+    ? renderDossierIdeaBody(view.decisionReport)
+    : quick ? renderQuickIdeaBody(view) : isIdea ? renderIdeaBody(view) : renderReviewBody(view);
   // Embed the report as Markdown for the Copy button. Escape "<" so a "</script>" in content can't break out.
   const md = JSON.stringify(councilMarkdown(view)).replace(/</g, '\\u003c');
 
@@ -879,6 +1029,7 @@ p{margin:0 0 .6em;}
 
 /* bottom line */
 .bottomline{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:34px;}
+.verdict .bottomline{margin:18px 0 0;}
 .bottomline > div{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;}
 .tag{display:inline-block;font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:7px;}
 .bottomline p{margin:0;font-size:15px;color:var(--ink);}

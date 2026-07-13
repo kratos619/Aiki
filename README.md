@@ -222,17 +222,18 @@ only the disputes → report.
 
 **Idea refinement** — two independent preflight readings → one confirmed/defaulted decision contract →
 complementary analyst lanes → deterministic claim/evidence graph audit → only decision-critical verification
-or rebuttal → evidence-linked chair → validation planner. The report is a **decision brief**, not an essay.
+or rebuttal → evidence-linked chair → validation planner. The report is a graph-backed **decision dossier**,
+not an essay.
 Choose `--mode quick` for one structured analyst, `--mode council` (default) for the full decision council,
 or `--mode research` for source-grounded current-fact work. Aiki never chooses a mode with a learned router:
 
-- a **BLUF recommendation** — `PROCEED` / `PROCEED WITH CONDITIONS` / `PIVOT` / `STOP`
-- the **chairman's reasoning** (what decided it, where the models split, whose side the judge took)
-- a **dimension scorecard** (which of 12 angles were examined, contested, or missed)
-- an **assumption audit** (held / failed / unverified, with confidence)
-- **the debate** (who argued what, who won)
-- an **anchored validation plan** — concrete next actions, each with an effort estimate and a *kill signal*
-- a **cost receipt** (calls per provider)
+- a **reader-first decision card** — verdict, structural confidence, critical warning, and first action before audit detail
+- a **graph-anchored recommendation and claim chain** — every decisive statement links to stored claim IDs
+- an **evidence and coverage ledger** — source, date, freshness, verification, `NOT_APPLICABLE`, and missing evidence
+- **genuine disagreements and position changes** — explicit `CONCEDE` / `COUNTER` / `NARROW` events
+- **decision sensitivity and an executable experiment plan** — anchored tests with effort and kill signals
+- a **verified contribution ledger** — unique provider claims count only after independent verification
+- an **orchestration receipt and technical fold** — calls, degradation, submissions, edges, and graph events
 
 ## Example: a real idea run
 
@@ -252,7 +253,8 @@ The council's verdict on that one:
 
 …followed by **7 anchored validation actions**, e.g. *"Pull the last 90 days of churned users and tag each
 with their primary churn reason"* (effort S, kill signal: churn isn't feature-driven). The full brief opens in
-your browser and has a **Copy report (Markdown)** button so you can paste it straight into your coding assistant.
+your browser and has a **Copy report (Markdown)** button backed by the same persisted dossier as the HTML,
+so the copied claims, evidence statuses, experiments, and receipt cannot drift from the page.
 
 ## Configuration
 

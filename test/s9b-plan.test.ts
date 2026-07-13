@@ -193,7 +193,7 @@ describe('s9bPlan', () => {
         unresolved_questions: ['Which target user has this pain?'],
       },
     });
-    const section = report.slice(report.indexOf('## 10. Final Synthesis'), report.indexOf('## 11.'));
+    const section = report.slice(report.indexOf('## 2. Action plan'), report.indexOf('## 3.'));
 
     expect(section).toContain('plan_fallback');
     expect(section).toContain('Planner unavailable: planner_failed');
@@ -211,7 +211,7 @@ describe('s9bPlan', () => {
       judgeReport: { ...judge, key_points: ['Demand is the decisive uncertainty.'] },
       actionPlan: goodPlan,
     });
-    const section = report.slice(report.indexOf('### Why this answer was selected'), report.indexOf('### Strongest version per model'));
+    const section = report.slice(report.indexOf('## 1. Decision'), report.indexOf('## 2.'));
 
     expect(section).toContain('synthesis_suspect');
   });

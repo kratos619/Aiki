@@ -43,15 +43,22 @@
   12-dimension scorecard, assumption audit table in HTML, deterministic debate narrative, anchored
   validation plan with kill signals (`09b-action-plan.json`), open questions, red-team note, and a
   call/provider receipt. The Markdown copy button includes the expanded brief.
+- **R7 decision dossier** — `10-decision-report.json` now persists the graph-anchored recommendation chain,
+  evidence source/date/freshness/verification table, genuine disagreement and append-only position-change
+  events, coverage and sensitivity ledgers, executable experiments, strongest counter-case, strictly
+  verified unique-provider contributions, categorized receipt, and technical graph fold. Final Markdown,
+  HTML, and Copy-Markdown render from that same dossier; R6-era and older runs retain their legacy HTML. The
+  full report is reader-first: decision/confidence/warning and the first action lead, followed by action plan,
+  reasoning, decision sensitivity, evidence, risks/gaps, dissent, council value, run details, and technical audit.
 
 ### Changed
 - **Three-level decision report** — idea-refinement's final report is restructured: (1) a one-screen
   terminal summary (verdict, status, structural confidence, consensus counts, primary reason, dissent,
-  verification checks, next action) printed after `aiki run`; (2) a 12-section Multi-Model Decision Report
-  markdown (`final-report.md`): metadata, executive verdict, problem interpretation, per-model positions,
-  claim-level consensus map, key agreements/disagreements, minority report, verification results, final
-  synthesis, risks, audit; (3) machine-readable `10-decision-report.json` the markdown is rendered from, so
-  the two can never disagree. Statuses are ACCEPTED / ACCEPTED_WITH_CONDITIONS / INCONCLUSIVE / REJECTED
+  verification checks, next action) printed after `aiki run`; (2) a 10-section reader-first graph-backed
+  Decision Report markdown (`final-report.md`) ordered as decision, action plan, reasoning, what could change
+  the decision, evidence, risks/gaps, dissent, council value, run details, and technical audit; (3)
+  machine-readable `10-decision-report.json` that Markdown and HTML render from, so the
+  surfaces cannot disagree. Statuses are ACCEPTED / ACCEPTED_WITH_CONDITIONS / INCONCLUSIVE / REJECTED
   (mapped from the judge's recommendation). Confidence is structural — 40% verification coverage + 25%
   independent convergence + 20% evidence quality + 15% stability − critical-risk penalty; model
   self-confidence never enters it and consensus alone can never reach the High band. Labeled a heuristic in

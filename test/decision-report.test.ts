@@ -8,6 +8,8 @@ import {
   renderTerminalSummary,
   statusFrom,
 } from '../src/orchestration/stages/s10-render.js';
+import { renderCouncilHtml, type CouncilView } from '../src/council/view.js';
+import { renderDecisionDossierMarkdown } from '../src/orchestration/decision-dossier.js';
 import type { JudgeReport } from '../src/schemas/index.js';
 import type { ProviderId } from '../src/providers/types.js';
 import type { RunCtx } from '../src/orchestration/context.js';
@@ -55,6 +57,8 @@ function fixtures(stanceB: Stance = 'SUPPORT') {
     adjudications: stanceB === 'OPPOSE' ? [{ id: 'G1', ruling: 'REJECT', reasoning: 'evidence favors support', evidence_cited: 'E-P1' }] : [],
     verdict: 'Proceed with the focused version.',
     recommendation: 'PROCEED',
+    recommendation_claim_ids: ['G1'],
+    strongest_counter_case: { claim_ids: ['G1'], reasoning: 'Churn could erase the apparent demand advantage.' },
     key_points: ['Willingness to pay is corroborated.'],
     dissent: ['Churn could erode the economics.'],
     confidence_notes: 'HIGH on demand, MEDIUM on economics.',
@@ -68,8 +72,23 @@ function fixtures(stanceB: Stance = 'SUPPORT') {
     contract: { task: 'Evaluate the subscription idea', task_type: 'idea-refinement' as const, constraints: ['budget under $10k'], unknowns: [], success_criteria: ['a go/no-go verdict'] },
     seats: [{ provider: 'agy' as ProviderId, output: { workflow: 'idea-refinement' as const, ...agy } }, { provider: 'codex' as ProviderId, output: { workflow: 'idea-refinement' as const, ...codex } }],
     graph,
-    verifications: { verifications: [{ target_id: 'G1', verdict: 'CONFIRM' as const, evidence: 'Survey data supports it.', note: '' }] },
+    verifications: { verifications: [{ claim_id: 'G1', status: 'VERIFIED' as const, reasoning: 'Survey data supports it.', evidence_ids: ['agy/E-P1'], calculation_check: 'NOT_APPLICABLE' as const, missing_evidence: [] }] },
     judgeReport,
+    actionPlan: {
+      actions: [{ order: 1, action: 'Run a paid-demand test.', why: 'Test willingness to pay.', validates: 'G1', effort: 'S' as const, kill_signal: 'Fewer than 5% of qualified users pay.' }],
+      sequencing_note: 'Test the decisive demand claim before building.',
+    },
+    rebuttals: stanceB === 'OPPOSE' ? {
+      round: 1 as const,
+      selected_claim_ids: ['G1'],
+      events: [{
+        id: 'RB1', round: 1 as const, responder: 'agy' as ProviderId, claim_id: 'G1',
+        target_position_ids: ['agy/P1'], response: 'NARROW' as const,
+        reasoning: 'Demand is credible only for the focused segment.', evidence_ids: ['agy/E-P1'],
+        narrowed_proposition: 'Focused-segment users will pay for this.',
+      }],
+      stop_reason: 'ROUND_COMPLETE' as const,
+    } : { round: 1 as const, selected_claim_ids: [], events: [], stop_reason: 'NO_ESCALATIONS' as const },
     rubric,
   };
   return { ctx, args, graph, judgeReport };
@@ -132,27 +151,140 @@ describe('machine-readable decision report', () => {
   });
 });
 
-describe('markdown decision report (12-section template)', () => {
-  it('renders every numbered section', () => {
+describe('R7 decision dossier', () => {
+  it('renders the reader-first dossier in the required order', () => {
     const { ctx, args } = fixtures('OPPOSE');
+    const built = buildDecisionReport(ctx, args);
     const md = renderReport(ctx, args);
-    for (const header of [
-      '## 1. Report Metadata',
-      '## 2. Executive Verdict',
-      '## 3. Problem Interpretation',
-      '## 4. Individual Model Positions',
-      '## 5. Consensus Map',
-      '## 6. Key Agreements',
-      '## 7. Key Disagreements',
-      '## 8. Minority Report',
-      '## 9. Verification Results',
-      '## 10. Final Synthesis',
-      '## 11. Risks and Unresolved Questions',
-      '## 12. Audit Information',
-    ]) expect(md, `missing ${header}`).toContain(header);
-    expect(md).toContain('AGREE');
-    expect(md).toContain('DISAGREE');
-    expect(md).toMatch(/Confidence.*\/100/);
+    const headers = [
+      '## 1. Decision',
+      '## 2. Action plan',
+      '## 3. Why this decision',
+      '## 4. What could change the decision',
+      '## 5. Evidence and verification',
+      '## 6. Risks, gaps, and open questions',
+      '## 7. Disagreement and dissent',
+      '## 8. What the council added',
+      '## 9. Run details',
+      '## 10. Technical audit',
+    ];
+    let previous = -1;
+    for (const header of headers) {
+      const index = md.indexOf(header);
+      expect(index, `missing ${header}`).toBeGreaterThan(previous);
+      previous = index;
+    }
+    expect(md).toContain(`**Confidence:** ${built.confidenceBreakdown.score}/100 — ${built.confidenceBreakdown.label}`);
+    expect(md).toContain('Structural confidence heuristic, not an accuracy probability.');
+    expect(md).toContain('**Start here:** Run a paid-demand test.');
+    expect(md).toContain('**Critical warning:**');
+    expect(md).toContain('G1');
+    expect(md).toContain('agy/E-P1');
+    expect(md).toContain('VERIFIED');
+    expect(md).toContain('Run a paid-demand test.');
+    expect(md).toContain('NARROW');
+  });
+
+  it.each([['obvious', 'SUPPORT'], ['contestable', 'OPPOSE']] as const)(
+    'keeps Markdown, HTML, and copied Markdown aligned for an %s fixture',
+    (_name, stance) => {
+      const { ctx, args } = fixtures(stance);
+      const report = buildDecisionReport(ctx, args);
+      const md = renderDecisionDossierMarkdown(report);
+      const html = renderCouncilHtml({
+        runId: report.reportId,
+        workflow: 'idea-refinement',
+        mode: report.mode,
+        verdict: report.verdict.summary,
+        keyPoints: [], confidence: '', dissent: [], columns: [], rows: [], stats: [], calls: '', flags: report.flags,
+        decisionReport: report,
+      } as CouncilView);
+
+      for (const token of ['G1', 'agy/E-P1', 'VERIFIED', 'Run a paid-demand test.', 'discovery']) {
+        expect(md, `Markdown missing ${token}`).toContain(token);
+        expect(html, `HTML missing ${token}`).toContain(token);
+      }
+      const embedded = JSON.stringify(md).replace(/</g, '\\u003c');
+      expect(html).toContain(`const REPORT_MD = ${embedded};`);
+      expect(html.indexOf('Decision')).toBeLessThan(html.indexOf('Action plan'));
+      expect(html).toContain(`${report.confidenceBreakdown.score}/100`);
+      expect(html).toContain('Start here');
+    },
+  );
+
+  it('credits only independently verified unique claims to a provider', () => {
+    const agy = submission([{ id: 'P1', proposition: 'A niche cohort will pay.', stance: 'SUPPORT' }]);
+    const graph = compileDecisionGraph([{ provider: 'agy', submission: agy }], rubric);
+    const { ctx, args } = fixtures();
+    const report = buildDecisionReport(ctx, {
+      ...args,
+      seats: [{ provider: 'agy', output: { workflow: 'idea-refinement', ...agy } }],
+      graph,
+      verifications: { verifications: [{ claim_id: 'G1', status: 'VERIFIED', reasoning: 'Independent receipt review confirms payment.', evidence_ids: ['agy/E-P1'], missing_evidence: [] }] },
+      judgeReport: { ...args.judgeReport, recommendation_claim_ids: ['G1'], strongest_counter_case: { claim_ids: ['G1'], reasoning: 'The cohort may be too small.' } },
+    });
+
+    expect(report.dossier.contributions.find((item) => item.provider === 'agy')?.verifiedUniqueClaimIds).toEqual(['G1']);
+    expect(report.dossier.contributions.find((item) => item.provider === 'codex')?.verifiedUniqueClaimIds).toEqual([]);
+  });
+
+  it('resolves every decisive dossier reference to a stored graph claim', () => {
+    const { ctx, args } = fixtures('OPPOSE');
+    const report = buildDecisionReport(ctx, args);
+    const claimIds = new Set(report.claims.map((claim) => claim.id));
+    const referenced = [
+      ...report.dossier.recommendation.claimIds,
+      ...report.dossier.recommendation.conditions.flatMap((condition) => condition.claimIds),
+      ...report.dossier.claimChain.flatMap((claim) => [claim.claimId, ...claim.dependsOn]),
+      ...report.dossier.evidence.flatMap((evidence) => evidence.claimIds),
+      ...report.disagreements.map((item) => item.id),
+      ...report.dossier.positionChanges.map((event) => event.claimId),
+      ...report.dossier.sensitivity.flatMap((item) => [item.claimId, ...item.linkedClaimIds]),
+      ...report.dossier.counterCase.claimIds,
+      ...report.dossier.contributions.flatMap((item) => item.verifiedUniqueClaimIds),
+    ];
+    expect(referenced.length).toBeGreaterThan(0);
+    expect(referenced.every((id) => claimIds.has(id))).toBe(true);
+  });
+
+  it('labels degraded verification and planning in Markdown and HTML', () => {
+    const { ctx, args } = fixtures();
+    ctx.flags.add('verification_skipped');
+    ctx.flags.add('plan_fallback');
+    const degradedArgs = {
+      ...args,
+      verifications: { verifications: [] },
+      actionPlan: { kind: 'PlannerUnavailable' as const, reason: 'planner_failed' as const, unresolved_questions: ['Which cohort pays?'] },
+    };
+    const report = buildDecisionReport(ctx, degradedArgs);
+    const md = renderReport(ctx, degradedArgs);
+    const html = renderCouncilHtml({
+      runId: report.reportId, workflow: 'idea-refinement', mode: report.mode,
+      verdict: report.verdict.summary, keyPoints: [], confidence: '', dissent: [], columns: [], rows: [], stats: [], calls: '', flags: report.flags,
+      decisionReport: report,
+    } as CouncilView);
+
+    for (const output of [md, html]) {
+      expect(output).toContain('DEGRADED');
+      expect(output).toContain('verification_skipped');
+      expect(output).toContain('planner_failed');
+    }
+  });
+
+  it('distinguishes not-applicable coverage from missing evidence', () => {
+    const { ctx, args } = fixtures();
+    const seats = args.seats.map((seat) => ({
+      ...seat,
+      output: {
+        ...seat.output,
+        coverage: [...seat.output.coverage, { dimension_id: 'R2', status: 'NOT_APPLICABLE' as const, position_ids: [], rationale: 'No regulated activity.' }],
+      },
+    }));
+    const graph = { ...args.graph, holes: { ...args.graph.holes, evidence: [{ claim_id: 'G1', reason: 'independent demand evidence missing' }] } };
+    const report = buildDecisionReport(ctx, { ...args, seats, graph, rubric: [...rubric, { id: 'R2', label: 'regulatory exposure' }] });
+
+    expect(report.dossier.coverage.find((item) => item.dimensionId === 'R1')?.status).toBe('MISSING_EVIDENCE');
+    expect(report.dossier.coverage.find((item) => item.dimensionId === 'R2')?.status).toBe('NOT_APPLICABLE');
   });
 
   it('keeps shared skepticism out of Key Disagreements', () => {
