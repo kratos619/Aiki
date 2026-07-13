@@ -103,16 +103,37 @@ program
 
 program
   .command('bench')
-  .description('Run benchmark arms A–E/L on a task set; writes bench/results/*.json + summary table (§17).')
-  .argument('<workflow>', 'workflow id (v1: code-review)')
-  .option('--arms <list>', 'comma-separated arms to run', 'A,B,C,D')
+  .description('Run code-review, idea lane, or frozen idea-v3 benchmark arms; writes bench/results/*.json.')
+  .argument('<workflow>', 'code-review | idea-refinement | idea-v3')
+  .option('--arms <list>', 'comma-separated arms to run (code review defaults A,B,C,D; idea-v3 defaults B,C,D2,R on build)')
   .option('--set <name>', 'task set: build | holdout', 'build')
   .option('--resume', 'continue the latest results file: keep already-scored case×arm pairs, retry the rest')
   .option('--yes', 'actually run; without it, print the pre-run Opus-call estimate and exit')
   .option('--import <file>', 'idea-refinement: import blind adjudications into the latest campaign file (offline, frozen R0 scorer)')
   .option('--case <id>', 'idea-refinement: restrict the metered run to one build case (combine with --resume)')
-  .action(async (workflow: string, opts: { arms?: string; set?: string; resume?: boolean; yes?: boolean; import?: string; case?: string }) => {
-    process.exit(await benchCommand(workflow, { arms: opts.arms, set: opts.set, resume: opts.resume, yes: opts.yes, import: opts.import, case: opts.case }));
+  .option('--baseline-provider <id>', 'idea-v3 build tuning: provider used for B/C (claude | codex | agy)', 'claude')
+  .option('--d2-import <file>', 'idea-v3 build: observations produced by the archived R0 runner at commit 680fba3')
+  .option('--export-blind <dir>', 'idea-v3: export 3 independently ordered offline rating packets from a complete campaign')
+  .option('--import-ratings <file>', 'idea-v3: score a locked three-rater resolution once (offline, frozen R0 scorer)')
+  .option('--freeze-protocol <draft-file>', 'idea-v3: freeze a complete scored build protocol once (offline)')
+  .option('--publish-results <scores-file>', 'idea-v3: write RESULTS-IDEA-V3.md from frozen holdout scores (offline)')
+  .option('--campaign <file>', 'idea-v3 offline operation: explicit campaign file (default: latest)')
+  .action(async (workflow: string, opts: { arms?: string; set?: string; resume?: boolean; yes?: boolean; import?: string; case?: string; baselineProvider?: string; d2Import?: string; exportBlind?: string; importRatings?: string; freezeProtocol?: string; publishResults?: string; campaign?: string }) => {
+    process.exit(await benchCommand(workflow, {
+      arms: opts.arms,
+      set: opts.set,
+      resume: opts.resume,
+      yes: opts.yes,
+      import: opts.import,
+      case: opts.case,
+      baselineProvider: opts.baselineProvider,
+      d2Import: opts.d2Import,
+      exportBlind: opts.exportBlind,
+      importRatings: opts.importRatings,
+      freezeProtocol: opts.freezeProtocol,
+      publishResults: opts.publishResults,
+      campaign: opts.campaign,
+    }));
   });
 
 program
