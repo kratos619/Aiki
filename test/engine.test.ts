@@ -7,6 +7,7 @@ import { executeRun } from '../src/orchestration/engine.js';
 import { runIdeaRefinement } from '../src/workflows/idea-refinement.js';
 import { RunWriter } from '../src/storage/runs.js';
 import type { Adapter, ProviderId, RunResultAdapter } from '../src/providers/types.js';
+import type { EvidencePack } from '../src/orchestration/evidence-pack.js';
 
 // A scripted adapter that answers each stage by inspecting the prompt. Records call count.
 function fakeAdapter(id: ProviderId): Adapter {
@@ -79,10 +80,10 @@ function fakeAdapter(id: ProviderId): Adapter {
       } else if (p.includes('Group anonymous positions')) {
         obj = { groups: [['P1', 'P3'], ['P2', 'P4']] };
       } else if (p.includes('ROLE: Independent verifier')) {
-        obj = { verifications: [{ target_id: 'G2', verdict: 'REFUTE', evidence: 'the format is pinned at probe time', note: '' }] };
+        obj = { verifications: [{ claim_id: 'G2', status: 'CONTRADICTED', reasoning: 'the format is pinned at probe time', evidence_ids: ['E2'], calculation_check: 'NOT_APPLICABLE', missing_evidence: [] }] };
       } else if (p.includes('ROLE: Judge')) {
         obj = {
-          adjudications: [{ id: 'G2', ruling: 'REJECT', reasoning: 'the drift risk is mitigated by the flag probe', evidence_cited: 'S1 probe' }],
+          adjudications: [{ id: 'G2', ruling: 'REJECT', reasoning: 'the drift risk is mitigated by the flag probe', evidence_ids: ['E1'] }],
           verdict: 'Viable as a local orchestration layer; ship behind a provider-probe guard.',
           recommendation: 'PROCEED_WITH_CONDITIONS',
           conditions: ['Proceed only if provider output probing stays stable across versions.'],
@@ -125,12 +126,12 @@ const INPUT = '# my idea\nbuild a local orchestration CLI that binds installed A
 
 let root: string;
 
-function makeCtx(budget?: number): RunCtx {
+function makeCtx(budget?: number, evidencePack?: EvidencePack): RunCtx {
   const handles = [handle('agy'), handle('codex'), handle('claude')];
   const runId = makeRunId('idea-refinement');
   const roles = resolveRoles('idea-refinement', handles.map((h) => h.id));
   const writer = new RunWriter(runId, root);
-  return new RunCtx({ runId, workflow: 'idea-refinement', handles, roles, writer, cwd: writer.dir, budget });
+  return new RunCtx({ runId, workflow: 'idea-refinement', handles, roles, writer, cwd: writer.dir, budget, evidencePack });
 }
 
 beforeEach(async () => {
@@ -150,7 +151,10 @@ describe('role assignment (§10, decided T5)', () => {
 
 describe('executeRun happy path (§24 T7: artifacts 00–10, end-to-end)', () => {
   it('produces the S1–S10 artifacts + final report on sample input', async () => {
-    const ctx = makeCtx();
+    const ctx = makeCtx(undefined, {
+      root: '/tmp/research',
+      files: [{ path: '/tmp/research/study.md', sha256: 'a'.repeat(64) }],
+    });
     const outcome = await executeRun(ctx, INPUT, runIdeaRefinement);
 
     expect(outcome.ok).toBe(true);
@@ -158,6 +162,7 @@ describe('executeRun happy path (§24 T7: artifacts 00–10, end-to-end)', () =>
 
     const dir = ctx.writer.dir;
     expect(await readFile(join(dir, '00-original.md'), 'utf8')).toBe(INPUT);
+    expect(JSON.parse(await readFile(join(dir, 'inputs', 'evidence-pack.json'), 'utf8'))).toMatchObject({ root: '/tmp/research' });
 
     const brief = JSON.parse(await readFile(join(dir, '00b-run-brief.json'), 'utf8'));
     expect(brief.questions).toHaveLength(3);
@@ -180,6 +185,7 @@ describe('executeRun happy path (§24 T7: artifacts 00–10, end-to-end)', () =>
     const agyS4 = rawNames.find((name) => name.startsWith('S4-agy-agy-') && name.endsWith('.prompt.txt'))!;
     const codexS4 = rawNames.find((name) => name.startsWith('S4-codex-codex-') && name.endsWith('.prompt.txt'))!;
     expect(await readFile(join(dir, 'raw', agyS4), 'utf8')).toContain('LANE: market-adoption');
+    expect(await readFile(join(dir, 'raw', agyS4), 'utf8')).toContain('EVIDENCE PACK MANIFEST');
     expect(await readFile(join(dir, 'raw', codexS4), 'utf8')).toContain('LANE: economics-delivery');
     await expect(stat(join(dir, '06b-coverage-fill.json'))).resolves.toBeDefined();
     const coveragePrompt = rawNames.find((name) => name.startsWith('S7-coverage-fill-agy-') && name.endsWith('.prompt.txt'))!;
@@ -199,10 +205,10 @@ describe('executeRun happy path (§24 T7: artifacts 00–10, end-to-end)', () =>
     expect(graph.claims.filter((claim: { state: string }) => claim.state === 'DISAGREEMENT')).toHaveLength(1);
     expect(graph.holes.coverage).toEqual([]);
 
-    // S8: the one contradiction (D1) was verified.
+    // S8: the one disagreement was verified with graph evidence references.
     const verif = JSON.parse(await readFile(join(dir, '08-verifications.json'), 'utf8'));
     expect(verif.verifications).toHaveLength(1);
-    expect(verif.verifications[0]).toMatchObject({ target_id: 'G2', verdict: 'REFUTE' });
+    expect(verif.verifications[0]).toMatchObject({ claim_id: 'G2', status: 'CONTRADICTED', evidence_ids: ['agy/E2'] });
 
     // S9: judge adjudicated the dispute only; non-empty dissent.
     const judge = JSON.parse(await readFile(join(dir, '09-judge-report.json'), 'utf8'));

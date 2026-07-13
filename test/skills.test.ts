@@ -114,7 +114,7 @@ describe('buildAnalystTemplate (idea S4, resolved before S3)', () => {
   it('empty skill collapses to the exact pre-skill baseline', () => {
     const t = buildAnalystTemplate('');
     expect(t).not.toContain('{{SKILL}}');
-    expect(t).toContain('read the file at {{INPUT_PATH}}\n\nProduce ONLY JSON');
+    expect(t).toContain('read the file at {{INPUT_PATH}}\nEVIDENCE PACK MANIFEST: {{EVIDENCE_PACK_JSON}}');
   });
 });
 

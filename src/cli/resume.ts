@@ -12,6 +12,7 @@ import { buildReplayCache } from '../storage/replay.js';
 import { findSession } from '../storage/sessions.js';
 import { readJsonArtifact, resolveRunId, runDir } from '../storage/runs-read.js';
 import type { RunMeta } from '../schemas/index.js';
+import { EvidencePack, type EvidencePack as EvidencePackT } from '../orchestration/evidence-pack.js';
 
 export async function resumeCommand(runArg: string | undefined, opts: { root?: string } = {}): Promise<number> {
   if (!runArg) {
@@ -60,6 +61,16 @@ export async function resumeCommand(runArg: string | undefined, opts: { root?: s
     process.stderr.write(`cannot recover the input (inputs/${inputFile}) for ${oldId} — nothing to resume.\n`);
     return 1;
   }
+  let evidencePack: EvidencePackT | undefined;
+  const savedEvidencePack = await readJsonArtifact(oldDir, 'inputs/evidence-pack.json');
+  if (savedEvidencePack) {
+    const parsed = EvidencePack.safeParse(savedEvidencePack);
+    if (!parsed.success) {
+      process.stderr.write(`cannot validate inputs/evidence-pack.json for ${oldId} — nothing to resume.\n`);
+      return 1;
+    }
+    evidencePack = parsed.data;
+  }
 
   const replay = await buildReplayCache(oldDir);
   if (replay.size === 0) {
@@ -88,6 +99,7 @@ export async function resumeCommand(runArg: string | undefined, opts: { root?: s
     replay,
     resumedFrom: oldId,
     providerModels: cfg.models,
+    evidencePack,
   });
 
   if (outcome.ok) {

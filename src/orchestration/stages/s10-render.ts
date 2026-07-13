@@ -4,7 +4,7 @@
 // the judge — §624). A truly missing required field is a template bug (fail loudly); degraded-but-valid
 // states (S8 skipped, items UNVERIFIED, empty consensus) render normally. User-facing → DISPLAY_NAME.
 
-import type { ActionPlanArtifact, IntentContract, JudgeReport, Recommendation, VerificationSet } from '../../schemas/index.js';
+import type { ActionPlanArtifact, ClaimVerificationSet, IntentContract, JudgeReport, Recommendation, VerificationSet } from '../../schemas/index.js';
 import type { ProviderId } from '../../providers/types.js';
 import { DISPLAY_NAME } from '../../providers/types.js';
 import type { RunCtx } from '../context.js';
@@ -88,7 +88,7 @@ export interface S10Args {
   contract: IntentContract;
   seats: SeatOutput[];
   graph: DecisionGraph;
-  verifications: VerificationSet;
+  verifications: ClaimVerificationSet | VerificationSet;
   judgeReport: JudgeReport;
   actionPlan?: ActionPlanArtifact;
   rubric?: RubricItem[];
@@ -266,14 +266,26 @@ export function buildDecisionReport(ctx: RunCtx, args: S10Args): DecisionReportJ
   const criticalWarning = graph.claims.find(
     (claim) => claim.load_bearing && claim.if_false === 'STOP' && claim.evidence_state !== 'SUPPORTED')?.proposition ?? null;
 
-  const verificationResults = verifications.verifications.map((v) => ({
-    claimId: v.target_id,
-    claim: claimById.get(v.target_id)?.proposition ?? v.target_id,
-    method: 'independent verifier model',
-    verdict: (v.verdict === 'CONFIRM' ? 'CONFIRMED' : v.verdict === 'REFUTE' ? 'REFUTED' : 'UNCERTAIN') as 'CONFIRMED' | 'REFUTED' | 'UNCERTAIN',
-    evidence: v.evidence,
-    note: v.note,
-  }));
+  const verificationResults = verifications.verifications.map((v) => {
+    if ('claim_id' in v) {
+      return {
+        claimId: v.claim_id,
+        claim: claimById.get(v.claim_id)?.proposition ?? v.claim_id,
+        method: 'independent verifier model',
+        verdict: (v.status === 'VERIFIED' ? 'CONFIRMED' : v.status === 'CONTRADICTED' ? 'REFUTED' : 'UNCERTAIN') as 'CONFIRMED' | 'REFUTED' | 'UNCERTAIN',
+        evidence: v.evidence_ids.length ? v.evidence_ids.join(', ') : v.missing_evidence.join('; '),
+        note: v.reasoning,
+      };
+    }
+    return {
+      claimId: v.target_id,
+      claim: claimById.get(v.target_id)?.proposition ?? v.target_id,
+      method: 'independent verifier model',
+      verdict: (v.verdict === 'CONFIRM' ? 'CONFIRMED' : v.verdict === 'REFUTE' ? 'REFUTED' : 'UNCERTAIN') as 'CONFIRMED' | 'REFUTED' | 'UNCERTAIN',
+      evidence: v.evidence,
+      note: v.note,
+    };
+  });
 
   const byProvider: Record<string, number> = {};
   let modelTimeMs = 0;

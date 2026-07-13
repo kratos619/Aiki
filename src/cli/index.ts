@@ -57,10 +57,11 @@ program
   .option('--base <ref>', 'code-review: base git ref to diff from (default: detected default branch)')
   .option('--head <ref>', 'code-review: head git ref to diff to (default HEAD)')
   .option('--diff <file>', 'code-review: review a patch file instead of computing a git diff')
+  .option('--evidence <path>', 'idea-refinement: local source file/directory (stores paths + hashes, not copies)')
   .option('--cheap', 'code-review: Gemini+Codex review, Claude judges only disputes (~⅓ the Opus; experimental)')
   .option('--yes', 'skip the run-cost confirmation prompt')
-  .action(async (workflow: string, input: string | undefined, opts: { budget?: number; base?: string; head?: string; diff?: string; cheap?: boolean; yes?: boolean }) => {
-    process.exit(await runCommand(workflow, input, { budget: opts.budget, base: opts.base, head: opts.head, diff: opts.diff, cheap: opts.cheap, yes: opts.yes }));
+  .action(async (workflow: string, input: string | undefined, opts: { budget?: number; base?: string; head?: string; diff?: string; evidence?: string; cheap?: boolean; yes?: boolean }) => {
+    process.exit(await runCommand(workflow, input, { budget: opts.budget, base: opts.base, head: opts.head, diff: opts.diff, evidence: opts.evidence, cheap: opts.cheap, yes: opts.yes }));
   });
 
 program

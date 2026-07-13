@@ -11,6 +11,7 @@ import { ConfigError, loadLayeredConfig } from '../config/config.js';
 import { computeDiff, detectDefaultBranch, GitError, repoToplevel } from '../orchestration/git.js';
 import { resolveRunsRoot } from '../storage/paths.js';
 import { openCouncilHtml } from '../council/open.js';
+import { buildEvidencePack, type EvidencePack } from '../orchestration/evidence-pack.js';
 
 const WORKFLOWS: WorkflowId[] = ['idea-refinement', 'code-review'];
 
@@ -21,6 +22,7 @@ export interface RunFlags {
   diff?: string; // path to a patch file (alternative to --base/--head)
   cheap?: boolean; // code-review: agy+codex reviewers, claude judge (Opus-thrift; experimental — bench Arm E)
   yes?: boolean; // skip the run-cost confirmation (also skipped when non-interactive)
+  evidence?: string; // idea-refinement: user-scoped local source file/directory
 }
 
 /** Rough provider-call estimate for the run-cost preview (V5). Approximate — the real count varies with
@@ -95,6 +97,7 @@ export async function runCommand(workflow: string, input: string | undefined, op
 
   let text: string;
   let cwd: string | undefined;
+  let evidencePack: EvidencePack | undefined;
   if (workflow === 'code-review') {
     const r = await resolveCodeReview(opts);
     if ('done' in r) return r.done;
@@ -106,6 +109,19 @@ export async function runCommand(workflow: string, input: string | undefined, op
       return 1;
     }
     text = resolved;
+  }
+
+  if (opts.evidence) {
+    if (workflow !== 'idea-refinement') {
+      process.stderr.write('--evidence only applies to idea-refinement.\n');
+      return 1;
+    }
+    try {
+      evidencePack = await buildEvidencePack(opts.evidence);
+    } catch (error) {
+      process.stderr.write(`cannot load evidence pack: ${error instanceof Error ? error.message : String(error)}\n`);
+      return 1;
+    }
   }
 
   // Precedence (§10/T9): --budget flag > config.budget > built-in default. roles/deadline/models are
@@ -148,6 +164,7 @@ export async function runCommand(workflow: string, input: string | undefined, op
     cwd, // code-review: repo root; idea-refinement: undefined → run dir
     runsRoot: await resolveRunsRoot(), // hybrid: repo .aiki when in a repo, else ~/.aiki
     providerModels: cfg.models, // V8: per-provider model → CLI --model
+    evidencePack,
   });
 
   if (outcome.ok) {

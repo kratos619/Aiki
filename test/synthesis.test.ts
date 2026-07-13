@@ -88,21 +88,21 @@ describe('anonymous verification and adjudication prompts', () => {
     const prompt = buildJudgePrompt(
       { task: 'evaluate the fee', task_type: 'idea-refinement', constraints: [], unknowns: [], success_criteria: [] },
       graph,
-      { verifications: [{ target_id: 'G1', verdict: 'CONFIRM', evidence: 'Payroll rule §12 supports the objection.', note: 'Fee base still needs definition.' }] },
+      { verifications: [{ claim_id: 'G1', status: 'VERIFIED', reasoning: 'Payroll rule §12 supports the objection. Fee base still needs definition.', evidence_ids: ['agy/E-P1'], calculation_check: 'NOT_APPLICABLE', missing_evidence: [] }] },
       [{ id: 'R1', label: 'business model', keywords: ['fee'] }],
     );
 
-    expect(prompt).toContain('"verifier_status": "CONFIRM"');
-    expect(prompt).toContain('"verifier_evidence": "Payroll rule §12 supports the objection."');
-    expect(prompt).toContain('"verifier_note": "Fee base still needs definition."');
+    expect(prompt).toContain('"status": "VERIFIED"');
+    expect(prompt).toContain('"reasoning": "Payroll rule §12 supports the objection. Fee base still needs definition."');
+    expect(prompt).toMatch(/"evidence_ids": \[\s+"E1"/);
     expect(prompt).not.toMatch(/agy|codex/);
   });
 
   it('defines verdicts without a forced opposition quota or provider identity', () => {
     const prompt = buildVerifierPrompt(graph);
-    expect(prompt).toContain('CONFIRM = the challenged concern is supported');
-    expect(prompt).toContain('REFUTE = it is not supported');
-    expect(prompt).not.toMatch(/MUST issue|at least one REFUTE|agy|codex/i);
+    expect(prompt).toContain('VERIFIED = the proposition is supported');
+    expect(prompt).toContain('CONTRADICTED = it is refuted');
+    expect(prompt).not.toMatch(/MUST issue|at least one CONTRADICTED|agy|codex/i);
   });
 });
 

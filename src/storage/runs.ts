@@ -14,7 +14,7 @@
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { z } from 'zod';
-import { ActionPlanArtifact, DecisionGraph, DisagreementMap, IdeaRoleOutput, IntentContract, JudgeReport, ReviewMap, RoleOutput, RunBrief, RunMeta, VerificationSet } from '../schemas/index.js';
+import { ActionPlanArtifact, DecisionGraph, DisagreementMap, IdeaRoleOutput, IntentContract, JudgeReport, ReviewMap, RoleOutput, RunBrief, RunMeta, VerificationArtifact } from '../schemas/index.js';
 
 export class OutOfOrderWriteError extends Error {
   constructor(slot: string, ord: number, maxOrd: number) {
@@ -52,7 +52,7 @@ const JSON_SLOTS = {
   // code-review's stage-7 artifact (ord 7, distinct path). A run writes one of {disagreement-map,
   // review-map} depending on its workflow, so the shared ord never collides within a run.
   'review-map': { ord: 7, path: '07-review-map.json', schema: ReviewMap },
-  verifications: { ord: 8, path: '08-verifications.json', schema: VerificationSet },
+  verifications: { ord: 8, path: '08-verifications.json', schema: VerificationArtifact },
   'judge-report': { ord: 9, path: '09-judge-report.json', schema: JudgeReport },
   'action-plan': { ord: 9.5, path: '09b-action-plan.json', schema: ActionPlanArtifact },
   // machine-readable final report (three-level report v4); schema-less: derived output, never re-read by stages

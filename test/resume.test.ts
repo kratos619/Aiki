@@ -86,10 +86,10 @@ function scriptAdapter(id: ProviderId, counter: { n: number }, opts: { judgeFail
       } else if (p.includes('Group anonymous positions')) {
         obj = { groups: [['P1', 'P3'], ['P2', 'P4']] };
       } else if (p.includes('ROLE: Independent verifier')) {
-        obj = { verifications: [{ target_id: 'G2', verdict: 'REFUTE', evidence: 'the format is pinned at probe time', note: '' }] };
+        obj = { verifications: [{ claim_id: 'G2', status: 'CONTRADICTED', reasoning: 'the format is pinned at probe time', evidence_ids: ['E2'], calculation_check: 'NOT_APPLICABLE', missing_evidence: [] }] };
       } else if (p.includes('ROLE: Judge')) {
         obj = {
-          adjudications: [{ id: 'G2', ruling: 'REJECT', reasoning: 'the drift risk is mitigated by the flag probe', evidence_cited: 'S1 probe' }],
+          adjudications: [{ id: 'G2', ruling: 'REJECT', reasoning: 'the drift risk is mitigated by the flag probe', evidence_ids: ['E1'] }],
           verdict: 'Viable as a local orchestration layer; ship behind a provider-probe guard.',
           recommendation: 'PROCEED_WITH_CONDITIONS',
           conditions: ['Proceed only if provider output probing stays stable across versions.'],

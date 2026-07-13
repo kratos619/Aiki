@@ -197,7 +197,7 @@ export const ClaimPosition = z
   })
   .strict();
 
-export const EvidenceCard = z
+const EvidenceCardBase = z
   .object({
     id: z.string().min(1),
     claim_supported: z.string().min(1),
@@ -211,6 +211,46 @@ export const EvidenceCard = z
     freshness: z.enum(['CURRENT', 'DATED', 'UNKNOWN']),
   })
   .strict();
+
+function checkEvidenceCard(card: z.infer<typeof EvidenceCardBase>, ctx: z.RefinementCtx): void {
+  const external = card.source_kind === 'PRIMARY' || card.source_kind === 'SECONDARY';
+  if (external && !card.url && !card.locator) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['locator'], message: `${card.source_kind} evidence requires a URL or locator` });
+  }
+  if (external && card.freshness === 'CURRENT' && !card.accessed_at) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['accessed_at'], message: 'current external evidence requires accessed_at' });
+  }
+  if (card.source_kind === 'MODEL_KNOWLEDGE' && card.freshness === 'CURRENT') {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['freshness'], message: 'model knowledge cannot claim current freshness' });
+  }
+}
+
+export const EvidenceCard = EvidenceCardBase.superRefine(checkEvidenceCard);
+
+export const CalculationInput = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  value: z.number().finite(),
+  unit: z.string().min(1),
+  evidence_ids: z.array(z.string().min(1)).min(1),
+}).strict();
+
+export const CalculationStep = z.object({
+  id: z.string().min(1),
+  operation: z.enum(['ADD', 'SUBTRACT', 'MULTIPLY', 'DIVIDE']),
+  left: z.string().min(1),
+  right: z.string().min(1),
+  result: z.number().finite(),
+  unit: z.string().min(1),
+}).strict();
+
+export const CalculationLedger = z.object({
+  id: z.string().min(1),
+  claim_id: z.string().min(1),
+  inputs: z.array(CalculationInput).min(1).max(12),
+  steps: z.array(CalculationStep).min(1).max(12),
+  result_step: z.string().min(1),
+}).strict();
 
 export const CoverageEntry = z
   .object({
@@ -236,6 +276,7 @@ const IdeaRoleOutputBase = z
     strongest_version: z.string().min(1),
     positions: z.array(ClaimPosition).max(12),
     evidence: z.array(EvidenceCard).max(20),
+    calculations: z.array(CalculationLedger).max(8).default([]),
     coverage: z.array(CoverageEntry).max(18), // 13 core + up to 5 preflight domain dimensions
     decision_questions: z.array(DecisionQuestion).max(8),
   })
@@ -253,6 +294,30 @@ function checkSubmissionRefs(submission: SubmissionRefs, ctx: z.RefinementCtx): 
   for (const [index, evidence] of submission.evidence.entries()) {
     if (evidenceIds.has(evidence.id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['evidence', index, 'id'], message: `duplicate evidence id: ${evidence.id}` });
     evidenceIds.add(evidence.id);
+  }
+  const calculationIds = new Set<string>();
+  for (const [index, calculation] of submission.calculations.entries()) {
+    if (calculationIds.has(calculation.id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['calculations', index, 'id'], message: `duplicate calculation id: ${calculation.id}` });
+    calculationIds.add(calculation.id);
+    if (!positionIds.has(calculation.claim_id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['calculations', index, 'claim_id'], message: `unknown position id: ${calculation.claim_id}` });
+    const refs = new Set(calculation.inputs.map((input) => input.id));
+    const inputIds = new Set<string>();
+    const stepIds = new Set<string>();
+    for (const [inputIndex, input] of calculation.inputs.entries()) {
+      if (inputIds.has(input.id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['calculations', index, 'inputs', inputIndex, 'id'], message: `duplicate calculation input: ${input.id}` });
+      inputIds.add(input.id);
+      for (const evidenceId of input.evidence_ids) {
+        if (!evidenceIds.has(evidenceId)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['calculations', index, 'inputs', inputIndex, 'evidence_ids'], message: `unknown evidence id: ${evidenceId}` });
+      }
+    }
+    for (const [stepIndex, step] of calculation.steps.entries()) {
+      if (!refs.has(step.left)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['calculations', index, 'steps', stepIndex, 'left'], message: `unknown or forward calculation reference: ${step.left}` });
+      if (!refs.has(step.right)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['calculations', index, 'steps', stepIndex, 'right'], message: `unknown or forward calculation reference: ${step.right}` });
+      if (refs.has(step.id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['calculations', index, 'steps', stepIndex, 'id'], message: `duplicate calculation reference: ${step.id}` });
+      refs.add(step.id);
+      stepIds.add(step.id);
+    }
+    if (!stepIds.has(calculation.result_step)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['calculations', index, 'result_step'], message: `unknown result step: ${calculation.result_step}` });
   }
   for (const [index, position] of submission.positions.entries()) {
     for (const id of position.evidence_ids) {
@@ -358,7 +423,7 @@ export function salvageIdeaRoleOutputModel(input: unknown): unknown {
   if (!Array.isArray(output.evidence) || !Array.isArray(output.positions)) return canonical;
 
   const evidence = output.evidence
-    .map((item) => EvidenceCard.strip().safeParse(item))
+    .map((item) => EvidenceCardBase.strip().superRefine(checkEvidenceCard).safeParse(item))
     .flatMap((result) => (result.success ? [result.data] : []));
   const keptEvidence = new Set(evidence.map((card) => card.id));
 
@@ -429,11 +494,25 @@ const GraphPosition = ClaimPosition.extend({
   source_id: z.string().min(1),
 });
 
-const GraphEvidence = EvidenceCard.extend({
+const GraphEvidence = EvidenceCardBase.extend({
   id: z.string().min(1),
   provider: ProviderIdSchema,
   source_id: z.string().min(1),
+}).superRefine(checkEvidenceCard);
+
+const GraphCalculation = CalculationLedger.extend({
+  id: z.string().min(1),
+  claim_id: z.string().min(1),
+  provider: ProviderIdSchema,
+  source_id: z.string().min(1),
 });
+
+export const CalculationCheck = z.object({
+  calculation_id: z.string().min(1),
+  claim_id: z.string().min(1),
+  status: z.enum(['PASS', 'FAIL']),
+  issues: z.array(z.string()),
+}).strict();
 
 export const DecisionClaim = z.object({
   id: z.string().min(1),
@@ -449,6 +528,8 @@ export const DecisionClaim = z.object({
 export const DecisionGraph = z.object({
   positions: z.array(GraphPosition),
   evidence: z.array(GraphEvidence),
+  calculations: z.array(GraphCalculation).default([]),
+  calculation_checks: z.array(CalculationCheck).default([]),
   claims: z.array(DecisionClaim),
   edges: z.array(z.object({
     from: z.string().min(1),
@@ -482,6 +563,22 @@ export const VerificationSet = z
     all_confirmed_justification: z.string().optional(),
   })
   .strict();
+
+export const ClaimVerification = z.object({
+  claim_id: z.string().min(1),
+  status: z.enum(['VERIFIED', 'PARTIAL', 'CONTRADICTED', 'UNVERIFIABLE']),
+  reasoning: z.string().min(1),
+  evidence_ids: z.array(z.string().min(1)),
+  calculation_check: z.enum(['PASS', 'FAIL', 'NOT_APPLICABLE']).optional(),
+  missing_evidence: z.array(z.string().min(1)),
+}).strict();
+
+export const ClaimVerificationSet = z.object({
+  verifications: z.array(ClaimVerification),
+}).strict();
+
+/** Shared artifact slot: code review keeps the v1 cross-exam shape; idea refinement uses R4 claims. */
+export const VerificationArtifact = z.union([VerificationSet, ClaimVerificationSet]);
 
 // ── S7: DisagreementMap (§7, §9) ────────────────────────────────────────────
 //
@@ -566,9 +663,11 @@ const Adjudication = z
     id: z.string().min(1), // disputed item id
     ruling: z.enum(['UPHOLD', 'REJECT', 'UNRESOLVED']),
     reasoning: z.string().min(1), // ≤3 sentences
-    evidence_cited: z.string().min(1),
+    evidence_cited: z.string().min(1).optional(), // code-review / legacy idea artifacts
+    evidence_ids: z.array(z.string().min(1)).optional(), // R4 idea chair citations, validated by reference
   })
-  .strict();
+  .strict()
+  .refine((item) => item.evidence_cited || item.evidence_ids?.length, { message: 'adjudication requires evidence' });
 
 export const Recommendation = z.enum(['PROCEED', 'PROCEED_WITH_CONDITIONS', 'PIVOT', 'STOP']);
 
@@ -697,6 +796,10 @@ export type IdeaRoleOutputModel = z.infer<typeof IdeaRoleOutputModel>;
 export type LegacyIdeaRoleOutput = z.infer<typeof LegacyIdeaRoleOutput>;
 export type ClaimPosition = z.infer<typeof ClaimPosition>;
 export type EvidenceCard = z.infer<typeof EvidenceCard>;
+export type CalculationInput = z.infer<typeof CalculationInput>;
+export type CalculationStep = z.infer<typeof CalculationStep>;
+export type CalculationLedger = z.infer<typeof CalculationLedger>;
+export type CalculationCheck = z.infer<typeof CalculationCheck>;
 export type CoverageEntry = z.infer<typeof CoverageEntry>;
 export type DecisionQuestion = z.infer<typeof DecisionQuestion>;
 export type CodeReviewRoleOutput = z.infer<typeof CodeReviewRoleOutput>;
@@ -711,6 +814,8 @@ export type DecisionClaim = z.infer<typeof DecisionClaim>;
 export type DecisionGraph = z.infer<typeof DecisionGraph>;
 export type Verification = z.infer<typeof Verification>;
 export type VerificationSet = z.infer<typeof VerificationSet>;
+export type ClaimVerification = z.infer<typeof ClaimVerification>;
+export type ClaimVerificationSet = z.infer<typeof ClaimVerificationSet>;
 export type Claim = z.infer<typeof Claim>;
 export type Contradiction = z.infer<typeof Contradiction>;
 export type DisagreementMap = z.infer<typeof DisagreementMap>;
