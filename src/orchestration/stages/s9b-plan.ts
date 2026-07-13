@@ -201,7 +201,7 @@ export async function s9bPlan(
     return plan;
   };
 
-  if (ctx.budget.limit - ctx.budget.used < 2) return fallback('plan_skipped');
+  if (ctx.budget.limit - ctx.budget.used < 1) return fallback('plan_skipped');
 
   const prompt = buildActionPlannerPrompt({
     task: contract.task,
@@ -213,7 +213,9 @@ export async function s9bPlan(
   }, loadSkill('idea-refinement', 'planner'));
 
   try {
-    const first = normalizePlannerOutput(await jsonCall(ctx, ctx.handle(ctx.roles.judge), 'S9b-plan', prompt, PlannerOutput));
+    const first = normalizePlannerOutput(await jsonCall(ctx, ctx.handle(ctx.roles.judge), 'S9b-plan', prompt, PlannerOutput, {
+      repair: ctx.budget.limit - ctx.budget.used >= 2,
+    }));
     const anchored = anchoredActionPlan(first, anchors);
     if (anchored) {
       await ctx.writer.writeJson('action-plan', anchored);
@@ -226,7 +228,7 @@ export async function s9bPlan(
       `Valid blind spots: ${anchors.blindSpots.join(' | ') || '(none)'}\n` +
       `Valid open questions: ${anchors.openQuestions.join(' | ') || '(none)'}\n` +
       `Output ONLY corrected JSON with every action anchored to one of those values.`;
-    const repaired = normalizePlannerOutput(await jsonCall(ctx, ctx.handle(ctx.roles.judge), 'S9b-anchor-repair', repair, PlannerOutput));
+    const repaired = normalizePlannerOutput(await jsonCall(ctx, ctx.handle(ctx.roles.judge), 'S9b-anchor-repair', repair, PlannerOutput, { repair: false }));
     const repairedAnchored = anchoredActionPlan(repaired, anchors);
     if (repairedAnchored) {
       await ctx.writer.writeJson('action-plan', repairedAnchored);

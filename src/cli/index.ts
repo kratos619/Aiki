@@ -53,15 +53,16 @@ program
   .description('Headless run of a workflow (§5). idea-refinement: text/file. code-review: git diff or --diff.')
   .argument('<workflow>', 'workflow id: idea-refinement | code-review')
   .argument('[input]', 'idea-refinement: inline text or a path to a .md file')
-  .option('--budget <n>', 'max provider calls for this run (default 12)', (v) => parseInt(v, 10))
+  .option('--budget <n>', 'max provider calls for this run (default is mode-aware)', (v) => parseInt(v, 10))
   .option('--base <ref>', 'code-review: base git ref to diff from (default: detected default branch)')
   .option('--head <ref>', 'code-review: head git ref to diff to (default HEAD)')
   .option('--diff <file>', 'code-review: review a patch file instead of computing a git diff')
   .option('--evidence <path>', 'idea-refinement: local source file/directory (stores paths + hashes, not copies)')
+  .option('--mode <mode>', 'idea-refinement: quick | council | research (default council)')
   .option('--cheap', 'code-review: Gemini+Codex review, Claude judges only disputes (~⅓ the Opus; experimental)')
   .option('--yes', 'skip the run-cost confirmation prompt')
-  .action(async (workflow: string, input: string | undefined, opts: { budget?: number; base?: string; head?: string; diff?: string; evidence?: string; cheap?: boolean; yes?: boolean }) => {
-    process.exit(await runCommand(workflow, input, { budget: opts.budget, base: opts.base, head: opts.head, diff: opts.diff, evidence: opts.evidence, cheap: opts.cheap, yes: opts.yes }));
+  .action(async (workflow: string, input: string | undefined, opts: { budget?: number; base?: string; head?: string; diff?: string; evidence?: string; mode?: string; cheap?: boolean; yes?: boolean }) => {
+    process.exit(await runCommand(workflow, input, { budget: opts.budget, base: opts.base, head: opts.head, diff: opts.diff, evidence: opts.evidence, mode: opts.mode, cheap: opts.cheap, yes: opts.yes }));
   });
 
 program

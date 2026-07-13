@@ -12,7 +12,6 @@ import { DISPLAY_NAME, PROVIDER_IDS, type ProviderId } from '../providers/types.
 import { preflightLine, runDoctorChecks, type DoctorReport } from '../cli/doctor.js';
 import {
   RunCtx,
-  DEFAULT_BUDGET,
   makeRunId,
   resolveRoles,
   setupProviders,
@@ -33,7 +32,9 @@ import { CR_STAGES, runCodeReview } from '../workflows/code-review.js';
 import { computeDiff, computeWorkingTreeDiff, detectRepoStatus, type RepoStatus } from '../orchestration/git.js';
 import { loadCouncilView, type CouncilView } from '../council/view.js';
 import { openCouncilHtml } from '../council/open.js';
-import type { GrillAnswer, RunBriefDraft } from '../schemas/index.js';
+import type { GrillAnswer, IdeaMode, RunBriefDraft, RunMeta } from '../schemas/index.js';
+import { readJsonArtifact } from '../storage/runs-read.js';
+import { defaultBudgetFor } from '../orchestration/modes.js';
 import { GLYPH, displayNames, elapsedLabel, initTimeline, markEnd, markStart, progressBar, runningPhrase, totalElapsed, type StageRow } from './timeline.js';
 import { formatCompletion, formatError, type CompletionView, type ErrorView } from './format.js';
 import { COMMANDS, PRODUCT_LINE, filterCommands, parseCommand, routeInput, scopeRedirect, suggestCommand, type ParsedCommand, type QuickAction } from './smart-entry.js';
@@ -230,7 +231,7 @@ export function App(props: AppProps): React.JSX.Element {
     if (phase === 'finished') exit();
   });
 
-  const startRun = (wf: WorkflowId, text: string, cwd: string | null, runner: WorkflowRunner, stages: typeof IDEA_STAGES, replay?: Map<string, string>): void => {
+  const startRun = (wf: WorkflowId, text: string, cwd: string | null, runner: WorkflowRunner, stages: typeof IDEA_STAGES, replay?: Map<string, string>, mode?: IdeaMode): void => {
     const trimmed = text.trim();
     if (!trimmed) return;
     setPanel(null);
@@ -275,7 +276,7 @@ export function App(props: AppProps): React.JSX.Element {
           setPhase('clarify');
         }),
     };
-    const ctx = new RunCtx({ runId, workflow: wf, handles, roles: rs, writer, cwd: cwd ?? writer.dir, budget: budgetOverride, signal: controller.signal, events, replay });
+    const ctx = new RunCtx({ runId, workflow: wf, mode, handles, roles: rs, writer, cwd: cwd ?? writer.dir, budget: budgetOverride, signal: controller.signal, events, replay });
     ctxRef.current = ctx;
     setWorkflow(wf);
     setRows(initTimeline(stages, rs, available));
@@ -370,7 +371,8 @@ export function App(props: AppProps): React.JSX.Element {
     const replay = await buildReplayCache(oldDir);
     if (replay.size === 0) return void setRouterMessage(`no completed calls for ${sess.id} — start fresh`);
     const [runner, stages] = wf === 'code-review' ? ([runCodeReview, CR_STAGES] as const) : ([runIdeaRefinement, IDEA_STAGES] as const);
-    startRun(wf, input, wf === 'code-review' ? sess.cwd : null, runner, stages, replay);
+    const meta = await readJsonArtifact<RunMeta>(oldDir, 'meta.json');
+    startRun(wf, input, wf === 'code-review' ? sess.cwd : null, runner, stages, replay, meta?.mode);
   };
 
   const runCommand = async (p: ParsedCommand): Promise<void> => {
@@ -534,7 +536,7 @@ export function App(props: AppProps): React.JSX.Element {
             <Box flexDirection="column" borderStyle="round" paddingX={1}>
               <Text>Run the idea council on:</Text>
               <Text color="cyan">  “{pendingIdea.length > 100 ? `${pendingIdea.slice(0, 97)}…` : pendingIdea}”</Text>
-              <Text dimColor>  12-stage pipeline · up to {budgetOverride ?? DEFAULT_BUDGET} model calls · Ctrl+C aborts mid-run</Text>
+              <Text dimColor>  10-stage pipeline · up to {budgetOverride ?? defaultBudgetFor('idea-refinement', 'council')} model calls · Ctrl+C aborts mid-run</Text>
               <Text>
                 <Text color="green">enter</Text> run  ·  <Text color="yellow">esc</Text> cancel
               </Text>

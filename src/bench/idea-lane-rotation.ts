@@ -8,6 +8,7 @@ import { executeRun } from '../orchestration/engine.js';
 import { DecisionGraph } from '../schemas/index.js';
 import { RunWriter } from '../storage/runs.js';
 import { runIdeaRefinement } from '../workflows/idea-refinement.js';
+import { IDEA_MODE_PLANS } from '../orchestration/modes.js';
 import { DecisionInsightAdjudication, IdeaV3CaseManifest, scoreDecisionInsights } from './scoring/decision-insights.js';
 
 export type LaneRotation = 'agy-market' | 'codex-market';
@@ -122,7 +123,7 @@ export async function planIdeaLaneBench(opts: { root?: string; handles?: Provide
   return {
     cases: cases.map((item) => item.id),
     runs,
-    estimatedCalls: runs.length * 13,
+    estimatedCalls: runs.length * IDEA_MODE_PLANS.council.maxCalls,
     resumedFrom: prior.length ? path ?? undefined : undefined,
   };
 }

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { compileDecisionGraph, selectEscalations } from '../src/orchestration/decision-graph.js';
 import { adaptIdeaOutput } from '../src/orchestration/legacy-idea-adapter.js';
-import { buildGroupingInput } from '../src/orchestration/stages/s7-decision-graph.js';
+import { deterministicClaimGroups } from '../src/orchestration/stages/s7-decision-graph.js';
 
 const position = (local_id: string, proposition: string, stance: 'SUPPORT' | 'OPPOSE') => ({
   local_id,
@@ -201,16 +201,16 @@ describe('adaptIdeaOutput', () => {
   });
 });
 
-describe('semantic grouping boundary', () => {
-  it('sends anonymous aliases rather than provider identities', () => {
-    const { prompt, refs } = buildGroupingInput([
+describe('deterministic grouping boundary', () => {
+  it('groups exact cross-provider propositions but conservatively leaves a loose paraphrase separate', () => {
+    expect(deterministicClaimGroups([
+      { provider: 'agy', submission: submission('The fee covers loaded costs.', 'SUPPORT') },
+      { provider: 'codex', submission: submission('The fee covers loaded costs.', 'OPPOSE') },
+    ])).toEqual([['agy/P1', 'codex/P1']]);
+
+    expect(deterministicClaimGroups([
       { provider: 'agy', submission: submission('The fee covers loaded costs.', 'SUPPORT') },
       { provider: 'codex', submission: submission('Loaded costs exceed the fee.', 'OPPOSE') },
-    ]);
-
-    expect(prompt).not.toContain('agy');
-    expect(prompt).not.toContain('codex');
-    expect(prompt).toContain('"id": "P1"');
-    expect([...refs.values()]).toEqual(['agy/P1', 'codex/P1']);
+    ])).toEqual([]);
   });
 });

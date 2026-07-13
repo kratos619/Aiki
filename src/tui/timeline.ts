@@ -77,15 +77,13 @@ export const displayNames = (ps: ProviderId[]): string => ps.map((p) => DISPLAY_
 
 /** Stage-flavored status phrases, rotated every 4s so long stages feel alive (not stuck). */
 const PHRASES: Record<string, string[]> = {
-  S0: ['grilling the intent', 'sharpening the run brief'],
-  S1: ['pinning down what you actually asked', 'writing the task contract'],
-  S2: ['checking every model read it the same way', 'guarding against a misread'],
-  S3: ["writing each seat's brief", 'tailoring the role prompts'],
+  S0: ['comparing two readings of your decision', 'sharpening one decision contract'],
   S4: ['council working in separate rooms', 'independent takes incoming'],
   S5: ['checking nobody drifted off-task', 'comparing echoes against the contract'],
   S6: ['boiling the output down to claims', 'extracting the claims'],
   S7: ['mapping where they disagree', 'drawing the disagreement map'],
   S8: ['cross-examining the claims', 'stress-testing the evidence'],
+  S8b: ['rebutting only what could flip the verdict', 'testing the decisive conflict'],
   S9: ['the judge is deliberating', 'weighing evidence over confidence'],
   S9b: ['planning decisive validation', 'ordering the next tests'],
   S10: ['writing the report', 'assembling the decision brief'],

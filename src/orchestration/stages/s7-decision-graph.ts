@@ -1,12 +1,13 @@
-// S7 — semantic grouping plus pure decision-graph compilation. The grouping call sees anonymous
-// aliases and may only return references; original analyst text is never rewritten.
+// S7 — deterministic conservative grouping plus pure decision-graph compilation. R6 removes the
+// model-authored grouping call so graph audit spends no provider call on an obvious run.
 
 import type { DecisionGraph } from '../decision-graph.js';
 import { compileDecisionGraph, coverageHoleQueue, positionId, type CoverageHole } from '../decision-graph.js';
-import { ClaimGroups, IdeaRoleOutputModel, type IdeaRoleOutput } from '../../schemas/index.js';
+import { IdeaRoleOutputModel, type IdeaRoleOutput } from '../../schemas/index.js';
 import { isFatal, type RunCtx } from '../context.js';
 import { jsonCall } from '../jsonStage.js';
 import type { PositionSet } from './s6-positions.js';
+import { overlapCoefficient, tokenize } from '../cluster.js';
 
 export interface RubricItem {
   id: string;
@@ -14,21 +15,7 @@ export interface RubricItem {
   keywords: string[];
 }
 
-const S7_GROUP_PROMPT = `Group anonymous positions that address the SAME decision-critical proposition.
-Wording may differ or express opposite claims; group positions when their stances can be directly compared.
-Do not group items that are merely related or share a topic.
-
-Output ONLY JSON: {"groups": [["<id>","<id>", ...], ...]}
-- Each group contains 2+ IDs.
-- Use ONLY the anonymous IDs shown below. Never rewrite text.
-- If nothing matches, output {"groups": []}.
-
-POSITIONS: {{POSITIONS_JSON}}`;
-
-interface GroupingInput {
-  prompt: string;
-  refs: Map<string, string>;
-}
+const GROUP_SIMILARITY = 0.8;
 
 export function buildCoverageFillPrompt(task: string, holes: CoverageHole[]): string {
   return `TARGETED COVERAGE FILL. Answer only the missing dimensions below; do not repeat the full analysis.
@@ -50,7 +37,7 @@ async function fillCoverage(
   task: string,
 ): Promise<PositionSet> {
   const holes = coverageHoleQueue(submissions, rubric);
-  if (holes.length === 0) return submissions;
+  if (holes.length === 0 || ctx.optionalCallsRemaining() === 0) return submissions;
   const provider = ctx.roles.s4[0] ?? ctx.roles.analyst;
   try {
     const model = await jsonCall(ctx, ctx.handle(provider), 'S7-coverage-fill', buildCoverageFillPrompt(task, holes), IdeaRoleOutputModel, { repair: false });
@@ -63,39 +50,34 @@ async function fillCoverage(
   }
 }
 
-/** Build the by-reference grouping prompt without provider names or provider-derived IDs. */
-export function buildGroupingInput(submissions: PositionSet): GroupingInput {
-  const refs = new Map<string, string>();
-  const anonymous = submissions.flatMap(({ provider, source_id = provider, submission }) =>
-    submission.positions.map((position) => {
-      const alias = `P${refs.size + 1}`;
-      refs.set(alias, positionId(provider, position.local_id, source_id));
-      return { id: alias, proposition: position.proposition, stance: position.stance };
-    }));
-  return {
-    prompt: S7_GROUP_PROMPT.replace('{{POSITIONS_JSON}}', JSON.stringify(anonymous, null, 2)),
-    refs,
-  };
-}
-
-async function semanticGroups(ctx: RunCtx, submissions: PositionSet): Promise<string[][]> {
-  const { prompt, refs } = buildGroupingInput(submissions);
-  if (refs.size < 2) return [];
-  try {
-    const result = await jsonCall(ctx, ctx.handle(ctx.roles.judge), 'S7-group', prompt, ClaimGroups);
-    const used = new Set<string>();
-    const groups: string[][] = [];
-    for (const group of result.groups) {
-      if (group.length >= 2 && group.every((alias) => refs.has(alias) && !used.has(alias))) {
-        group.forEach((alias) => used.add(alias));
-        groups.push(group.map((alias) => refs.get(alias)!));
-      }
+/** Conservative exact/high-overlap grouping. False negatives stay separate; false merges are worse. */
+export function deterministicClaimGroups(submissions: PositionSet): string[][] {
+  const positions = submissions.flatMap(({ provider, source_id = provider, submission }) =>
+    submission.positions.map((position) => ({
+      id: positionId(provider, position.local_id, source_id),
+      provider,
+      dimension: position.dimension_id,
+      proposition: position.proposition.trim().toLowerCase().replace(/[^a-z0-9]+/g, ' '),
+      tokens: tokenize(position.proposition),
+    })));
+  const used = new Set<string>();
+  const groups: string[][] = [];
+  for (const first of positions) {
+    if (used.has(first.id)) continue;
+    const group = [first];
+    for (const candidate of positions) {
+      if (used.has(candidate.id) || candidate.id === first.id) continue;
+      if (candidate.provider === first.provider || candidate.dimension !== first.dimension) continue;
+      const same = candidate.proposition === first.proposition
+        || overlapCoefficient(candidate.tokens, first.tokens) >= GROUP_SIMILARITY;
+      if (same && !group.some((item) => item.provider === candidate.provider)) group.push(candidate);
     }
-    return groups;
-  } catch (error) {
-    if (isFatal(error)) throw error;
-    return [];
+    if (group.length >= 2) {
+      group.forEach((item) => used.add(item.id));
+      groups.push(group.map((item) => item.id));
+    }
   }
+  return groups;
 }
 
 export async function s7DecisionGraph(
@@ -105,7 +87,7 @@ export async function s7DecisionGraph(
   task = '',
 ): Promise<DecisionGraph> {
   const completed = await fillCoverage(ctx, submissions, rubric, task);
-  const groups = await semanticGroups(ctx, completed);
+  const groups = deterministicClaimGroups(completed);
   const graph = compileDecisionGraph(completed, rubric, groups);
   await ctx.writer.writeJson('decision-graph', graph);
   return graph;

@@ -35,6 +35,7 @@ export async function s5Drift(
   ctx: RunCtx,
   contract: IntentContract,
   seats: SeatOutput[],
+  minSeats = 2,
 ): Promise<{ report: DriftReport; kept: SeatOutput[] }> {
   const taskTokens = tokenize(contract.task);
   const entries: DriftEntry[] = [];
@@ -58,8 +59,8 @@ export async function s5Drift(
   const report: DriftReport = { entries, excluded };
   await ctx.writer.writeJson('drift-report', report);
 
-  if (kept.length < 2) {
-    throw new StageError('S5', 'QUORUM', `drift exclusion left ${kept.length} on-task output(s); need ≥2`);
+  if (kept.length < minSeats) {
+    throw new StageError('S5', 'QUORUM', `drift exclusion left ${kept.length} on-task output(s); need ≥${minSeats}`);
   }
   return { report, kept };
 }

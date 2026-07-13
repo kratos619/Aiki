@@ -12,6 +12,8 @@ import { computeDiff, detectDefaultBranch, GitError, repoToplevel } from '../orc
 import { resolveRunsRoot } from '../storage/paths.js';
 import { openCouncilHtml } from '../council/open.js';
 import { buildEvidencePack, type EvidencePack } from '../orchestration/evidence-pack.js';
+import { IdeaModeSchema, type IdeaMode } from '../schemas/index.js';
+import { defaultBudgetFor, IDEA_MODE_PLANS } from '../orchestration/modes.js';
 
 const WORKFLOWS: WorkflowId[] = ['idea-refinement', 'code-review'];
 
@@ -23,13 +25,28 @@ export interface RunFlags {
   cheap?: boolean; // code-review: agy+codex reviewers, claude judge (Opus-thrift; experimental — bench Arm E)
   yes?: boolean; // skip the run-cost confirmation (also skipped when non-interactive)
   evidence?: string; // idea-refinement: user-scoped local source file/directory
+  mode?: string; // idea-refinement: quick | council | research
 }
 
 /** Rough provider-call estimate for the run-cost preview (V5). Approximate — the real count varies with
  *  §14 repairs, cross-exam skips, and quorum. `opus` = the Claude/Opus subset (the metered-cost driver). */
-export function estimateRun(workflow: WorkflowId, opts: { cheap?: boolean } = {}): { calls: number; opus: number } {
+export interface RunEstimate {
+  calls: number;
+  opus: number;
+  minCalls?: number;
+  reserved?: number;
+}
+
+export function estimateRun(workflow: WorkflowId, opts: { cheap?: boolean; mode?: IdeaMode } = {}): RunEstimate {
   if (workflow === 'code-review') return { calls: 5, opus: opts.cheap ? 1 : 2 };
-  return { calls: 13, opus: 4 }; // idea-refinement maximum includes one targeted coverage-fill call
+  const mode = opts.mode ?? 'council';
+  const plan = IDEA_MODE_PLANS[mode];
+  return {
+    calls: plan.maxCalls,
+    opus: mode === 'quick' ? 1 : 2,
+    minCalls: mode === 'research' ? 8 : plan.baseCalls,
+    reserved: plan.reservedCalls,
+  };
 }
 
 /** Thin y/N prompt (default yes). Only used on an interactive TTY. */
@@ -95,6 +112,19 @@ export async function runCommand(workflow: string, input: string | undefined, op
     return 1;
   }
 
+  let mode: IdeaMode | undefined;
+  if (workflow === 'idea-refinement') {
+    const parsed = IdeaModeSchema.safeParse(opts.mode ?? 'council');
+    if (!parsed.success) {
+      process.stderr.write(`unknown idea mode "${opts.mode}". Available: quick, council, research\n`);
+      return 1;
+    }
+    mode = parsed.data;
+  } else if (opts.mode) {
+    process.stderr.write('--mode only applies to idea-refinement.\n');
+    return 1;
+  }
+
   let text: string;
   let cwd: string | undefined;
   let evidencePack: EvidencePack | undefined;
@@ -146,8 +176,12 @@ export async function runCommand(workflow: string, input: string | undefined, op
   }
 
   // Run-cost preview (V5): show the estimate; confirm interactively unless --yes or non-interactive.
-  const est = estimateRun(workflow as WorkflowId, { cheap: opts.cheap });
-  const note = `  ≈${est.calls} provider call(s), ~${est.opus} on Claude/Opus (the metered part).`;
+  const est = estimateRun(workflow as WorkflowId, { cheap: opts.cheap, mode });
+  const callEstimate = est.minCalls !== undefined && est.minCalls !== est.calls ? `${est.minCalls}–${est.calls}` : `${est.calls}`;
+  const resolvedBudget = opts.budget ?? cfg.budget ?? defaultBudgetFor(workflow as WorkflowId, mode);
+  const reservation = est.reserved ? `; ${est.reserved} call(s) reserved for chair + planner` : '';
+  const modeLabel = mode ? ` in ${mode} mode` : '';
+  const note = `  ≈${callEstimate} provider call(s)${modeLabel}, ~${est.opus} on Claude/Opus; budget ${resolvedBudget}${reservation}.`;
   if (!opts.yes && process.stdin.isTTY && process.stdout.isTTY) {
     if (!(await confirm(`${note}\n  Continue? [Y/n] `))) {
       process.stdout.write('  cancelled.\n');
@@ -158,7 +192,8 @@ export async function runCommand(workflow: string, input: string | undefined, op
   }
 
   const outcome = await runEngine(workflow as WorkflowId, text, {
-    budget: opts.budget ?? cfg.budget,
+    mode,
+    budget: resolvedBudget,
     deadlineMs: cfg.deadlineMs,
     roleOverrides,
     cwd, // code-review: repo root; idea-refinement: undefined → run dir

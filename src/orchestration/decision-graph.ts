@@ -7,6 +7,7 @@ import type {
   DecisionQuestion as DecisionQuestionT,
   EvidenceCard as EvidenceCardT,
   IdeaRoleOutput,
+  ClaimVerificationSet,
 } from '../schemas/index.js';
 import { evaluateCalculation } from './calculations.js';
 
@@ -38,7 +39,7 @@ export type Sensitivity = DecisionClaim['sensitivity'];
 export interface Escalation {
   claim_id: string;
   reason: string;
-  kind: 'DISAGREEMENT' | 'INDEPENDENT_CHALLENGE';
+  kind: 'DISAGREEMENT' | 'EVIDENCE_CONFLICT' | 'INDEPENDENT_CHALLENGE' | 'EVIDENCE_HOLE';
 }
 
 export interface CoverageHole {
@@ -230,15 +231,79 @@ export function compileDecisionGraph(
   };
 }
 
-/** Select only real disputes and load-bearing one-provider claims for independent challenge. */
+function decisionCritical(claim: DecisionClaim): boolean {
+  return claim.if_false !== 'MINOR' && claim.sensitivity !== 'LOW';
+}
+
+/** Select graph nodes that warrant independent verification, ordered by decision value. */
 export function selectEscalations(graph: DecisionGraph, limits: { max: number }): Escalation[] {
-  return graph.claims.flatMap((claim): Escalation[] => {
-    if (claim.state === 'DISAGREEMENT') {
-      return [{ claim_id: claim.id, reason: 'opposing provider stances', kind: 'DISAGREEMENT' }];
+  const selected: Escalation[] = [];
+  const seen = new Set<string>();
+  const add = (claim: DecisionClaim, reason: string, kind: Escalation['kind']) => {
+    if (seen.has(claim.id) || selected.length >= limits.max) return;
+    seen.add(claim.id);
+    selected.push({ claim_id: claim.id, reason, kind });
+  };
+
+  for (const claim of graph.claims) {
+    if (claim.state === 'DISAGREEMENT' && decisionCritical(claim)) {
+      add(claim, 'opposing provider stances', 'DISAGREEMENT');
     }
-    if (claim.state === 'UNIQUE' && claim.load_bearing) {
-      return [{ claim_id: claim.id, reason: 'load-bearing unique claim', kind: 'INDEPENDENT_CHALLENGE' }];
+  }
+  for (const claim of graph.claims) {
+    if (claim.load_bearing && decisionCritical(claim) && claim.evidence_state === 'CONFLICTED') {
+      add(claim, 'conflicting evidence on a load-bearing claim', 'EVIDENCE_CONFLICT');
     }
-    return [];
-  }).slice(0, limits.max);
+  }
+  for (const claim of graph.claims) {
+    if (claim.state === 'UNIQUE' && claim.load_bearing && decisionCritical(claim)) {
+      add(claim, 'load-bearing unique claim', 'INDEPENDENT_CHALLENGE');
+    }
+  }
+  for (const hole of graph.holes.evidence) {
+    const claim = graph.claims.find((item) => item.id === hole.claim_id);
+    if (claim?.load_bearing && decisionCritical(claim)) {
+      add(claim, hole.reason, 'EVIDENCE_HOLE');
+    }
+  }
+  return selected;
+}
+
+/** R5's stricter queue: only verdict-flipping nodes may spend an optional rebuttal call. */
+export function selectRebuttalEscalations(
+  graph: DecisionGraph,
+  verifications: ClaimVerificationSet,
+  limits: { maxNodes: number },
+): Escalation[] {
+  const selected: Escalation[] = [];
+  const seen = new Set<string>();
+  const verificationById = new Map(verifications.verifications.map((item) => [item.claim_id, item]));
+  const add = (claim: DecisionClaim, reason: string, kind: Escalation['kind']) => {
+    if (seen.has(claim.id) || selected.length >= limits.maxNodes) return;
+    seen.add(claim.id);
+    selected.push({ claim_id: claim.id, reason, kind });
+  };
+
+  for (const claim of graph.claims) {
+    if (claim.state === 'DISAGREEMENT' && decisionCritical(claim)) {
+      add(claim, 'opposing provider stances on a decision-critical claim', 'DISAGREEMENT');
+    }
+  }
+  for (const claim of graph.claims) {
+    if (claim.load_bearing && decisionCritical(claim) && verificationById.get(claim.id)?.status === 'CONTRADICTED') {
+      add(claim, 'independent verification contradicted a load-bearing claim', 'EVIDENCE_CONFLICT');
+    }
+  }
+  for (const claim of graph.claims) {
+    if (claim.state === 'UNIQUE' && claim.load_bearing && decisionCritical(claim)) {
+      add(claim, 'load-bearing unique claim needs an independent challenge', 'INDEPENDENT_CHALLENGE');
+    }
+  }
+  for (const hole of graph.holes.evidence) {
+    const claim = graph.claims.find((item) => item.id === hole.claim_id);
+    if (claim?.load_bearing && decisionCritical(claim)) {
+      add(claim, `decision-critical evidence hole: ${hole.reason}`, 'EVIDENCE_HOLE');
+    }
+  }
+  return selected;
 }
