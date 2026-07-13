@@ -72,10 +72,11 @@ export const DEFAULT_BUDGET = 18; // full idea pipeline min = S0(1)+S1(1)+S2(3)+
 // §19 was 10 min; raised to 20 (user-authorized 2026-07-06). Evidence: a real Opus judge (S9) on a
 // 9-dispute idea ran ~360s and the whole run was ~14 min → the 10-min wall-clock aborted a legitimate run.
 export const DEFAULT_DEADLINE_MS = 20 * 60 * 1000; // wall-clock cap
-// §7.1 was 180s; raised to 300 (user-authorized 2026-07-06). The adapter retries a TIMEOUT once, so 180s
-// gave a 360s ceiling and the deep-reasoning judge blew it (observed exactly 360.1s → TIMEOUT). 300s per
-// attempt covers the Opus judge; the wall-clock deadline above remains the outer bound.
-const DEFAULT_CALL_TIMEOUT_MS = 300_000;
+// §7.1 was 180s; raised to 300 (user-authorized 2026-07-06) for the deep-reasoning judge; raised to 900
+// (2026-07-13) after the spawn timeout became actually enforced and killed a LEGITIMATE deep call: codex's
+// S4 analysis of a hard build case ran ~10 min to a valid output (run 20260713-1341, 13:44→13:54). 900s
+// per attempt covers observed deep work; the wall-clock deadline above remains the outer bound.
+const DEFAULT_CALL_TIMEOUT_MS = 900_000;
 
 export class BudgetExceeded extends Error {
   constructor(limit: number) {

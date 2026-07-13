@@ -184,11 +184,57 @@ describe('RoleOutput (workflow-discriminated union)', () => {
     expect(salvaged.positions[0]!.evidence_ids).toEqual(['E1']);
   });
 
-  it('salvage never touches positions — a broken claim set stays a hard failure', () => {
+  it('salvage refuses a seat whose every position is broken — an empty claim set is a hard failure', () => {
     const { workflow: _workflow, ...modelOutput } = idea;
     const broken = { ...modelOutput, positions: [{ ...modelOutput.positions[0], stance: 'strongly agree' }] };
 
     expect(IdeaRoleOutputModel.safeParse(salvageIdeaRoleOutputModel(broken)).success).toBe(false);
+  });
+
+  it('salvage rescues an evidence card whose only defect is an unknown extra key', () => {
+    const { workflow: _workflow, ...modelOutput } = idea;
+    const broken = {
+      ...modelOutput,
+      evidence: [{ ...modelOutput.evidence[0], content: 'verbatim excerpt the schema never asked for' }],
+    };
+
+    expect(IdeaRoleOutputModel.safeParse(broken).success).toBe(false);
+    const salvaged = IdeaRoleOutputModel.parse(salvageIdeaRoleOutputModel(broken));
+    expect(salvaged.evidence).toHaveLength(1);
+    expect('content' in salvaged.evidence[0]!).toBe(false);
+  });
+
+  it('salvage drops a position with a cross-field enum leak and scrubs every reference to it', () => {
+    const { workflow: _workflow, ...modelOutput } = idea;
+    const broken = {
+      ...modelOutput,
+      positions: [
+        modelOutput.positions[0],
+        { ...modelOutput.positions[0], local_id: 'P5', basis: 'MODEL_KNOWLEDGE', evidence_ids: [], depends_on: [] },
+        { ...modelOutput.positions[0], local_id: 'P6', evidence_ids: [], depends_on: ['P5'] },
+      ],
+      coverage: [{ dimension_id: 'R1', status: 'COVERED', position_ids: ['P1', 'P5', 'P6'], rationale: 'covered' }],
+      decision_questions: [{ id: 'Q1', question: 'q?', claim_ids: ['P5', 'P6'] }],
+    };
+
+    expect(IdeaRoleOutputModel.safeParse(broken).success).toBe(false);
+    const salvaged = IdeaRoleOutputModel.parse(salvageIdeaRoleOutputModel(broken));
+    expect(salvaged.positions.map((position) => position.local_id)).toEqual(['P1', 'P6']);
+    expect(salvaged.positions[1]!.depends_on).toEqual([]);
+    expect(salvaged.coverage[0]!.position_ids).toEqual(['P1', 'P6']);
+    expect(salvaged.decision_questions[0]!.claim_ids).toEqual(['P6']);
+  });
+
+  it('replays the 20260713-1503 failed Gemini repair: extra-key cards rescued, leaked-enum position dropped', () => {
+    const raw = JSON.parse(readFileSync(new URL('./fixtures/s4-repair-position-enum-leak.json', import.meta.url), 'utf8'));
+
+    expect(IdeaRoleOutputModel.safeParse(raw).success).toBe(false);
+    const salvaged = IdeaRoleOutputModel.parse(salvageIdeaRoleOutputModel(raw));
+    expect(salvaged.positions).toHaveLength(8); // P5 (basis MODEL_KNOWLEDGE) dropped, the rest survive
+    expect(salvaged.positions.some((position) => position.local_id === 'P5')).toBe(false);
+    expect(salvaged.evidence).toHaveLength(8); // all cards rescued: enums canonicalized, `content` stripped
+    // P6 depended on P2 + P5: only the dropped P5 is scrubbed, the healthy P2 reference survives.
+    expect(salvaged.positions.find((position) => position.local_id === 'P6')!.depends_on).toEqual(['P2']);
   });
 
   it('replays the 20260712-0011 failed Gemini repair: prose cards drop, all positions survive', () => {

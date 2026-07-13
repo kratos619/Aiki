@@ -342,24 +342,55 @@ function canonicalizeIdeaRoleOutputModel(input: unknown): unknown {
   };
 }
 
-/** Deterministic last resort after a failed §14 repair (run 20260712-0011: Gemini wrote evidence prose
- *  into `support`). Drops evidence cards that are still invalid after canonicalization and scrubs their
- *  ids from positions — an unusable card costs one card, not the run. Positions are NEVER altered: a
- *  broken claim set stays a hard failure. */
+/** Deterministic last resort after a failed §14 repair. Two live Gemini failures shaped it:
+ *  run 20260712-0011 wrote evidence prose into `support`; run 20260713-1503 added an unknown `content`
+ *  key to every card and leaked `MODEL_KNOWLEDGE` into a position's `basis`, which killed the seat and
+ *  then quorum. Policy, strictly deterministic (never invents a value):
+ *  - unknown extra keys are stripped (zod `.strip()` re-parse);
+ *  - an evidence card that still fails is dropped, and its id scrubbed from positions;
+ *  - a position that still fails is dropped, and its id scrubbed from depends_on / coverage /
+ *    decision_questions — one bad position costs one position, not the whole seat;
+ *  - a seat with NO surviving position stays a hard failure (nothing to analyze). */
 export function salvageIdeaRoleOutputModel(input: unknown): unknown {
   const canonical = canonicalizeIdeaRoleOutputModel(input);
   if (!canonical || typeof canonical !== 'object' || Array.isArray(canonical)) return canonical;
   const output = canonical as Record<string, unknown>;
   if (!Array.isArray(output.evidence) || !Array.isArray(output.positions)) return canonical;
-  const evidence = output.evidence.filter((item) => EvidenceCard.safeParse(item).success);
-  const kept = new Set(evidence.map((item) => (item as { id: string }).id));
-  const positions = output.positions.map((item) => {
-    if (!item || typeof item !== 'object' || Array.isArray(item)) return item;
-    const position = item as Record<string, unknown>;
-    if (!Array.isArray(position.evidence_ids)) return item;
-    return { ...position, evidence_ids: position.evidence_ids.filter((id) => kept.has(id as string)) };
-  });
-  return { ...output, evidence, positions };
+
+  const evidence = output.evidence
+    .map((item) => EvidenceCard.strip().safeParse(item))
+    .flatMap((result) => (result.success ? [result.data] : []));
+  const keptEvidence = new Set(evidence.map((card) => card.id));
+
+  const parsedPositions = output.positions
+    .map((item) => ClaimPosition.strip().safeParse(item))
+    .flatMap((result) => (result.success ? [result.data] : []));
+  if (parsedPositions.length === 0) return canonical; // empty claim set → let strict validation fail it
+  const keptPositions = new Set(parsedPositions.map((position) => position.local_id));
+
+  const positions = parsedPositions.map((position) => ({
+    ...position,
+    evidence_ids: position.evidence_ids.filter((id) => keptEvidence.has(id)),
+    depends_on: position.depends_on.filter((id) => keptPositions.has(id)),
+  }));
+
+  const scrubIds = (value: unknown, key: 'position_ids' | 'claim_ids'): unknown => {
+    if (!Array.isArray(value)) return value;
+    return value.map((item) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return item;
+      const entry = item as Record<string, unknown>;
+      if (!Array.isArray(entry[key])) return item;
+      return { ...entry, [key]: (entry[key] as unknown[]).filter((id) => keptPositions.has(id as string)) };
+    });
+  };
+
+  return {
+    ...output,
+    evidence,
+    positions,
+    coverage: scrubIds(output.coverage, 'position_ids'),
+    decision_questions: scrubIds(output.decision_questions, 'claim_ids'),
+  };
 }
 
 /** The model-facing S4 shape. Exact known enum aliases are canonicalized, then the strict schema validates

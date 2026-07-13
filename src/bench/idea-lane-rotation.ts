@@ -132,7 +132,10 @@ async function executeLaneRun(target: LaneRunTarget, handles: ProviderHandle[], 
   const runId = makeRunId('idea-refinement');
   const roles = resolveRoles('idea-refinement', ids, { judge: 'claude', s4: target.s4 });
   const writer = new RunWriter(runId, join(root, '.aiki'));
-  const ctx = new RunCtx({ runId, workflow: 'idea-refinement', handles, roles, writer, cwd: writer.dir });
+  // Bench runs are the deep path: hard cases legitimately run ~18 min and the 20-min default leaves no
+  // headroom (per-call timeout now bounds any single hang). 45 min so a healthy deep run is never
+  // killed by headroom; the per-call timeout is still the real safety bound.
+  const ctx = new RunCtx({ runId, workflow: 'idea-refinement', handles, roles, writer, cwd: writer.dir, deadlineMs: 45 * 60 * 1000 });
   const started = Date.now();
   const outcome = await executeRun(ctx, target.input, runIdeaRefinement);
   if (!outcome.ok) throw new Error(`${target.case_id}/${target.rotation} failed: ${outcome.error?.code}: ${outcome.error?.message}`);
