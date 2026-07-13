@@ -84,6 +84,7 @@ export const spawnCapture: SpawnCaptureFn = (bin, args, { cwd, timeoutMs, env, s
     let settled = false;
 
     const child = spawn(bin, args, { cwd, env, detached: true, stdio: ['ignore', fd, 'pipe'] });
+    child.unref(); // a child that survives the group-kill must never keep our process alive post-resolve
 
     // SIGKILL the whole detached process group. Shared by the timeout and the Ctrl+C abort (T8).
     const killGroup = () => {
@@ -101,6 +102,10 @@ export const spawnCapture: SpawnCaptureFn = (bin, args, { cwd, timeoutMs, env, s
     const timer = setTimeout(() => {
       timedOut = true;
       killGroup();
+      // Bound the call at timeoutMs even if the group-kill missed a detached child holding our pipe/fd
+      // (observed with the claude CLI). Waiting on 'close' alone lets one hung call overrun the wall-clock
+      // deadline by an unbounded amount; force-resolve instead. A late 'close' is ignored (`settled`).
+      finish(null, 'SIGKILL');
     }, timeoutMs);
 
     // Ctrl+C: kill the in-flight child immediately so no orphaned metered call survives (§472, T8).
