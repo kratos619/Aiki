@@ -32,13 +32,15 @@ Output ONLY JSON matching the judge schema:
   Omit claims with no evidence IDs; they remain unresolved. Never emit evidence_cited prose.
 - verdict: a clear 2-5 sentence recommendation grounded in adjudicated and settled claims.
 - recommendation: PROCEED, PROCEED_WITH_CONDITIONS, PIVOT, or STOP.
-- conditions: required only for PROCEED_WITH_CONDITIONS and must be checkable.
-- recommendation_claim_ids: graph claim IDs carrying the verdict's load-bearing reasons.
-- condition_claim_ids: required only for PROCEED_WITH_CONDITIONS; graph IDs anchoring its conditions.
+- conditions: required only for PROCEED_WITH_CONDITIONS; a JSON array of AT MOST 6 checkable strings —
+  merge related checks rather than exceeding 6.
+- recommendation_claim_ids: 1-8 graph claim IDs carrying the verdict's load-bearing reasons.
+- condition_claim_ids: required only for PROCEED_WITH_CONDITIONS; 1-8 graph IDs anchoring its conditions.
 - pivot: required only for PIVOT; {changed_claim_id, new_risk_claim_id}, both existing graph IDs.
-- strongest_counter_case: {claim_ids, reasoning}; it must argue against the verdict from the same graph.
+- strongest_counter_case: {claim_ids (1-4), reasoning}; it must argue against the verdict from the same graph.
 - key_points: 4-8 standalone decision-relevant bullets.
-- dissent: at least one strongest argument against your verdict.
+- dissent: a JSON array of strings (an array even when there is only one) — the strongest arguments
+  against your verdict.
 - confidence_notes: explain calibrated confidence.
 ESCALATED CLAIMS + VERIFICATION: {{ESCALATIONS_JSON}}
 APPEND-ONLY REBUTTAL EVENTS: {{REBUTTALS_JSON}}
