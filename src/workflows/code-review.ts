@@ -13,6 +13,7 @@ import { runStage } from '../orchestration/context.js';
 import type { IntentContract } from '../schemas/index.js';
 import { parseDiffFiles } from '../orchestration/git.js';
 import { s4Review } from '../orchestration/stages/cr-s4-review.js';
+import { mergeCoverageHunt, runCoverageHunts } from '../orchestration/stages/cr-ladder.js';
 import { s8CrossExam } from '../orchestration/stages/cr-s8-crossexam.js';
 import { buildReviewMap } from '../orchestration/stages/cr-map.js';
 import { s9ReviewJudge } from '../orchestration/stages/cr-s9-judge.js';
@@ -51,7 +52,7 @@ export const CR_STAGES: StageInfo[] = [
   { id: 'S10', label: 'Report', role: null },
 ];
 
-export async function runCodeReview(ctx: RunCtx, input: string): Promise<void> {
+export async function runCodeReview(ctx: RunCtx, input: string, opts: { ladder?: boolean } = {}): Promise<void> {
   // `input` is the unified diff. Persist it where the reviewer prompt points; parse the touched files.
   await ctx.writer.writeInput('diff.patch', input);
   const diffPath = resolve(ctx.writer.dir, 'inputs', 'diff.patch');
@@ -73,11 +74,12 @@ export async function runCodeReview(ctx: RunCtx, input: string): Promise<void> {
   await ctx.writer.writePrompt('reviewer.md', prompt);
 
   const reviewers = await runStage(ctx, 'S4', () => s4Review(ctx, prompt, files));
+  const ladder = opts.ladder ? await runStage(ctx, 'L', () => runCoverageHunts(ctx, input, reviewers)) : null;
   const cross = await runStage(ctx, 'S8', () => s8CrossExam(ctx, reviewers));
 
   // S7 — build + persist the ReviewMap (07), then the cross-exam verifications (08). Order: 07 < 08.
   const map = await runStage(ctx, 'S7', async () => {
-    const m = buildReviewMap(reviewers, cross.byKey);
+    const m = mergeCoverageHunt(buildReviewMap(reviewers, cross.byKey), ladder);
     await ctx.writer.writeJson('review-map', m);
     await ctx.writer.writeJson('verifications', { verifications: cross.verifications });
     return m;

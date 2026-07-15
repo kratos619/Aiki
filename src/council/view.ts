@@ -2,11 +2,13 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { DISPLAY_NAME, type ProviderId } from '../providers/types.js';
 import type { WorkflowId } from '../orchestration/context.js';
-import type { ActionPlan, AnnotatedFinding, DisagreementMap, JudgeReport, Recommendation, ReviewMap, RoleOutput, RunMeta } from '../schemas/index.js';
-import { deriveAudit, deriveScorecard, mergeOpenQuestions, type AuditRow, type ScorecardRow } from '../orchestration/stages/s10-render.js';
+import { RoleOutput as RoleOutputSchema, type ActionPlanArtifact, type AnnotatedFinding, type DecisionGraph, type DisagreementMap, type IdeaMode, type JudgeReport, type Recommendation, type ReviewMap, type RoleOutput, type RunMeta } from '../schemas/index.js';
+import { deriveAudit, deriveScorecard, mergeOpenQuestions, type AuditRow, type DecisionReportJson, type ScorecardRow } from '../orchestration/stages/s10-render.js';
+import { renderDecisionDossierMarkdown } from '../orchestration/decision-dossier.js';
 import type { SeatOutput } from '../orchestration/stages/s4-analyze.js';
 import { IDEA_RUBRIC } from '../workflows/idea-refinement.js';
 import { listArtifacts, readJsonArtifact } from '../storage/runs-read.js';
+import { adaptIdeaOutput, adaptLegacyDecisionGraph } from '../orchestration/legacy-idea-adapter.js';
 
 type Column = { provider: string; title: string; lines: string[] };
 type RowKind = 'consensus' | 'dispute' | 'unique' | 'single';
@@ -30,6 +32,7 @@ export interface DebateItem { claim: string; claimantProviders: ProviderId[]; at
 export interface CouncilView {
   runId: string;
   workflow: WorkflowId;
+  mode?: IdeaMode;
   verdict: string;
   keyPoints: string[]; // chairman's bulleted reasoning (idea); [] for code-review
   confidence: string;
@@ -55,9 +58,10 @@ export interface CouncilView {
   scorecard?: ScorecardRow[];
   audit?: AuditRow[];
   debates?: DebateItem[];
-  actionPlan?: ActionPlan;
+  actionPlan?: ActionPlanArtifact;
   openQuestions?: string[];
   receipt?: string[];
+  decisionReport?: DecisionReportJson;
 }
 
 function providerName(id: string): string {
@@ -81,9 +85,8 @@ function roleColumn(provider: string, role: RoleOutput): Column {
     title: providerName(provider),
     lines: [
       `Strongest version: ${role.strongest_version}`,
-      ...role.assumptions.map((a) => `${a.load_bearing ? 'Load-bearing' : 'Assumption'}: ${a.statement}`),
-      ...role.attacks.map((a) => `Attack: ${a.argument}`),
-      ...role.open_questions.map((q) => `Question: ${q}`),
+      ...role.positions.map((position) => `${position.load_bearing ? 'Load-bearing' : position.stance}: ${position.proposition}`),
+      ...role.decision_questions.map(({ question }) => `Question: ${question}`),
     ],
   };
 }
@@ -108,27 +111,28 @@ function codeReviewRows(map: ReviewMap, judge: JudgeReport | null): CouncilRow[]
   ];
 }
 
-function ideaRows(map: DisagreementMap, judge: JudgeReport | null): CouncilRow[] {
+function graphRows(graph: DecisionGraph, judge: JudgeReport | null): CouncilRow[] {
   const rulings = judgeRulings(judge);
-  return [
-    ...map.consensus.map((c) => ({ kind: 'consensus' as const, title: c.statement, detail: c.evidence ?? '', providers: c.providers })),
-    ...map.contradictions.map((d) => ({
-      kind: 'dispute' as const,
-      title: d.id,
-      detail: d.attacks.map((a) => `${providerName(a.provider)}: ${a.argument}`).join(' · '),
-      providers: d.attacks.map((a) => a.provider),
-      ruling: rulings.get(d.id),
-    })),
-    ...map.unique.map((c) => ({ kind: 'unique' as const, title: c.statement, detail: c.evidence ?? '', providers: c.providers })),
-  ];
+  const positionById = new Map(graph.positions.map((position) => [position.id, position]));
+  return graph.claims.map((claim) => {
+    const positions = claim.position_ids.map((id) => positionById.get(id)!);
+    const providers = [...new Set(positions.map((position) => position.provider))];
+    const kind: RowKind = claim.state === 'DISAGREEMENT' ? 'dispute'
+      : claim.state === 'CONSENSUS' || claim.state === 'SHARED_CONCERN' ? 'consensus'
+        : 'unique';
+    return {
+      kind,
+      title: claim.proposition,
+      detail: positions.map((position) => `${providerName(position.provider)} ${position.stance}: ${position.reasoning}`).join(' · '),
+      providers,
+      ruling: rulings.get(claim.id),
+    };
+  });
 }
 
 const SEV_ORDER: Record<string, number> = { HIGH: 0, MED: 1, MEDIUM: 1, LOW: 2 };
 function sevRank(s: string): number {
   return SEV_ORDER[s.toUpperCase()] ?? 1;
-}
-function maxSeverity(sevs: string[]): string {
-  return [...sevs].sort((a, b) => sevRank(a) - sevRank(b))[0] ?? 'MED';
 }
 function clip(s: string, n: number): string {
   const t = s.trim();
@@ -167,20 +171,21 @@ function chairPhrase(ruling: string | undefined): string {
   return 'left to you';
 }
 
-function ideaDebates(map: DisagreementMap, judge: JudgeReport | null): DebateItem[] {
-  const claims = new Map([...map.consensus, ...map.unique].map((c) => [c.id, c]));
-  const adj = new Map((judge?.adjudications ?? []).map((a) => [a.id, a]));
-  return map.contradictions.map((d) => {
-    const a = adj.get(d.id);
-    const claimantProviders = [...new Set(d.claim_ids.flatMap((id) => claims.get(id)?.providers ?? []))];
-    const attackerProviders = [...new Set(d.attacks.map((x) => x.provider))];
+function graphDebates(graph: DecisionGraph, judge: JudgeReport | null): DebateItem[] {
+  const positionById = new Map(graph.positions.map((position) => [position.id, position]));
+  const adjudication = new Map((judge?.adjudications ?? []).map((item) => [item.id, item]));
+  return graph.claims.filter((claim) => claim.state === 'DISAGREEMENT').map((claim) => {
+    const positions = claim.position_ids.map((id) => positionById.get(id)!);
+    const supporting = positions.filter((position) => position.stance === 'SUPPORT');
+    const opposing = positions.filter((position) => position.stance === 'OPPOSE');
+    const ruling = adjudication.get(claim.id);
     return {
-      claim: d.claim_ids.map((id) => claims.get(id)?.statement ?? id).join(' / '),
-      claimantProviders,
-      attackerProviders,
-      challenge: d.attacks.map((x) => `${providerName(x.provider)}: ${x.argument}`).join('\n\n'),
-      chair: chairPhrase(a?.ruling),
-      reasoning: a?.reasoning ?? '',
+      claim: claim.proposition,
+      claimantProviders: [...new Set(supporting.map((position) => position.provider))],
+      attackerProviders: [...new Set(opposing.map((position) => position.provider))],
+      challenge: opposing.map((position) => `${providerName(position.provider)}: ${position.reasoning}`).join('\n\n'),
+      chair: chairPhrase(ruling?.ruling),
+      reasoning: ruling?.reasoning ?? '',
     };
   });
 }
@@ -207,6 +212,7 @@ function receiptLines(meta: RunMeta): string[] {
     .join(' · ');
   return [
     `Calls: ${meta.call_count ?? calls.length}/${meta.budget?.limit ?? '?'}`,
+    ...(meta.receipt ? [`Categories: discovery ${meta.receipt.discovery} · verification ${meta.receipt.verification} · repair ${meta.receipt.repair} · planning ${meta.receipt.planning}`] : []),
     `Per-provider: ${providerCounts}`,
     `Recorded model time: ${(ms / 1000).toFixed(1)}s`,
     profiles ? `Models: ${profiles}` : '',
@@ -214,39 +220,42 @@ function receiptLines(meta: RunMeta): string[] {
   ].filter(Boolean);
 }
 
-/** Turn the idea disagreement map + judge report into the human decision story. Deterministic. */
-function ideaNarrative(map: DisagreementMap, judge: JudgeReport | null): Partial<CouncilView> {
-  const claims = new Map<string, string>();
-  for (const c of [...map.consensus, ...map.unique]) claims.set(c.id, c.statement);
-  const adj = new Map((judge?.adjudications ?? []).map((a) => [a.id, a]));
-
-  const disputes = map.contradictions.map((d) => {
-    const a = adj.get(d.id);
-    return {
-      ruling: a?.ruling ?? '',
-      assumption: d.claim_ids.map((id) => claims.get(id) ?? id).join(' '),
-      challenge: d.attacks.map((x) => `${providerName(x.provider)}: ${x.argument}`).join('\n\n'),
-      severity: maxSeverity(d.attacks.map((x) => x.severity)),
-      reasoning: a?.reasoning ?? '',
-      providers: d.attacks.map((x) => x.provider),
-    };
+function graphNarrative(graph: DecisionGraph, judge: JudgeReport | null): Partial<CouncilView> {
+  const positionById = new Map(graph.positions.map((position) => [position.id, position]));
+  const ruling = new Map((judge?.adjudications ?? []).map((item) => [item.id, item]));
+  const agreements: Agreement[] = graph.claims
+    .filter((claim) => claim.state === 'CONSENSUS')
+    .map((claim) => ({
+      statement: claim.proposition,
+      providers: [...new Set(claim.position_ids.map((id) => positionById.get(id)!.provider))],
+    }));
+  const risks: RiskItem[] = graph.claims.flatMap((claim): RiskItem[] => {
+    const decision = ruling.get(claim.id);
+    if (claim.state !== 'SHARED_CONCERN' && decision?.ruling !== 'UPHOLD') return [];
+    const positions = claim.position_ids.map((id) => positionById.get(id)!);
+    return [{
+      assumption: claim.proposition,
+      severity: claim.sensitivity === 'DECISIVE' ? 'HIGH' : claim.sensitivity === 'MATERIAL' ? 'MED' : 'LOW',
+      challenge: positions.filter((position) => position.stance === 'OPPOSE').map((position) => `${providerName(position.provider)}: ${position.reasoning}`).join('\n\n'),
+      reasoning: decision?.reasoning ?? 'Multiple analysts independently raised this concern.',
+      providers: [...new Set(positions.map((position) => position.provider))],
+    }];
+  }).sort((a, b) => sevRank(a.severity) - sevRank(b.severity));
+  const defended: DefendedItem[] = graph.claims.flatMap((claim): DefendedItem[] => {
+    const decision = ruling.get(claim.id);
+    if (decision?.ruling !== 'REJECT') return [];
+    const positions = claim.position_ids.map((id) => positionById.get(id)!);
+    return [{
+      assumption: claim.proposition,
+      challenge: positions.filter((position) => position.stance === 'OPPOSE').map((position) => position.reasoning).join('\n\n'),
+      reasoning: decision.reasoning,
+    }];
   });
-
-  const risks: RiskItem[] = disputes
-    .filter((d) => d.ruling === 'UPHOLD')
-    .sort((a, b) => sevRank(a.severity) - sevRank(b.severity))
-    .map(({ assumption, severity, challenge, reasoning, providers }) => ({ assumption, severity, challenge, reasoning, providers }));
-  const defended: DefendedItem[] = disputes
-    .filter((d) => d.ruling === 'REJECT')
-    .map(({ assumption, challenge, reasoning }) => ({ assumption, challenge, reasoning }));
-  const agreements: Agreement[] = map.consensus.map((c) => ({ statement: c.statement, providers: c.providers }));
-  const blindSpots = map.blind_spots ?? [];
-
+  const blindSpots = graph.holes.coverage.map((hole) => hole.label);
   const nextSteps = [
-    ...risks.map((r) => `Pressure-test the assumption “${clip(r.assumption, 130)}” — the council found it doesn't hold as stated.`),
-    ...blindSpots.map((b) => `Work out: ${b}.`),
+    ...risks.map((risk) => `Pressure-test “${clip(risk.assumption, 130)}”.`),
+    ...blindSpots.map((spot) => `Work out: ${spot}.`),
   ];
-
   return {
     signal: computeSignal(risks.length, agreements.length),
     agreements,
@@ -262,21 +271,25 @@ function ideaNarrative(map: DisagreementMap, judge: JudgeReport | null): Partial
 async function loadRoleOutputs(dir: string): Promise<Array<{ provider: string; role: RoleOutput }>> {
   const artifacts = await listArtifacts(dir);
   const roleFiles = artifacts.filter((f) => f.startsWith('04-role-outputs/') && f.endsWith('.json'));
-  const roles = await Promise.all(roleFiles.map(async (file) => ({
-    provider: basename(file, '.json'),
-    role: JSON.parse(await readFile(join(dir, file), 'utf8')) as RoleOutput,
-  })));
+  const roles = await Promise.all(roleFiles.map(async (file) => {
+    const raw: unknown = JSON.parse(await readFile(join(dir, file), 'utf8'));
+    const role = typeof raw === 'object' && raw !== null && 'workflow' in raw && raw.workflow === 'idea-refinement'
+      ? adaptIdeaOutput(raw)
+      : RoleOutputSchema.parse(raw);
+    return { provider: basename(file, '.json'), role };
+  }));
   return roles.sort((a, b) => providerName(a.provider).localeCompare(providerName(b.provider)));
 }
 
 export async function loadCouncilView(runId: string, dir: string): Promise<CouncilView | null> {
   const meta = await readJsonArtifact<RunMeta>(dir, 'meta.json');
   if (!meta) return null;
-  const [judge, actionPlan, roles, intent] = await Promise.all([
+  const [judge, actionPlan, roles, intent, decisionReport] = await Promise.all([
     readJsonArtifact<JudgeReport>(dir, '09-judge-report.json'),
-    readJsonArtifact<ActionPlan>(dir, '09b-action-plan.json'),
+    readJsonArtifact<ActionPlanArtifact>(dir, '09b-action-plan.json'),
     loadRoleOutputs(dir),
     readJsonArtifact<{ task?: string }>(dir, '01-intent-contract.json'),
+    readJsonArtifact<DecisionReportJson>(dir, '10-decision-report.json'),
   ]);
   const columns = roles.map(({ provider, role }) => roleColumn(provider, role));
   const verdict = judge?.verdict ?? (meta.exit_status === 'ok' ? 'Run completed without a judge verdict artifact.' : `Run ${meta.exit_status}.`);
@@ -294,27 +307,30 @@ export async function loadCouncilView(runId: string, dir: string): Promise<Counc
       ];
     }
   } else {
-    const map = await readJsonArtifact<DisagreementMap>(dir, '07-disagreement-map.json');
-    if (map) {
-      rows = ideaRows(map, judge);
+    const storedGraph = await readJsonArtifact<DecisionGraph>(dir, '07-decision-graph.json');
+    const legacyMap = storedGraph ? null : await readJsonArtifact<DisagreementMap>(dir, '07-disagreement-map.json');
+    const graph = storedGraph ?? (legacyMap ? adaptLegacyDecisionGraph(legacyMap) : null);
+    if (graph) {
+      rows = graphRows(graph, judge);
       stats = [
-        `${map.consensus.length} consensus`,
-        `${map.contradictions.length} disputes`,
-        `${map.unique.length} unique`,
-        `${map.blind_spots.length} blind spots`,
+        `${graph.claims.filter((claim) => claim.state === 'CONSENSUS').length} consensus`,
+        `${graph.claims.filter((claim) => claim.state === 'SHARED_CONCERN').length} shared concerns`,
+        `${graph.claims.filter((claim) => claim.state === 'DISAGREEMENT').length} disputes`,
+        `${graph.claims.filter((claim) => claim.state === 'UNIQUE').length} unique`,
+        `${graph.holes.coverage.length} coverage holes`,
       ];
-      narrative = ideaNarrative(map, judge);
+      narrative = graphNarrative(graph, judge);
       const reportV3 = Boolean(judge?.recommendation || actionPlan);
-      if (actionPlan) narrative.nextSteps = actionPlan.actions.map((a) => a.action);
+      if (actionPlan && !('kind' in actionPlan)) narrative.nextSteps = actionPlan.actions.map((a) => a.action);
       if (reportV3) {
         const ideaSeats = ideaSeatOutputs(roles);
         narrative = {
           ...narrative,
           recommendation: judge?.recommendation,
           conditions: judge?.conditions,
-          scorecard: deriveScorecard(IDEA_RUBRIC, map),
-          audit: judge ? deriveAudit(map, judge) : [],
-          debates: ideaDebates(map, judge),
+          scorecard: deriveScorecard(IDEA_RUBRIC, graph),
+          audit: judge ? deriveAudit(graph, judge) : [],
+          debates: graphDebates(graph, judge),
           actionPlan: actionPlan ?? undefined,
           openQuestions: mergeOpenQuestions(ideaSeats),
           receipt: receiptLines(meta),
@@ -323,9 +339,17 @@ export async function loadCouncilView(runId: string, dir: string): Promise<Counc
     }
   }
   const moderator = meta.roles?.judge ? providerName(meta.roles.judge) : undefined;
+  const hydratedDecisionReport = decisionReport?.dossier ? {
+    ...decisionReport,
+    keyFindings: decisionReport.keyFindings?.length ? decisionReport.keyFindings : judge?.key_points ?? [decisionReport.verdict.primaryReason],
+    criticalUnknowns: decisionReport.criticalUnknowns?.length
+      ? decisionReport.criticalUnknowns
+      : (narrative.openQuestions ?? []).slice(0, 3),
+  } : undefined;
   return {
     runId,
     workflow: meta.workflow,
+    mode: meta.mode,
     verdict,
     keyPoints: judge?.key_points ?? [],
     confidence: judge?.confidence_notes ?? '',
@@ -335,8 +359,9 @@ export async function loadCouncilView(runId: string, dir: string): Promise<Counc
     stats,
     calls: `${meta.call_count}/${meta.budget.limit} provider calls`,
     flags: meta.flags ?? [],
-    topic: intent?.task,
+    topic: intent?.task ?? decisionReport?.task.original,
     moderator,
+    ...(hydratedDecisionReport ? { decisionReport: hydratedDecisionReport } : {}),
     ...narrative,
   };
 }
@@ -379,6 +404,189 @@ function section(index: string, title: string, inner: string, delay: number, not
     ${note ? `<p class="lede">${escapeHtml(note)}</p>` : ''}
     ${inner}
   </section>`;
+}
+
+function dossierTable(headers: string[], rows: string[][]): string {
+  if (!rows.length) return '<p class="muted">None recorded.</p>';
+  return `<div class="table-wrap"><table class="data-table"><thead><tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join('')}</tr></thead><tbody>${rows
+    .map((row) => `<tr>${row.map((value) => `<td>${escapeHtml(value)}</td>`).join('')}</tr>`)
+    .join('')}</tbody></table></div>`;
+}
+
+function dossierRefs(ids: string[]): string {
+  return ids.length ? ids.join(', ') : 'none recorded';
+}
+
+function dossierPct(value: number): string {
+  return `${Math.round(value * 100)}%`;
+}
+
+function dossierCoverageLabel(value: number): 'High' | 'Medium' | 'Low' {
+  return value >= 0.75 ? 'High' : value >= 0.5 ? 'Medium' : 'Low';
+}
+
+function dossierCouncilRead(report: DecisionReportJson): string {
+  if (report.mode === 'quick') return 'One structured analyst produced this result; no council, consensus, or independent-verification claim is being made.';
+  const scouts = report.models.filter((model) => model.roles.includes('scout')).length;
+  if (report.disagreements.length === 0) {
+    return `${scouts || 'The'} independent scout ${scouts === 1 ? 'analysis produced' : 'analyses produced'} no genuine opposing claim. The chair had less contested material to resolve.`;
+  }
+  const resolved = report.disagreements.filter((item) => item.status === 'RESOLVED').length;
+  return `${report.disagreements.length} genuine disagreement${report.disagreements.length === 1 ? '' : 's'} reached the chair; ${resolved} ${resolved === 1 ? 'was' : 'were'} resolved.`;
+}
+
+function dossierWarning(report: DecisionReportJson, flags: string[]): string {
+  const active = flags.filter((flag) => report.flags.includes(flag));
+  return active.length ? `<div class="warns"><span class="warn">⚑ DEGRADED: ${escapeHtml(active.join(', '))}</span></div>` : '';
+}
+
+function renderDossierIdeaBody(report: DecisionReportJson): string {
+  const dossier = report.dossier;
+  const confidence = report.confidenceBreakdown;
+  const coverageLabel = dossierCoverageLabel(confidence.verificationCoverage);
+  const keyFindings = report.keyFindings?.length ? report.keyFindings : [dossier.recommendation.reason];
+  const criticalUnknowns = report.criticalUnknowns?.length ? report.criticalUnknowns : report.openQuestions.slice(0, 3);
+  const tone: Tone = dossier.recommendation.status === 'ACCEPTED' ? 'good'
+    : dossier.recommendation.status === 'REJECTED' ? 'risk' : 'caution';
+  const conditions = dossier.recommendation.conditions.length
+    ? `<details class="decision-details"><summary>Conditions and decision state</summary><div><p><strong>Internal state:</strong> ${escapeHtml(dossier.recommendation.status)}</p><ul>${dossier.recommendation.conditions.map((condition) => `<li>${escapeHtml(condition.text)} <code>${escapeHtml(dossierRefs(condition.claimIds))}</code></li>`).join('')}</ul></div></details>`
+    : '';
+  const startHere = dossier.experiments.actions[0]?.action ?? 'No executable next step was produced.';
+  const factLabels = ['Decisive result', 'Consequence', 'Supporting signal'];
+  const facts = keyFindings.slice(0, 3).map((finding, index) => `<article class="decision-fact"><span>${factLabels[index]}</span><p>${escapeHtml(finding)}</p></article>`).join('');
+  const snapshot = report.decisionSnapshot;
+  const decisiveNumbers = snapshot ? `<div class="decision-numbers">
+      <span class="section-eyebrow">Decisive numbers</span>
+      <div class="table-wrap"><table class="snapshot-table"><thead><tr><th>Metric</th><th>Value</th><th>What it means</th></tr></thead><tbody>${snapshot.decisiveNumbers.map((item) => `<tr><td>${escapeHtml(item.label)}</td><td class="number-value">${escapeHtml(item.value)}</td><td>${escapeHtml(item.meaning)} <code>${escapeHtml(dossierRefs(item.claimIds))}</code></td></tr>`).join('')}</tbody></table></div>
+      ${snapshot.payback ? `<div class="payback-result"><span>Payback · ${escapeHtml(snapshot.payback.status.replaceAll('_', ' '))}</span><strong>${escapeHtml(snapshot.payback.result)}</strong><p>${escapeHtml(snapshot.payback.basis)} <code>${escapeHtml(dossierRefs(snapshot.payback.claimIds))}</code></p></div>` : ''}
+    </div>` : '';
+  const optionComparison = snapshot ? `<div class="option-comparison">
+      <span class="section-eyebrow">Options at a glance</span>
+      <div class="table-wrap"><table class="snapshot-table"><thead><tr><th>Path</th><th>Commitment</th><th>Basis</th><th>Trade-off</th></tr></thead><tbody>${snapshot.options.map((option) => `<tr><td>${escapeHtml(option.label)}</td><td class="number-value">${escapeHtml(option.commitment)}</td><td><span class="basis-chip ${option.commitmentKind.toLowerCase()}">${escapeHtml(option.commitmentKind.replace('_', ' '))}</span></td><td>${escapeHtml(option.tradeoff)}${option.claimIds.length ? ` <code>${escapeHtml(dossierRefs(option.claimIds))}</code>` : ''}</td></tr>`).join('')}</tbody></table></div>
+    </div>` : '';
+  const tripwire = snapshot?.tripwire ? `<div class="tripwire"><span class="tag">Go/no-go tripwire</span><strong>${escapeHtml(snapshot.tripwire.metric)} · ${escapeHtml(snapshot.tripwire.threshold)}</strong><p>${escapeHtml(snapshot.tripwire.decisionRule)} <code>${escapeHtml(dossierRefs(snapshot.tripwire.claimIds))}</code></p></div>` : '';
+  const topCounterCase = dossier.counterCase.reasoning;
+  const unknowns = criticalUnknowns.length
+    ? `<ul class="critical-unknowns">${criticalUnknowns.map((unknown) => `<li>${escapeHtml(unknown)}</li>`).join('')}</ul>`
+    : '<p class="muted">No verdict-flipping unknown was recorded.</p>';
+  const recommendation = `<div class="verdict tone-${tone}">
+    <span class="pill">Council recommendation</span>
+    ${decisiveNumbers}
+    <p class="verdict-text">${escapeHtml(dossier.recommendation.summary)}</p>
+    <div class="evidence-coverage ${coverageLabel.toLowerCase()}">
+      <div><span class="fk">Evidence coverage</span><strong>${coverageLabel} · ${dossierPct(confidence.verificationCoverage)}</strong></div>
+      <div class="coverage-track"><span style="width:${Math.round(confidence.verificationCoverage * 100)}%"></span></div>
+      <p>${confidence.verificationCoverage < 0.5 ? 'Important inputs remain unchecked. Confirm them before committing.' : 'Most load-bearing claims received independent checking.'} This is not a probability that the recommendation is correct.</p>
+    </div>
+    ${snapshot ? '' : `<div class="decision-facts">${facts}</div>`}
+    <div class="action-callout"><span>Do this first</span><p>${escapeHtml(startHere)}</p></div>
+    ${optionComparison}
+    ${tripwire}
+    <div class="decision-safety">
+      <article><span class="tag">What could overturn this</span><p>${escapeHtml(topCounterCase)}</p></article>
+      <article><span class="tag">Critical unknowns</span>${unknowns}</article>
+    </div>
+    ${report.verdict.criticalWarning ? `<div class="critical-warning"><span class="tag">Critical warning</span><p>${escapeHtml(report.verdict.criticalWarning)}</p></div>` : ''}
+    <p class="council-read"><strong>Council read:</strong> ${escapeHtml(dossierCouncilRead(report))}</p>
+    ${conditions}
+    <div class="evidence-anchors"><span>Evidence anchors</span><code>${escapeHtml(dossierRefs(dossier.recommendation.claimIds))}</code></div>
+    ${dossierWarning(report, ['synthesis_suspect'])}
+    ${dossier.recommendation.claimIds.length ? '' : '<div class="warns"><span class="warn">⚑ DEGRADED: recommendation has no stored graph anchor</span></div>'}
+  </div>`;
+
+  const claimChain = dossierTable(
+    ['Claim ID', 'Claim', 'Ruling', 'Evidence status', 'Depends on'],
+    dossier.claimChain.map((claim) => [claim.claimId, claim.text, claim.ruling, claim.evidenceStatus, dossierRefs(claim.dependsOn)]),
+  );
+  const evidence = `${dossierWarning(report, ['verification_skipped', 'research_ungrounded'])}${dossierTable(
+    ['Evidence ID', 'Source', 'Date', 'Freshness', 'Verification', 'Linked claims'],
+    dossier.evidence.map((item) => [item.id, `${item.source} (${item.sourceKind})`, item.date, item.freshness, item.verificationStatus, dossierRefs(item.claimIds)]),
+  )}`;
+
+  const disagreementCards = report.disagreements.length
+    ? report.disagreements.map((item) => `<article class="card debate-card"><h3><code>${escapeHtml(item.id)}</code> ${escapeHtml(item.topic)}</h3>${item.sides.map((side) => `<div class="field"><span class="fk">${escapeHtml(side.stance)} · ${escapeHtml(side.providers.map(providerName).join(', '))}</span><p>${escapeHtml(side.reasoning.join(' '))}</p></div>`).join('')}<div class="field"><span class="fk">Ruling</span><p>${escapeHtml(item.status)} · ${escapeHtml(item.ruling)}</p></div>${item.reasoning ? `<div class="field"><span class="fk">Why</span><p>${escapeHtml(item.reasoning)}</p></div>` : ''}</article>`).join('')
+    : `<p class="muted">${report.mode === 'quick' ? 'No cross-model disagreement analysis runs in quick mode.' : 'No genuine disagreements were stored.'}</p>`;
+  const changes = dossier.positionChanges.length
+    ? dossierTable(
+        ['Event', 'Claim', 'Responder', 'Change', 'Evidence', 'Detail'],
+        dossier.positionChanges.map((event) => [event.eventId, event.claimId, providerName(event.responder), event.response, dossierRefs(event.evidenceIds), event.narrowedProposition ?? event.reasoning]),
+      )
+    : '<p class="muted">No CONCEDE, COUNTER, or NARROW event was recorded.</p>';
+  const minority = `<h3>Minority report</h3>${report.minority.dissent.length
+    ? `<ul class="checks">${report.minority.dissent.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`
+    : '<p class="muted">No minority dissent was recorded.</p>'}
+    ${report.minority.uniqueOppositions.length ? `<ul class="checks">${report.minority.uniqueOppositions.map((item) => `<li><strong>${escapeHtml(providerName(item.provider))}</strong> uniquely opposed: ${escapeHtml(item.proposition)}</li>`).join('')}</ul>` : ''}
+    <p class="lede">Decision-blocking status: <strong>${escapeHtml(report.minority.blocksDecision)}</strong></p>`;
+  const disagreement = `${dossierWarning(report, ['single_model', 'low_diversity'])}${disagreementCards}<h3>Position changes</h3>${changes}${minority}`;
+
+  const shared = dossier.sharedConcerns.length
+    ? `<h3>Shared concerns</h3><ul class="agree">${dossier.sharedConcerns.map((item) => `<li><p><code>${escapeHtml(item.claimId)}</code> ${escapeHtml(item.text)}</p><span class="who-names">${escapeHtml(item.providerIds.map(providerName).join(', '))} · ${escapeHtml(item.evidenceStatus)}</span></li>`).join('')}</ul>`
+    : '<h3>Shared concerns</h3><p class="muted">None recorded.</p>';
+  const unique = dossier.uniqueSupportedInsights.length
+    ? `<h3>Unique supported insights</h3><ul class="agree">${dossier.uniqueSupportedInsights.map((item) => `<li><p><code>${escapeHtml(item.claimId)}</code> ${escapeHtml(item.text)}</p><span class="who-names">${escapeHtml(providerName(item.providerId))} · ${escapeHtml(item.verificationStatus)}</span></li>`).join('')}</ul>`
+    : '<h3>Unique supported insights</h3><p class="muted">None recorded.</p>';
+
+  const coverage = dossierTable(
+    ['Dimension', 'Status', 'Claim IDs'],
+    dossier.coverage.map((item) => [item.label, item.status, dossierRefs(item.claimIds)]),
+  );
+  const sensitivity = dossierTable(
+    ['Claim ID', 'Fact', 'Sensitivity', 'If false', 'What would change it', 'Linked claims'],
+    dossier.sensitivity.map((item) => [item.claimId, item.fact, item.sensitivity, item.impactIfFalse, item.whatWouldChangeIt, dossierRefs(item.linkedClaimIds)]),
+  );
+  const experiments = `${dossierWarning(report, ['plan_fallback', 'plan_skipped'])}${dossier.experiments.status === 'DEGRADED' ? `<div class="warns"><span class="warn">⚑ DEGRADED: ${escapeHtml(dossier.experiments.note)}</span></div>` : ''}${dossierTable(
+    ['#', 'Experiment', 'Why', 'Validates', 'Effort', 'Kill signal'],
+    dossier.experiments.actions.map((action) => [String(action.order), action.action, action.why, action.validates, action.effort, action.killSignal]),
+  )}${dossier.experiments.actions.length ? `<p class="lede">${escapeHtml(dossier.experiments.note)}</p>` : ''}`;
+  const counterCase = dossier.counterCase.available
+    ? `<article class="card risk-card"><p>${escapeHtml(dossier.counterCase.reasoning)}</p><div class="field"><span class="fk">Evidence anchors</span><p><code>${escapeHtml(dossierRefs(dossier.counterCase.claimIds))}</code></p></div></article>`
+    : `<div class="warns"><span class="warn">⚑ DEGRADED: ${escapeHtml(dossier.counterCase.reasoning)}</span></div>`;
+  const contributions = `${dossierWarning(report, ['verification_skipped', 'single_model', 'low_diversity'])}<p class="lede">Only unique claims that survived independent verification receive credit.</p>${dossierTable(
+    ['Provider', 'Verified unique claim IDs', 'Count'],
+    dossier.contributions.map((item) => [item.name, dossierRefs(item.verifiedUniqueClaimIds), String(item.verifiedUniqueClaimIds.length)]),
+  )}`;
+  const receipt = `<div class="receipt">
+    <span>mode ${escapeHtml(report.mode)}</span><span>${report.receipt.calls}/${report.receipt.budget} provider calls</span>
+    <span>discovery ${report.receipt.categories.discovery}</span><span>verification ${report.receipt.categories.verification}</span>
+    <span>repair ${report.receipt.categories.repair}</span><span>planning ${report.receipt.categories.planning}</span>
+    <span>by provider ${escapeHtml(Object.entries(report.receipt.byProvider).map(([provider, count]) => `${providerName(provider)} ${count}`).join(', ') || 'none')}</span>
+    <span>model time ${(report.receipt.modelTimeMs / 1000).toFixed(1)}s</span>
+  </div>${report.flags.length ? `<div class="warns">${report.flags.map((flag) => `<span class="warn">⚑ ${escapeHtml(flag)}</span>`).join('')}</div>` : '<p class="muted">No degradation flags.</p>'}`;
+  const risks = dossierTable(
+    ['Risk', 'Severity'],
+    report.risks.map((item) => [item.risk, item.severity]),
+  );
+  const questions = report.openQuestions.length
+    ? `<ul class="checks">${report.openQuestions.map((question) => `<li>${escapeHtml(question)}</li>`).join('')}</ul>`
+    : '<p class="muted">No verdict-flipping open question was recorded.</p>';
+  const runDetails = `<article class="card">
+    <div class="field"><span class="fk">Report</span><p><code>${escapeHtml(report.reportId)}</code> · ${escapeHtml(report.generatedAt)}</p></div>
+    <div class="field"><span class="fk">Original task</span><p>${escapeHtml(report.task.original)}</p></div>
+    <div class="field"><span class="fk">Normalized question</span><p>${escapeHtml(report.task.normalized)}</p></div>
+    <div class="field"><span class="fk">Constraints</span><p>${escapeHtml(report.task.constraints.join('; ') || 'none recorded')}</p></div>
+    <div class="field"><span class="fk">Success criteria</span><p>${escapeHtml(report.task.successCriteria.join('; ') || 'none recorded')}</p></div>
+    <div class="field"><span class="fk">Models and roles</span><p>${escapeHtml(report.models.map((model) => `${model.name} (${model.roles.join(', ')})`).join(' · ') || 'none recorded')}</p></div>
+    <div class="field"><span class="fk">Structural score</span><p>${confidence.score}/100 (${escapeHtml(confidence.label)}) · heuristic, not benchmark-calibrated</p></div>
+  </article>${receipt}`;
+  const technical = `<details class="fold"><summary>Original submissions and graph events</summary><div class="fold-body">
+    <h4 class="fold-h">Original submissions</h4><ul>${dossier.technical.submissions.map((item) => `<li><strong>${escapeHtml(item.name)}:</strong> ${escapeHtml(item.strongestVersion)} <code>${escapeHtml(dossierRefs(item.positionIds))}</code></li>`).join('') || '<li>none</li>'}</ul>
+    <h4 class="fold-h">Original positions</h4><ul>${dossier.technical.positions.map((position) => `<li><code>${escapeHtml(position.id)}</code> [${escapeHtml(providerName(position.provider))} ${escapeHtml(position.stance)}] ${escapeHtml(position.proposition)} · evidence <code>${escapeHtml(dossierRefs(position.evidenceIds))}</code></li>`).join('') || '<li>none</li>'}</ul>
+    <h4 class="fold-h">Graph edges</h4><ul>${dossier.technical.edges.map((edge) => `<li><code>${escapeHtml(edge.from)} —${escapeHtml(edge.type)}→ ${escapeHtml(edge.to)}</code></li>`).join('') || '<li>none</li>'}</ul>
+    <h4 class="fold-h">Position-change events</h4><ul>${dossier.technical.events.map((event) => `<li><code>${escapeHtml(event.eventId)}</code>: ${escapeHtml(providerName(event.responder))} ${escapeHtml(event.response)} <code>${escapeHtml(event.claimId)}</code> — ${escapeHtml(event.reasoning)}</li>`).join('') || '<li>none</li>'}</ul>
+  </div></details>`;
+
+  return [
+    section('01', 'Decision', recommendation, 60),
+    section('02', 'Action plan', experiments, 100, 'The smallest useful test, its effort, and the signal that should stop the idea.'),
+    section('03', 'Why this decision', claimChain, 140, 'The load-bearing claim chain behind the recommendation.'),
+    section('04', 'What could change the decision', `<h3>Decision-sensitive facts</h3>${sensitivity}<h3>Strongest counter-case</h3>${counterCase}`, 180),
+    section('05', 'Evidence and verification', evidence, 220),
+    section('06', 'Risks, gaps, and open questions', `<h3>Risks</h3>${risks}<h3>Coverage</h3>${coverage}<h3>Open questions</h3>${questions}`, 260),
+    section('07', 'Disagreement and dissent', disagreement, 300),
+    section('08', 'What the council added', `${shared}${unique}<h3>Verified unique contributions</h3>${contributions}`, 340),
+    section('09', 'Run details', runDetails, 380),
+    section('10', 'Technical audit', technical, 420),
+  ].join('');
 }
 
 function renderLegacyIdeaBody(view: CouncilView): string {
@@ -499,9 +707,10 @@ function renderIdeaBody(view: CouncilView): string {
     ${glance}
   </section>`;
 
+  const synthesisWarning = view.flags.includes('synthesis_suspect') ? '<div class="warns"><span class="warn">⚑ synthesis suspect</span></div>' : '';
   const chairman = view.keyPoints?.length
-    ? section('01', "Chairman's reasoning", `<ul class="reasons">${view.keyPoints.map((p) => `<li>${escapeHtml(p)}</li>`).join('')}</ul>`, 100)
-    : '';
+    ? section('01', "Chairman's reasoning", `${synthesisWarning}<ul class="reasons">${view.keyPoints.map((p) => `<li>${escapeHtml(p)}</li>`).join('')}</ul>`, 100)
+    : synthesisWarning ? section('01', "Chairman's reasoning", `${synthesisWarning}<p class="muted">No reliable chairman reasoning was produced.</p>`, 100) : '';
 
   const scorecard = view.scorecard?.length
     ? `<div class="score-grid">${view.scorecard.map((s) => `<div class="score ${s.status}"><span>${escapeHtml(s.label)}</span><strong>${escapeHtml(s.status)}</strong></div>`).join('')}</div>`
@@ -532,7 +741,9 @@ function renderIdeaBody(view: CouncilView): string {
       </article>`).join('')
     : '<p class="muted">No contradictions reached the chair.</p>';
 
-  const plan = view.actionPlan
+  const plan = view.actionPlan && 'kind' in view.actionPlan
+    ? `<div class="card"><div class="warns"><span class="warn">⚑ ${view.flags.filter((f) => f === 'plan_fallback' || f === 'plan_skipped').map((f) => escapeHtml(f.replaceAll('_', ' '))).join(' · ')}</span></div><p><strong>Planner unavailable: ${escapeHtml(view.actionPlan.reason)}</strong></p><ul class="checks">${view.actionPlan.unresolved_questions.map((q) => `<li>${escapeHtml(q)}</li>`).join('')}</ul></div>`
+    : view.actionPlan
     ? `<div class="table-wrap"><table class="data-table plan-table"><thead><tr><th>#</th><th>Action</th><th>Why</th><th>Validates</th><th>Effort</th><th>Kill signal</th></tr></thead><tbody>
         ${view.actionPlan.actions.map((a) => `<tr><td>${a.order}</td><td>${escapeHtml(a.action)}</td><td>${escapeHtml(a.why)}</td><td><code>${escapeHtml(a.validates)}</code></td><td>${escapeHtml(a.effort)}</td><td>${escapeHtml(a.kill_signal)}</td></tr>`).join('')}
       </tbody></table><p class="lede">${escapeHtml(view.actionPlan.sequencing_note)}</p></div>`
@@ -576,14 +787,42 @@ function renderIdeaBody(view: CouncilView): string {
   `;
 }
 
+function renderQuickIdeaBody(view: CouncilView): string {
+  const tone = recommendationTone(view.recommendation, view.signal?.tone ?? 'caution');
+  const label = recommendationLabel(view.recommendation, view.signal?.label ?? 'Quick analysis');
+  const conditions = view.conditions?.length
+    ? `<div class="conditions"><span class="fk">Conditions</span><ul>${view.conditions.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul></div>`
+    : '';
+  const hero = `<section class="verdict tone-${tone} reveal" style="animation-delay:60ms"><span class="pill">${escapeHtml(label)}</span><p class="verdict-text">${escapeHtml(view.verdict)}</p>${conditions}</section>`;
+  const reasoning = view.keyPoints.length
+    ? `<ul class="reasons">${view.keyPoints.map((point) => `<li>${escapeHtml(point)}</li>`).join('')}</ul>`
+    : '<p class="muted">No structured reasoning recorded.</p>';
+  const risks = view.risks?.length
+    ? `<ul class="checks">${view.risks.map((risk) => `<li>${escapeHtml(risk.assumption)} — ${escapeHtml(risk.challenge)}</li>`).join('')}</ul>`
+    : '<p class="muted">No load-bearing risk was supported strongly enough to list.</p>';
+  const plan = view.actionPlan && !('kind' in view.actionPlan)
+    ? `<ul class="checks">${view.actionPlan.actions.map((action) => `<li><strong>${escapeHtml(action.action)}</strong> — ${escapeHtml(action.kill_signal)}</li>`).join('')}</ul>`
+    : '<p class="muted">No executable plan was produced.</p>';
+  const analyst = view.columns.map((column) => `<article class="card model-card"><h3>${escapeHtml(column.title)}</h3><ul class="model-lines">${column.lines.map((line) => `<li>${escapeHtml(line)}</li>`).join('')}</ul></article>`).join('');
+  const receipt = view.receipt?.length ? `<div class="receipt">${view.receipt.map((line) => `<span>${escapeHtml(line)}</span>`).join('')}</div>` : '';
+  return `${hero}
+    ${section('01', 'Analyst reasoning', reasoning, 100, 'One structured analyst; no council or independent-consensus claim.')}
+    ${section('02', 'Load-bearing risks', risks, 180)}
+    ${section('03', 'Validation plan', plan, 240)}
+    ${receipt ? section('04', 'Receipt', receipt, 300) : ''}
+    ${section('05', 'Analyst output', `<div class="model-grid">${analyst}</div>`, 360)}`;
+}
+
 /** Serialize a council view to clean Markdown — for the HTML "Copy" button (paste into a coding assistant). */
 function councilMarkdown(view: CouncilView): string {
+  if (view.decisionReport?.dossier) return renderDecisionDossierMarkdown(view.decisionReport);
   const isIdea = view.workflow !== 'code-review';
+  const quick = isIdea && view.mode === 'quick';
   const reportV3 = isIdea && Boolean(view.recommendation || view.actionPlan);
   const L: string[] = [];
   L.push(`# ${isIdea && view.topic ? cleanTopic(view.topic) : isIdea ? 'Idea refinement' : 'Code review'}`, '');
   const panel = view.columns.map((c) => c.title).join(', ');
-  if (panel) L.push(`Panel: ${panel}${view.moderator ? ` · Chair: ${view.moderator}` : ''}`, '');
+  if (panel) L.push(quick ? `Analyst: ${panel}` : `Panel: ${panel}${view.moderator ? ` · Chair: ${view.moderator}` : ''}`, '');
   if (view.recommendation) {
     L.push('## Bottom line', '', `**${recommendationLabel(view.recommendation, '')}** — ${view.verdict}`, '');
     if (view.conditions?.length) {
@@ -595,9 +834,12 @@ function councilMarkdown(view: CouncilView): string {
     L.push('## Verdict', '', view.verdict, '');
   }
   if (view.keyPoints?.length) {
-    L.push("## Chairman's reasoning", '');
+    L.push(quick ? '## Analyst reasoning' : "## Chairman's reasoning", '');
+    if (view.flags.includes('synthesis_suspect')) L.push('⚠ synthesis_suspect — the chair output required deterministic repair or degradation handling.', '');
     for (const p of view.keyPoints) L.push(`- ${p}`);
     L.push('');
+  } else if (view.flags.includes('synthesis_suspect')) {
+    L.push("## Chairman's reasoning", '', '⚠ synthesis_suspect — no reliable chairman reasoning was produced.', '');
   }
   if (isIdea) {
     if (reportV3 && view.scorecard?.length) {
@@ -628,14 +870,21 @@ function councilMarkdown(view: CouncilView): string {
     }
     if (reportV3 && view.actionPlan) {
       L.push('## Validation plan', '');
-      for (const a of view.actionPlan.actions) {
-        L.push(`${a.order}. ${a.action}`);
-        L.push(`   - Why: ${a.why}`);
-        L.push(`   - Validates: ${a.validates}`);
-        L.push(`   - Effort: ${a.effort}`);
-        L.push(`   - Kill signal: ${a.kill_signal}`);
+      if ('kind' in view.actionPlan) {
+        const planFlags = view.flags.filter((flag) => flag === 'plan_fallback' || flag === 'plan_skipped');
+        L.push(`Planner unavailable: ${view.actionPlan.reason}${planFlags.length ? ` (${planFlags.join(', ')})` : ''}.`, '', 'Unresolved questions:');
+        for (const question of view.actionPlan.unresolved_questions) L.push(`- ${question}`);
+      } else {
+        for (const a of view.actionPlan.actions) {
+          L.push(`${a.order}. ${a.action}`);
+          L.push(`   - Why: ${a.why}`);
+          L.push(`   - Validates: ${a.validates}`);
+          L.push(`   - Effort: ${a.effort}`);
+          L.push(`   - Kill signal: ${a.kill_signal}`);
+        }
+        L.push('', view.actionPlan.sequencing_note);
       }
-      L.push('', view.actionPlan.sequencing_note, '');
+      L.push('');
     }
     if (reportV3 && view.openQuestions?.length) {
       L.push('## Open questions that flip the verdict', '');
@@ -643,7 +892,7 @@ function councilMarkdown(view: CouncilView): string {
       L.push('');
     }
     if (view.columns.length) {
-      L.push('## How each model saw it', '');
+      L.push(quick ? '## Analyst output' : '## How each model saw it', '');
       for (const c of view.columns) {
         L.push(`### ${c.title}`);
         for (const l of c.lines.slice(0, 10)) L.push(`- ${l}`);
@@ -724,7 +973,7 @@ function renderTechnical(view: CouncilView): string {
   const dissent = view.dissent.length ? `<ul>${view.dissent.map((d) => `<li>${escapeHtml(d)}</li>`).join('')}</ul>` : '<p class="muted">None recorded.</p>';
   return `
   <details class="fold reveal" style="animation-delay:0ms">
-    <summary>Full council analysis (technical)</summary>
+    <summary>${view.mode === 'quick' ? 'Full single-analyst output (technical)' : 'Full council analysis (technical)'}</summary>
     <div class="fold-body">
       <h4 class="fold-h">Each model, in its own words</h4>
       <div class="cols">${columns || '<p class="muted">No model output recorded.</p>'}</div>
@@ -738,18 +987,21 @@ function renderTechnical(view: CouncilView): string {
 
 export function renderCouncilHtml(view: CouncilView): string {
   const isIdea = view.workflow !== 'code-review';
-  const kicker = isIdea ? 'aiki · idea refinement' : 'aiki · code review';
+  const quick = isIdea && view.mode === 'quick';
+  const kicker = quick ? 'aiki · quick analysis' : isIdea ? 'aiki · idea refinement' : 'aiki · code review';
   const title = isIdea && view.topic ? cleanTopic(view.topic) : (isIdea ? 'Idea refinement' : 'Code review');
   const panel = view.columns.map((c) => c.title);
   const metaBits = [
-    panel.length ? `Panel: ${panel.join(' · ')}` : '',
-    view.moderator ? `Chair: ${view.moderator}` : '',
+    panel.length ? `${quick ? 'Analyst' : 'Panel'}: ${panel.join(' · ')}` : '',
+    !quick && view.moderator ? `Chair: ${view.moderator}` : '',
     view.calls,
   ].filter(Boolean);
   const flags = view.flags.length
     ? `<div class="warns">${view.flags.map((f) => `<span class="warn">⚑ ${escapeHtml(f.replaceAll('_', ' '))}</span>`).join('')}</div>`
     : '';
-  const body = isIdea ? renderIdeaBody(view) : renderReviewBody(view);
+  const body = isIdea && view.decisionReport?.dossier
+    ? renderDossierIdeaBody(view.decisionReport)
+    : quick ? renderQuickIdeaBody(view) : isIdea ? renderIdeaBody(view) : renderReviewBody(view);
   // Embed the report as Markdown for the Copy button. Escape "<" so a "</script>" in content can't break out.
   const md = JSON.stringify(councilMarkdown(view)).replace(/</g, '\\u003c');
 
@@ -758,44 +1010,84 @@ export function renderCouncilHtml(view: CouncilView): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeHtml(isIdea ? 'Idea refinement' : 'Code review')} — aiki council</title>
+<title>${escapeHtml(quick ? 'Quick analysis' : isIdea ? 'Idea refinement' : 'Code review')} — aiki</title>
 <style>
 :root{
   color-scheme: light;
   --serif:"Iowan Old Style","Palatino Linotype",Palatino,Charter,Georgia,"Times New Roman",serif;
   --sans:-apple-system,BlinkMacSystemFont,"Avenir Next","Segoe UI",system-ui,sans-serif;
   --mono:"SF Mono","JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
-  --paper:#ffffff; --panel:#f7f8fa; --ink:#1a1c1f; --soft:#5b6470; --faint:#9aa1ab; --line:#e6e8ec;
-  --good:#15803d; --good-bg:#e9f7ef; --risk:#c0392b; --risk-bg:#fbeae7;
-  --caution:#b45309; --caution-bg:#fdf2e2; --slate:#475569; --accent:#2563eb;
+  --paper:#fbfaf7; --panel:#f1efe9; --ink:#171a18; --soft:#59625e; --faint:#8b928e; --line:#dcded8;
+  --good:#176b52; --good-bg:#e5f3ed; --risk:#a63a30; --risk-bg:#f8e8e4;
+  --caution:#a96813; --caution-bg:#f8eedc; --slate:#4f5e59; --accent:#155f55;
 }
 *{box-sizing:border-box;}
 html{-webkit-text-size-adjust:100%;}
 body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.6;}
-main{max-width:800px;margin:0 auto;padding:34px 24px 90px;}
+main{max-width:880px;margin:0 auto;padding:34px 24px 90px;}
 a{color:var(--accent);}
-h1,h2,h3,h4{font-family:var(--sans);font-weight:650;letter-spacing:-.01em;}
+h1{font-family:var(--serif);font-weight:600;letter-spacing:-.025em;}
+h2,h3,h4{font-family:var(--sans);font-weight:650;letter-spacing:-.01em;}
 p{margin:0 0 .6em;}
 
 /* masthead */
-.mast{border-bottom:2px solid var(--ink);padding-bottom:22px;margin-bottom:30px;}
+.mast{border-bottom:1px solid var(--ink);padding-bottom:22px;margin-bottom:30px;}
 .kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--accent);}
-.mast h1{font-size:clamp(28px,4.6vw,42px);line-height:1.12;margin:12px 0 16px;}
+.mast h1{font-size:clamp(32px,5.4vw,50px);line-height:1.05;margin:12px 0 18px;max-width:18ch;}
 .mmeta{display:flex;flex-wrap:wrap;gap:7px;}
 .mmeta span{font-family:var(--mono);font-size:11.5px;color:var(--soft);border:1px solid var(--line);background:var(--panel);border-radius:100px;padding:3px 10px;}
 .warns{margin-top:12px;display:flex;flex-wrap:wrap;gap:8px;}
 .warn{font-family:var(--mono);font-size:11.5px;color:var(--caution);background:var(--caution-bg);border:1px solid #e6d09b;border-radius:6px;padding:3px 9px;}
 
 /* verdict hero */
-.verdict{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:14px;
-  padding:26px 28px 22px;margin-bottom:18px;overflow:hidden;}
+.verdict{position:relative;background:#fff;border:1px solid var(--line);border-radius:18px;
+  padding:30px 32px 26px;margin-bottom:18px;overflow:hidden;box-shadow:0 18px 50px rgba(32,45,40,.07);}
 .verdict::before{content:"";position:absolute;left:0;top:0;bottom:0;width:6px;}
 .tone-good::before{background:var(--good);} .tone-caution::before{background:var(--caution);} .tone-risk::before{background:var(--risk);}
 .pill{display:inline-block;font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:.02em;
   padding:5px 13px;border-radius:100px;margin-bottom:14px;}
 .tone-good .pill{background:var(--good-bg);color:var(--good);} .tone-caution .pill{background:var(--caution-bg);color:var(--caution);}
 .tone-risk .pill{background:var(--risk-bg);color:var(--risk);}
-.verdict-text{font-family:var(--sans);font-weight:520;font-size:clamp(18px,2.3vw,21px);line-height:1.5;color:var(--ink);margin:0;}
+.verdict-text{font-family:var(--serif);font-weight:600;font-size:clamp(22px,3vw,29px);line-height:1.32;color:var(--ink);margin:0;max-width:28ch;}
+.section-eyebrow{display:block;font-family:var(--mono);font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--accent);margin-bottom:9px;}
+.decision-numbers{margin:4px 0 22px;}.snapshot-table{width:100%;border-collapse:collapse;font-size:13.5px;line-height:1.4;}
+.snapshot-table th{padding:8px 10px;text-align:left;font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);border-bottom:1px solid var(--line);}
+.snapshot-table td{padding:11px 10px;vertical-align:top;border-bottom:1px solid var(--line);}.snapshot-table tbody tr:last-child td{border-bottom:0;}
+.snapshot-table .number-value{font-family:var(--serif);font-size:17px;font-weight:700;color:var(--ink);white-space:nowrap;}
+.snapshot-table code,.payback-result code,.tripwire code{font-size:9.5px;color:var(--faint);white-space:nowrap;}
+.payback-result{display:grid;grid-template-columns:auto 1fr;gap:3px 16px;align-items:baseline;margin-top:10px;padding:14px 16px;background:var(--paper);border:1px solid var(--line);border-radius:10px;}
+.payback-result span{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);}.payback-result strong{font-family:var(--serif);font-size:18px;}.payback-result p{grid-column:1/-1;margin:2px 0 0;font-size:12.5px;color:var(--soft);}
+.evidence-coverage{margin:24px 0 18px;padding:14px 16px;background:var(--paper);border:1px solid var(--line);border-radius:12px;}
+.evidence-coverage>div:first-child{display:flex;align-items:end;justify-content:space-between;gap:12px;}
+.evidence-coverage strong{font-family:var(--mono);font-size:13px;color:var(--ink);}
+.coverage-track{height:5px;margin:10px 0;border-radius:99px;background:var(--line);overflow:hidden;}
+.coverage-track span{display:block;height:100%;border-radius:inherit;background:var(--accent);}
+.evidence-coverage.low .coverage-track span{background:var(--risk);}.evidence-coverage.medium .coverage-track span{background:var(--caution);}
+.evidence-coverage p{font-size:13.5px;color:var(--soft);margin:0;}
+.decision-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin:18px 0;}
+.decision-fact{padding:16px;background:var(--paper);border:1px solid var(--line);border-radius:12px;}
+.decision-fact span,.action-callout>span{display:block;font-family:var(--mono);font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--accent);margin-bottom:7px;}
+.decision-fact p{margin:0;font-size:14.5px;line-height:1.5;}
+.action-callout{position:relative;margin:20px 0;padding:20px 22px 20px 26px;background:var(--ink);color:var(--paper);border-radius:12px;}
+.action-callout::before{content:"→";position:absolute;right:20px;top:12px;font-family:var(--serif);font-size:34px;color:#8fc7b9;}
+.action-callout>span{color:#8fc7b9;}.action-callout p{font-size:17px;line-height:1.5;margin:0;padding-right:34px;}
+.option-comparison{margin:22px 0;}.basis-chip{display:inline-block;padding:3px 7px;border-radius:99px;background:var(--good-bg);color:var(--good);font-family:var(--mono);font-size:9px;letter-spacing:.04em;white-space:nowrap;}
+.basis-chip.target_cap{background:var(--caution-bg);color:var(--caution);}.basis-chip.unknown{background:var(--risk-bg);color:var(--risk);}
+.tripwire{margin:14px 0;padding:16px 18px;border:1px solid #b9d5cd;border-left:4px solid var(--accent);border-radius:10px;background:#f2f8f6;}
+.tripwire .tag{display:block;color:var(--accent);margin-bottom:6px;}.tripwire strong{display:block;font-family:var(--serif);font-size:19px;}.tripwire p{margin:5px 0 0;font-size:13.5px;color:var(--soft);}
+.decision-safety{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:18px;}
+.decision-safety article{padding:17px 18px;background:var(--paper);border:1px solid var(--line);border-radius:12px;}
+.decision-safety article:first-child{border-left:4px solid var(--risk);}
+.decision-safety p{font-size:14px;margin:0;}
+.critical-unknowns{margin:0;padding-left:18px;}.critical-unknowns li{font-size:13.5px;margin:0 0 6px;}
+.critical-warning{margin-top:12px;padding:14px 16px;background:var(--risk-bg);border:1px solid #e1b8b1;border-radius:10px;}
+.critical-warning .tag{color:var(--risk);}.critical-warning p{font-size:13.5px;margin:0;}
+.council-read{margin:15px 0 0;font-size:13.5px;color:var(--soft);}
+.decision-details{margin-top:14px;border-top:1px solid var(--line);padding-top:12px;}
+.decision-details summary{cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--soft);text-transform:uppercase;letter-spacing:.08em;}
+.decision-details>div{padding-top:10px;font-size:13.5px;}.decision-details ul{margin:8px 0;padding-left:18px;}
+.evidence-anchors{display:flex;gap:10px;align-items:center;margin-top:12px;font-family:var(--mono);font-size:10.5px;color:var(--faint);}
+.evidence-anchors span{text-transform:uppercase;letter-spacing:.1em;}
 
 /* top action bar + copy */
 .bar{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:12px;
@@ -824,6 +1116,7 @@ p{margin:0 0 .6em;}
 
 /* bottom line */
 .bottomline{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:34px;}
+.verdict .bottomline{margin:18px 0 0;}
 .bottomline > div{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;}
 .tag{display:inline-block;font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:7px;}
 .bottomline p{margin:0;font-size:15px;color:var(--ink);}
@@ -917,7 +1210,9 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-fa
 @keyframes rise{to{opacity:1;transform:none;}}
 @media (max-width:640px){
   main{padding:34px 16px 60px;}
-  .glance,.bottomline,.checks,.redteam{grid-template-columns:1fr;}
+  .verdict{padding:24px 20px 20px;}
+  .glance,.bottomline,.checks,.redteam,.decision-safety{grid-template-columns:1fr;}
+  .snapshot-table{min-width:560px;}.payback-result{grid-template-columns:1fr;}.payback-result p{grid-column:1;}
 }
 @media (prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none;animation:none;}}
 @media print{.reveal{opacity:1;transform:none;animation:none;}.fold[open]{break-inside:avoid;}}
@@ -935,7 +1230,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-fa
     ${flags}
   </header>
   ${body}
-  <footer>Generated by aiki · ${escapeHtml(view.runId)} · a local model council. This is analysis, not advice — verify before acting.</footer>
+  <footer>Generated by aiki · ${escapeHtml(view.runId)} · ${quick ? 'single-model quick analysis' : 'a local model council'}. This is analysis, not advice — verify before acting.</footer>
 </main>
 <script>
 const REPORT_MD = ${md};

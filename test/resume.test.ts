@@ -23,49 +23,76 @@ function scriptAdapter(id: ProviderId, counter: { n: number }, opts: { judgeFail
         return { ok: false, error: 'TIMEOUT', stderrTail: 'judge timed out', durationMs: 1 };
       }
       let obj: unknown;
-      if (p.includes('intent preflight analyst')) {
+      if (p.includes('TWO-VIEW PREFLIGHT')) {
         obj = {
           subject: 'local multi-model orchestration CLI',
-          decision_frame: 'decide whether to build the tool as specified',
-          evaluation_lens: 'developer-tool viability and risk',
+          interpretation: 'decide whether to build a local multi model orchestration cli',
+          normalized_decision: 'decide whether to build a local multi model orchestration cli',
+          alternatives: ['build it', 'do not build it'],
           target_user: 'developers already paying for multiple AI subscriptions',
           constraints: ['no API keys', 'read-only'],
+          success_bar: 'a defensible build or stop recommendation',
+          success_criteria: ['a verdict'],
           claims_to_test: ['1.3x bug-catch rate'],
           evidence_supplied: [],
-          missing_axes: ['pricing'],
+          missing_evidence: ['pricing evidence'],
+          domain_dimensions: [
+            { id: 'D1', label: 'provider interoperability', rationale: 'The idea depends on installed provider CLIs.' },
+            { id: 'D2', label: 'workflow adoption', rationale: 'Developers must change review habits.' },
+            { id: 'D3', label: 'output comparability', rationale: 'The council compares unlike provider outputs.' },
+          ],
           questions: [
             { id: 'Q1', axis: 'decision_frame', question: 'What decision should the council help you make?', why_it_matters: 'The verdict needs a decision frame.', suggested_answers: ['Build/no-build', 'Risk list'] },
             { id: 'Q2', axis: 'target_user', question: 'Who is the first target user?', why_it_matters: 'The audience changes the critique.', suggested_answers: ['Solo developers', 'Teams'] },
             { id: 'Q3', axis: 'success_bar', question: 'What success bar should be used?', why_it_matters: 'The judge needs a bar.', suggested_answers: ['Beat one strong model', 'Find fatal risks'] },
           ],
         };
-      } else if (p.includes('intake analyst')) {
-        obj = { task: 'build a local multi-model orchestration CLI', task_type: 'idea-refinement', constraints: [], unknowns: ['target user'], success_criteria: ['a verdict'] };
-      } else if (p.includes('their request could be misread')) {
-        obj = { my_interpretation: 'build a local multi model orchestration cli', plausible_misreadings: ['a cloud chat product'] };
-      } else if (p.includes('Fill the role prompt templates')) {
-        obj = { prompts: { analyst: 'ROLE: analyst. Task fully specified, no slots remain.' } };
-      } else if (p.includes('Task fully specified')) {
+      } else if (p.includes('ROLE: Independent analyst')) {
         obj = {
           task_echo: 'build a local multi-model orchestration CLI',
           strongest_version: 'A local CLI that orchestrates installed AI CLIs for cross-model review.',
-          assumptions: [
-            { id: 'A1', statement: 'developers want local multi model orchestration', type: 'JUDGMENT', load_bearing: true },
-            { id: 'A2', statement: 'installed CLIs expose stable machine readable output', type: 'VERIFIABLE', load_bearing: true },
+          positions: [
+            { local_id: 'P1', proposition: 'developers want local multi model orchestration', dimension_id: 'R1', stance: 'SUPPORT', basis: 'EVIDENCE', load_bearing: true, if_false: 'STOP', reasoning: 'The supplied request demonstrates demand.', evidence_ids: ['E1'], depends_on: [] },
+            { local_id: 'P2', proposition: 'installed CLIs expose stable machine readable output', dimension_id: 'R4', stance: id === 'agy' ? 'SUPPORT' : 'OPPOSE', basis: 'EVIDENCE', load_bearing: true, if_false: 'CONDITION', reasoning: id === 'agy' ? 'Probe-time formats can be pinned.' : 'CLI output formats drift between versions.', evidence_ids: ['E2'], depends_on: [] },
           ],
-          attacks: [{ id: 'X1', target_assumption: 'A2', argument: 'CLI output formats drift between versions', severity: 'MED' }],
-          open_questions: ['who is the target user?'],
+          evidence: [
+            { id: 'E1', claim_supported: 'developers want local multi model orchestration', source_kind: 'USER', support: 'SUPPORTS', freshness: 'CURRENT' },
+            { id: 'E2', claim_supported: 'installed CLIs expose stable machine readable output', source_kind: 'USER', support: id === 'agy' ? 'SUPPORTS' : 'CONTRADICTS', freshness: 'CURRENT' },
+          ],
+          coverage: [
+            { dimension_id: 'R1', status: 'COVERED', position_ids: ['P1'], rationale: 'P1 covers target users.' },
+            { dimension_id: 'R4', status: 'COVERED', position_ids: ['P2'], rationale: 'P2 covers feasibility.' },
+          ],
+          decision_questions: [{ id: 'Q1', question: 'who is the target user?', claim_ids: ['P1'] }],
         };
-      } else if (p.includes('grouping claims that state the SAME')) {
-        obj = { groups: [] };
-      } else if (p.includes('ROLE: Verifier')) {
-        obj = { verifications: [{ target_id: 'D1', verdict: 'REFUTE', evidence: 'the format is pinned at probe time', note: '' }] };
+      } else if (p.includes('TARGETED COVERAGE FILL')) {
+        const missing = ['R2', 'R3', 'R5', 'R6', 'R7', 'R8', 'R9', 'R10', 'R11', 'R12', 'R13', 'D1', 'D2', 'D3'];
+        obj = {
+          task_echo: 'build a local multi-model orchestration CLI',
+          strongest_version: 'A focused local orchestration CLI may work.',
+          positions: [],
+          evidence: [],
+          coverage: missing.map((dimension_id) => ({
+            dimension_id,
+            status: 'NOT_APPLICABLE',
+            position_ids: [],
+            rationale: `No additional claim is needed for ${dimension_id} in this scripted fixture.`,
+          })),
+          decision_questions: [],
+        };
+      } else if (p.includes('ROLE: Independent verifier')) {
+        obj = { verifications: [{ claim_id: 'G2', status: 'CONTRADICTED', reasoning: 'the format is pinned at probe time', evidence_ids: ['E2'], calculation_check: 'NOT_APPLICABLE', missing_evidence: [] }] };
+      } else if (p.includes('ROLE: Scout rebuttal')) {
+        obj = { events: [{ claim_id: 'G2', response: id === 'agy' ? 'CONCEDE' : 'COUNTER', reasoning: 'The probe-time evidence narrows the format-drift concern.', evidence_ids: ['E1'] }] };
       } else if (p.includes('ROLE: Judge')) {
         obj = {
-          adjudications: [{ id: 'D1', ruling: 'REJECT', reasoning: 'the drift risk is mitigated by the flag probe', evidence_cited: 'S1 probe' }],
+          adjudications: [{ claim_id: 'G2', ruling: 'HOLDS', reasoning: 'the drift risk is mitigated by the flag probe', evidence_ids: ['E1'], effect_on_decision: 'The idea can proceed behind a compatibility guard.' }],
           verdict: 'Viable as a local orchestration layer; ship behind a provider-probe guard.',
           recommendation: 'PROCEED_WITH_CONDITIONS',
           conditions: ['Proceed only if provider output probing stays stable across versions.'],
+          recommendation_claim_ids: ['G1', 'G2'],
+          condition_claim_ids: ['G2'],
+          strongest_counter_case: { claim_ids: ['G2'], reasoning: 'Provider formats may drift faster than probes can adapt.' },
           key_points: ['The provider-probe guard addresses the main dispute.'],
           dissent: ['May not beat a single strong model on subjective synthesis.'],
           confidence_notes: 'HIGH on the consensus claims; MEDIUM on the contested one.',
@@ -118,10 +145,10 @@ describe('resume: call replay', () => {
     const c1 = { n: 0 };
     const first = await executeRun(makeCtx(c1), INPUT, runIdeaRefinement);
     expect(first.ok).toBe(true);
-    expect(c1.n).toBe(12); // full run made 12 real calls
+    expect(c1.n).toBe(8); // six-call base + two optional calls
 
     const cache = await buildReplayCache(first.dir);
-    expect(cache.size).toBe(12);
+    expect(cache.size).toBe(8);
 
     // Resume: a NEW run (different id/dir) with the cache — nothing should reach a model.
     const c2 = { n: 0 };
@@ -129,7 +156,7 @@ describe('resume: call replay', () => {
     expect(resumed.ok).toBe(true);
     expect(c2.n).toBe(0); // ZERO real calls — proves replay + run-dir path normalization across ids
     expect(resumed.callCount).toBe(0);
-    await expect(readFile(join(resumed.dir, 'final-report.md'), 'utf8')).resolves.toContain('# Decision Brief');
+    await expect(readFile(join(resumed.dir, 'final-report.md'), 'utf8')).resolves.toContain('# Multi-Model Decision Report');
   });
 
   it('a run that died at S9 resumes and re-calls ONLY the judge (S1–S8 replayed)', async () => {
@@ -138,13 +165,13 @@ describe('resume: call replay', () => {
     expect(first.ok).toBe(false); // judge timed out
 
     const cache = await buildReplayCache(first.dir);
-    expect(cache.size).toBe(10); // S0–S8 cached; the failed judge output ([TIMEOUT]) is skipped
+    expect(cache.size).toBe(6); // preflight + scouts + coverage fill + verifier cached
 
     const c2 = { n: 0 };
     const resumed = await executeRun(makeCtx(c2, { replay: cache }), INPUT, runIdeaRefinement);
     expect(resumed.ok).toBe(true);
     expect(c2.n).toBe(2); // judge + action planner re-called; everything before them replayed
-    await expect(readFile(join(resumed.dir, 'final-report.md'), 'utf8')).resolves.toContain('# Decision Brief');
+    await expect(readFile(join(resumed.dir, 'final-report.md'), 'utf8')).resolves.toContain('# Multi-Model Decision Report');
   });
 });
 

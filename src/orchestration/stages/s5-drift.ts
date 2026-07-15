@@ -1,6 +1,6 @@
 // S5 — drift detection (§9, §12.1). Deterministic gate: does each S4 output still address the
 // contract's task? Two code checks (no model call — the §601/§532 T6 "deterministic core"; the §9
-// "verifier spot-check" is deferred): (1) the output produced ≥1 assumption (an analyst that
+// "verifier spot-check" is deferred): (1) the output produced ≥1 position (an analyst that
 // produced none did not engage the task), and (2) its `task_echo` is similar enough to the contract
 // task (overlap coefficient ≥ DRIFT_MIN_SIMILARITY). Drifted outputs are excluded from everything
 // downstream and logged; if exclusion drops the survivor count below quorum (2), the run aborts.
@@ -35,6 +35,7 @@ export async function s5Drift(
   ctx: RunCtx,
   contract: IntentContract,
   seats: SeatOutput[],
+  minSeats = 2,
 ): Promise<{ report: DriftReport; kept: SeatOutput[] }> {
   const taskTokens = tokenize(contract.task);
   const entries: DriftEntry[] = [];
@@ -43,12 +44,12 @@ export async function s5Drift(
 
   for (const seat of seats) {
     const sim = overlapCoefficient(tokenize(seat.output.task_echo), taskTokens);
-    const hasAssumptions = seat.output.assumptions.length > 0;
-    const on_task = hasAssumptions && sim >= DRIFT_MIN_SIMILARITY;
-    const evidence = !hasAssumptions
-      ? 'no assumptions produced'
+    const hasPositions = seat.output.positions.length > 0;
+    const on_task = hasPositions && sim >= DRIFT_MIN_SIMILARITY;
+    const evidence = !hasPositions
+      ? 'no positions produced'
       : on_task
-        ? `task_echo overlap ${sim.toFixed(2)} ≥ ${DRIFT_MIN_SIMILARITY}; ${seat.output.assumptions.length} assumption(s)`
+        ? `task_echo overlap ${sim.toFixed(2)} ≥ ${DRIFT_MIN_SIMILARITY}; ${seat.output.positions.length} position(s)`
         : `task_echo overlap ${sim.toFixed(2)} < ${DRIFT_MIN_SIMILARITY} (off-task)`;
     entries.push({ provider: seat.provider, on_task, similarity: Number(sim.toFixed(3)), evidence });
     if (on_task) kept.push(seat);
@@ -58,8 +59,8 @@ export async function s5Drift(
   const report: DriftReport = { entries, excluded };
   await ctx.writer.writeJson('drift-report', report);
 
-  if (kept.length < 2) {
-    throw new StageError('S5', 'QUORUM', `drift exclusion left ${kept.length} on-task output(s); need ≥2`);
+  if (kept.length < minSeats) {
+    throw new StageError('S5', 'QUORUM', `drift exclusion left ${kept.length} on-task output(s); need ≥${minSeats}`);
   }
   return { report, kept };
 }

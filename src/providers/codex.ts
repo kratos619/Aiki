@@ -19,7 +19,8 @@ import { runAdapter } from './adapter-core.js';
 const codexSpec: AdapterSpec = {
   id: 'codex',
   buildArgs(req: RunRequest, flags: FlagProfile): string[] {
-    const args = ['exec', '--skip-git-repo-check'];
+    // `--search` is a verified root option: it must precede `exec` (Codex 0.144.1).
+    const args = req.research ? ['--search', 'exec', '--skip-git-repo-check'] : ['exec', '--skip-git-repo-check'];
     if (req.readOnly !== false && flags.readOnlyFlag === 'sandbox') args.push('-s', 'read-only');
     if (flags.model) args.push('--model', flags.model); // V8: verified `codex exec --model <id>` (before the prompt)
     args.push(req.prompt);

@@ -16,8 +16,8 @@ import { s9ReviewJudge } from '../orchestration/stages/cr-s9-judge.js';
 import { scoreFindings } from '../orchestration/stages/cr-report.js';
 import { runCodeReview } from '../workflows/code-review.js';
 
-export type ArmId = 'A' | 'B' | 'C' | 'D' | 'E';
-export const ARM_IDS: ArmId[] = ['A', 'B', 'C', 'D', 'E'];
+export type ArmId = 'A' | 'B' | 'C' | 'D' | 'E' | 'L';
+export const ARM_IDS: ArmId[] = ['A', 'B', 'C', 'D', 'E', 'L'];
 export type ArmFn = (ctx: RunCtx, diff: string) => Promise<Finding[]>;
 
 const SCHEMA_LINE =
@@ -102,19 +102,20 @@ export const armC: ArmFn = async (ctx, diff) => {
   return scoreFindings(map, judge).filter((s) => s.disposition === 'kept').map((s) => s.finding);
 };
 
-/** Arms D and E — the full product pipeline (`runCodeReview`) → read back its kept findings for scoring.
+/** Arms D, E, and L — the product pipeline (`runCodeReview`) → read back kept findings for scoring.
  *  SAME pipeline; the harness injects their differing roles: D = claude+codex reviewers + agy judge;
- *  E = agy+codex reviewers + claude judge (the Opus-thrift variant — claude fires only on disputes). */
-const productPipeline: ArmFn = async (ctx, diff) => {
-  await runCodeReview(ctx, diff);
+ *  E = agy+codex reviewers + claude judge; L = E plus targeted Claude coverage-hole hunts. */
+async function runProductPipeline(ctx: RunCtx, diff: string, ladder = false): Promise<Finding[]> {
+  await runCodeReview(ctx, diff, { ladder });
   const [map, judge] = await Promise.all([
     readFile(resolve(ctx.writer.dir, '07-review-map.json'), 'utf8').then(JSON.parse),
     readFile(resolve(ctx.writer.dir, '09-judge-report.json'), 'utf8').then(JSON.parse),
   ]);
   return scoreFindings(map, judge).filter((s) => s.disposition === 'kept').map((s) => s.finding);
-};
+}
 
-export const armD: ArmFn = productPipeline;
-export const armE: ArmFn = productPipeline;
+export const armD: ArmFn = (ctx, diff) => runProductPipeline(ctx, diff);
+export const armE: ArmFn = (ctx, diff) => runProductPipeline(ctx, diff);
+export const armL: ArmFn = (ctx, diff) => runProductPipeline(ctx, diff, true);
 
-export const ARMS: Record<ArmId, ArmFn> = { A: armA, B: armB, C: armC, D: armD, E: armE };
+export const ARMS: Record<ArmId, ArmFn> = { A: armA, B: armB, C: armC, D: armD, E: armE, L: armL };

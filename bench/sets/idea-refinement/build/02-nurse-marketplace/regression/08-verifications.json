@@ -1,0 +1,58 @@
+{
+  "verifications": [
+    {
+      "target_id": "D1",
+      "verdict": "CONFIRM",
+      "evidence": "Employer-side FICA alone is 7.65%, before FUTA/SUTA, workers comp, PEO/EOR admin, malpractice, credentialing, recruiting, support, and no-show/refund leakage. A 15% fee on nurse wages is likely insufficient unless the fee is charged on top of fully loaded labor cost.",
+      "note": "The claim needs the fee base defined: wage, gross payroll, or fully loaded bill rate."
+    },
+    {
+      "target_id": "D2",
+      "verdict": "REFUTE",
+      "evidence": "The argument proves hospitals have existing options and procurement friction, but it does not prove those options solve last-minute RN gaps well enough in the launch metro. VMS/MSP existence challenges go-to-market, not the underlying unmet staffing pain.",
+      "note": "Launch-metro fill-rate and call-out data would decide this."
+    },
+    {
+      "target_id": "D3",
+      "verdict": "CONFIRM",
+      "evidence": "Last-minute nurse supply is price-sensitive and already served by agencies/gig apps that can pay high rates; W-2 onboarding and payroll burden reduce flexibility and margin. Without demonstrated shift density and accepted nurse pay rates, the supply-side economics are doubtful.",
+      "note": "The claim needs real nurse acquisition and accepted-rate data."
+    },
+    {
+      "target_id": "D4",
+      "verdict": "CONFIRM",
+      "evidence": "Document verification is not the same as hospital clearance. Facility-specific competencies, immunizations, background/drug checks, EMR access, unit orientation, specialty validation, and audit requirements can block instant deployment even if an API returns fast records.",
+      "note": "API speed does not equal floor-level acceptance."
+    },
+    {
+      "target_id": "D5",
+      "verdict": "REFUTE",
+      "evidence": "The argument shows competition and weak moat, but the claim is about meaningful differentiation, not defensibility forever. If localized operations produce faster reliable fill in a metro, that can be differentiated even if incumbents could copy it.",
+      "note": "The claim still needs measured fill-time advantage versus incumbents."
+    },
+    {
+      "target_id": "D6",
+      "verdict": "CONFIRM",
+      "evidence": "Clinical staffing risk can be insured in principle, but last-minute placement into unfamiliar units raises patient-safety, indemnity, deductible, exclusion, and defense-cost risk. On a $500k capital base, one serious incident or expensive policy terms could plausibly break the model.",
+      "note": "This is less fatal if the launch excludes high-acuity units and insurance terms are proven."
+    },
+    {
+      "target_id": "D7",
+      "verdict": "UNCERTAIN",
+      "evidence": "Hospital procurement, legal, vendor credentialing, and security review can take months, and founder access usually cannot bypass compliance. But $500k sufficiency depends on burn rate, existing relationships, pilot scope, and whether demand is pre-committed.",
+      "note": "The argument is plausible but too generic to defeat the claim by itself."
+    },
+    {
+      "target_id": "D8",
+      "verdict": "REFUTE",
+      "evidence": "VMS/MSP channels are common for contingent staffing, but the argument overstates by saying hospitals route all staffing exclusively through them. Some facilities use direct agency or app workflows, and a standalone app could be approved or integrated, though fees would pressure margin.",
+      "note": "The objection weakens the model but does not prove non-adoption."
+    },
+    {
+      "target_id": "D9",
+      "verdict": "UNCERTAIN",
+      "evidence": "Ultra-fast guaranteed fill likely requires excess available nurses, on-call incentives, or high premiums. However, intermittent W-2 nurses do not automatically create large fixed wage costs, so the specific fixed-cost/compliance objection is overstated while the liquidity guarantee remains unproven.",
+      "note": "The real test is availability economics, not W-2 status alone."
+    }
+  ]
+}

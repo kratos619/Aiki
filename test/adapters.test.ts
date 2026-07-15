@@ -120,6 +120,12 @@ describe('codex adapter', () => {
     expect(calls[0]!.args).toEqual(['exec', '--skip-git-repo-check', '-s', 'read-only', 'hi']);
   });
 
+  it('puts the verified root --search option before exec only for research calls', async () => {
+    const { fn, calls } = scriptedSpawn([raw({ stdout: '{"ok":true}' })]);
+    await codex.run(req({ research: true }), CODEX_FLAGS, { spawn: fn });
+    expect(calls[0]!.args).toEqual(['--search', 'exec', '--skip-git-repo-check', '-s', 'read-only', 'hi']);
+  });
+
   it('succeeds despite auth-looking words in the stderr transcript', async () => {
     const { fn } = scriptedSpawn([raw({ code: 0, stdout: '{"ok":true}', stderr: 'user: please login\ncodex\n{"ok":true}' })]);
     const res = await codex.run(req(), CODEX_FLAGS, { spawn: fn });

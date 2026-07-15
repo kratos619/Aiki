@@ -64,6 +64,22 @@ Antigravity binary. Command/binary references in fixes (e.g. "run `agy`") keep t
 - cwd is set via the spawn cwd option (no `-C` needed for the common case). `--skip-git-repo-check`
   is required for run-anywhere support; it does not bypass approvals or the read-only sandbox.
 
+## R4 provider-native investigation observations (2026-07-13)
+
+Verified from the installed CLIs' complete `--help` output; no model calls and no credential reads:
+
+- **Claude Code 2.1.204:** exposes general `--tools` / `--allowedTools` controls, but its help does not
+  advertise a dedicated web/search/research flag. Do not assume a research tool is available. Aiki keeps
+  `--permission-mode plan`; no R4 adapter flag changed.
+- **Codex CLI 0.144.1:** root `codex --help` explicitly exposes `--search` (live web search); `codex exec
+  --help` does not list a separate research flag. R6 verifies placement as `codex --search exec ...`;
+  aiki enables it only for Codex scout calls in explicit `research` mode. Existing `-s read-only` stays.
+- **Antigravity `agy` 1.1.1:** help exposes `--sandbox` but no explicit web/search/research flag. Do not
+  infer provider-native investigation beyond prompt-visible local files.
+
+R4 evidence-pack files are therefore read through the existing read-only adapter profiles only. No
+dangerous bypass, write permission, credential directory, or unverified flag was added.
+
 ## Flag discrepancies vs §7.3
 
 | Date | Provider | Version | Plan-assumed flag | Actual | Adapter change | Enforcement impact |
@@ -81,3 +97,6 @@ Antigravity binary. Command/binary references in fixes (e.g. "run `agy`") keep t
 | 2026-07-06 | codex | 0.142.5 | model selection (V8) | `-m, --model <MODEL>` (also on `codex exec`, must precede the prompt). No list command. | adapter buildArgs adds `--model` before the prompt; free-text | ✔ |
 | 2026-07-06 | agy | 1.0.16 | model selection (V8) | `--model <id>` AND `agy models` LISTS available (e.g. "Gemini 3.1 Pro (High)", "Claude Opus 4.6 (Thinking)", "GPT-OSS 120B (Medium)" — ids have spaces/parens, pass as one argv elem) | adapter `--model`; `aiki models` runs `agy models` | ✔ only CLI that enumerates |
 | 2026-07-09 | codex | 0.142.5 | run-anywhere smoke in arbitrary cwd | `--skip-git-repo-check` present on `codex exec`; without it, non-git cwd fails: "Not inside a trusted directory..." | adapter always adds `--skip-git-repo-check` after `exec` | read-only unchanged: still uses `-s read-only`; no dangerous bypass |
+| 2026-07-11 | codex | 0.142.5→**0.144.1** | configured CLI-default model `gpt-5.6-sol` | 0.142.5 returned HTTP 400: model requires newer Codex; `codex update` installed 0.144.1 | no adapter flag change | version probe green; live retry remains USER-approved only |
+| 2026-07-13 | codex | 0.144.1 | provider-native investigation | root help exposes verified `--search`; `codex --search exec --help` succeeds while `codex exec --search --help` rejects the option | enable only on explicit R6 research scout calls | existing `-s read-only` unchanged |
+| 2026-07-13 | claude / agy | 2.1.204 / 1.1.1 | provider-native investigation | no dedicated web/search/research flag in complete help output | none | existing `plan` / `sandbox` enforcement unchanged |

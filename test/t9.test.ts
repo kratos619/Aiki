@@ -351,6 +351,44 @@ describe('show / resolve / config (cwd-based)', () => {
     expect(beforePlan).not.toContain('>D1<');
   });
 
+  it('show --html (idea): renders planner and synthesis degradation beside affected sections', async () => {
+    await mkRun(aiki, 'idea-degraded-html', {
+      'meta.json': JSON.stringify({
+        workflow: 'idea-refinement', exit_status: 'ok', aborted: false, call_count: 8,
+        budget: { limit: 12, used: 8 }, roles: { judge: 'claude' },
+        flags: ['synthesis_suspect', 'plan_fallback'],
+      }),
+      '01-intent-contract.json': JSON.stringify({ task: 'Should this idea proceed?' }),
+      '04-role-outputs/agy.json': JSON.stringify({
+        workflow: 'idea-refinement', task_echo: 't', strongest_version: 'A focused version may work.',
+        assumptions: [], attacks: [], open_questions: ['Which user has this pain?'],
+      }),
+      '07-disagreement-map.json': JSON.stringify({
+        consensus: [], contradictions: [],
+        unique: [{ id: 'C1', statement: 'A target user has the pain.', type: 'JUDGMENT', providers: ['agy'] }],
+        blind_spots: ['target user / audience'],
+      }),
+      '09-judge-report.json': JSON.stringify({
+        adjudications: [], verdict: 'Do not proceed without demand evidence.', recommendation: 'STOP',
+        key_points: ['Demand remains unverified.'], dissent: ['A narrow niche may still work.'], confidence_notes: 'LOW.',
+      }),
+      '09b-action-plan.json': JSON.stringify({
+        kind: 'PlannerUnavailable', reason: 'planner_failed', unresolved_questions: ['Which user has this pain?'],
+      }),
+      'final-report.md': '# Report',
+    });
+
+    const { code, out } = await capture(() => show('idea-degraded-html', { html: true }));
+    expect(code).toBe(0);
+    const html = await readFile(out.trim(), 'utf8');
+    const chair = html.slice(html.indexOf("Chairman&#39;s reasoning"), html.indexOf('Dimension scorecard'));
+    const plan = html.slice(html.indexOf('Validation plan'), html.indexOf('Open questions that flip the verdict'));
+    expect(chair).toContain('synthesis suspect');
+    expect(plan).toContain('Planner unavailable: planner_failed');
+    expect(plan).toContain('plan fallback');
+    expect(plan).toContain('Which user has this pain?');
+  });
+
   it('show --html (idea): old runs without recommendation or plan keep the legacy body', async () => {
     await mkRun(aiki, 'idea-old-html', {
       'meta.json': JSON.stringify({ workflow: 'idea-refinement', exit_status: 'ok', aborted: false, call_count: 8, budget: { limit: 12, used: 8 }, roles: { judge: 'claude' } }),

@@ -10,6 +10,8 @@ import { RunWriter } from '../storage/runs.js';
 import { recordSession, updateSessionStatus } from '../storage/sessions.js';
 import { runIdeaRefinement } from '../workflows/idea-refinement.js';
 import { runCodeReview } from '../workflows/code-review.js';
+import type { EvidencePack } from './evidence-pack.js';
+import type { IdeaMode } from '../schemas/index.js';
 
 export type WorkflowFn = (ctx: RunCtx, input: string) => Promise<void>;
 
@@ -57,6 +59,7 @@ export async function executeRun(ctx: RunCtx, input: string, fn: WorkflowFn): Pr
 }
 
 export interface RunOptions {
+  mode?: IdeaMode; // idea-refinement protocol; default council
   budget?: number;
   deadlineMs?: number;
   signal?: AbortSignal;
@@ -67,6 +70,7 @@ export interface RunOptions {
   replay?: Map<string, string>; // resume (V6.3): prior (provider,prompt)→output; matched calls skip the model.
   resumedFrom?: string; // resume: the run id this one continues (recorded in the session registry).
   providerModels?: Partial<Record<ProviderId, string>>; // V8: per-provider model → CLI `--model <id>`.
+  evidencePack?: EvidencePack; // idea-refinement: user-scoped source paths + sha256 manifest
 }
 
 /**
@@ -76,13 +80,14 @@ export interface RunOptions {
  */
 export async function run(workflow: WorkflowId, input: string, opts: RunOptions = {}): Promise<RunOutcome> {
   const handles = await setupProviders(opts.providerModels);
-  if (handles.length < 2) {
+  const requiredProviders = workflow === 'idea-refinement' && opts.mode === 'quick' ? 1 : 2;
+  if (handles.length < requiredProviders) {
     return {
       ok: false,
       runId: '(none)',
       dir: '',
       callCount: 0,
-      error: { code: 'QUORUM', message: `need ≥2 providers, found ${handles.length} — run \`aiki doctor\`` },
+      error: { code: 'QUORUM', message: `need ≥${requiredProviders} provider${requiredProviders === 1 ? '' : 's'}, found ${handles.length} — run \`aiki doctor\`` },
     };
   }
 
@@ -92,6 +97,7 @@ export async function run(workflow: WorkflowId, input: string, opts: RunOptions 
   const ctx = new RunCtx({
     runId,
     workflow,
+    mode: opts.mode,
     handles,
     roles,
     writer,
@@ -101,6 +107,7 @@ export async function run(workflow: WorkflowId, input: string, opts: RunOptions 
     signal: opts.signal,
     events: opts.events,
     replay: opts.replay,
+    evidencePack: opts.evidencePack,
   });
 
   // Register the session (V6.3) so `aiki sessions`/`resume` can find it from anywhere. run() is a

@@ -3,21 +3,77 @@
 ## Unreleased
 
 ### Added
-- **Contextual intent preflight** — idea-refinement now starts with an S0 run brief: the analyst generates
-  3-4 context-specific questions, the TUI asks them before the main council work, and the answers are
-  persisted in `00b-run-brief.json` and included in downstream prompts.
+- **Explicit idea modes and adaptive budgets (R6)** — `aiki run idea-refinement --mode
+  quick|council|research` defaults to council without a learned router. Quick is one structured analyst and
+  never presents itself as a council; council uses a 6-call base with at most two graph-triggered extras;
+  research permits up to four extras and enables the verified `codex --search exec ...` capability only on
+  Codex scout calls while retaining `-s read-only`. Mode-aware defaults are 4/10/12 calls respectively.
+- **Two-view decision preflight (R6)** — two readings run in parallel and deterministically merge into one
+  user-confirmed or visibly headless/defaulted decision contract. The old S1/S2/S3 model calls are gone;
+  analyst prompts are filled deterministically. Receipts split calls into discovery, verification, repair,
+  and planning, and resume preserves the original mode.
+- **Evidence and calculation integrity (R4)** — idea runs accept `--evidence <file|directory>` and persist
+  only source paths + SHA-256 hashes; evidence cards enforce source/freshness rules; derived numeric claims
+  can carry a pure arithmetic ledger whose values/units are recomputed; S8 emits typed claim verification;
+  and invalid evidence references are rejected before the chair call.
+- **Selective rebuttal and evidence-linked chair (R5)** — only verdict-flipping graph nodes enter one
+  anonymous rebuttal round; council coverage-fill and rebuttal share a two-call cap while chair/planner
+  budget stays reserved; responses append as immutable `08b-rebuttals.json` events; and the chair must emit
+  graph-linked rulings, recommendation reasons, conditions, pivots, and strongest counter-cases. A judge-
+  authored node is excluded before the chair prompt and remains unresolved under degradation.
+- **Startup preflight** — typing bare `aiki` now runs the full doctor before the home screen: per-provider
+  progress rows checking CLI presence, version, and auth/quota (smoke, cached 6h). Fewer than 2 providers
+  ready shows a failure screen with the exact fix per provider; a single degraded provider shows a warning
+  on the home screen and the council continues with the remaining quorum.
+- **Idea-lane bench resume** — `aiki bench idea-refinement --set build --resume [--yes]` continues the
+  latest campaign file in `bench/results/`: completed case×rotation pairs are kept (never re-paid), missing
+  or failed pairs re-run, and new observations append to the same file. The dry-run estimate reflects only
+  what is left to run. `--case <id>` restricts the metered run to one build case (an unknown id fails loud
+  with the list of valid cases), and a run that completes `low_diversity` (a scout seat died mid-run) is
+  rejected instead of being recorded — it is not a valid rotation sample.
+- **Adjudication import** — `aiki bench idea-refinement --import <file>` (offline, no provider calls)
+  imports blind adjudications: each `{ case_id, rotation, adjudication }` entry flows through the frozen R0
+  scorer and fills that pair's null recall/precision in the campaign file. Unknown pairs fail loud;
+  re-scoring an already-scored pair is refused (blind adjudication is one pass); when every pair is scored
+  it prints the lane default selection.
+- **Contextual intent questions** — the merged idea preflight generates 3-4 context-specific questions, the
+  TUI asks them before the main work, and answers persist in `00b-run-brief.json`.
 - **Idea report v3** — idea-refinement reports now emit an explicit BLUF recommendation
   (`PROCEED`, `PROCEED_WITH_CONDITIONS`, `PIVOT`, `STOP`), conditions when needed, a best-effort
   12-dimension scorecard, assumption audit table in HTML, deterministic debate narrative, anchored
   validation plan with kill signals (`09b-action-plan.json`), open questions, red-team note, and a
   call/provider receipt. The Markdown copy button includes the expanded brief.
+- **R7 decision dossier** — `10-decision-report.json` now persists the graph-anchored recommendation chain,
+  evidence source/date/freshness/verification table, genuine disagreement and append-only position-change
+  events, coverage and sensitivity ledgers, executable experiments, strongest counter-case, strictly
+  verified unique-provider contributions, categorized receipt, and technical graph fold. Final Markdown,
+  HTML, and Copy-Markdown render from that same dossier; R6-era and older runs retain their legacy HTML. The
+  full report is reader-first: decision/confidence/warning and the first action lead, followed by action plan,
+  reasoning, decision sensitivity, evidence, risks/gaps, dissent, council value, run details, and technical audit.
 
 ### Changed
-- Idea-refinement run estimate is now ~12 provider calls / ~4 Claude-Opus calls because S0 writes the
-  intent preflight and the judge seat also writes the validation plan. The default budget is now 13 so
-  a normal run still has room for one repair without skipping the validation plan.
+- **Three-level decision report** — idea-refinement's final report is restructured: (1) a one-screen
+  terminal summary (verdict, status, structural confidence, consensus counts, primary reason, dissent,
+  verification checks, next action) printed after `aiki run`; (2) a 10-section reader-first graph-backed
+  Decision Report markdown (`final-report.md`) ordered as decision, action plan, reasoning, what could change
+  the decision, evidence, risks/gaps, dissent, council value, run details, and technical audit; (3)
+  machine-readable `10-decision-report.json` that Markdown and HTML render from, so the
+  surfaces cannot disagree. Statuses are ACCEPTED / ACCEPTED_WITH_CONDITIONS / INCONCLUSIVE / REJECTED
+  (mapped from the judge's recommendation). Confidence is structural — 40% verification coverage + 25%
+  independent convergence + 20% evidence quality + 15% stability − critical-risk penalty; model
+  self-confidence never enters it and consensus alone can never reach the High band. Labeled a heuristic in
+  the report until benchmark-calibrated.
+- Idea-refinement estimates are mode-aware: quick ≈3 calls / 1 Claude-Opus; council 6–8 / ~2 Opus; research
+  8–10 / ~2 Opus. Chair and planner calls are reserved before optional graph work.
 
 ### Fixed
+- Idea analyst outputs now canonicalize the observed Gemini evidence enum aliases before strict validation:
+  any casing of the exact enum word (`SUPPORT`, `current`, `Current`) maps to the canonical value, while
+  prose or unknown values still fail the schema boundary.
+- A failed S4 repair no longer kills the run when the damage is limited to evidence cards: a deterministic
+  salvage drops the still-invalid cards and scrubs their references (positions are never altered — a broken
+  claim set stays fatal). Applies both when the repair output fails validation and when the repair call
+  itself dies (e.g. quota), and costs no extra provider call.
 - Codex provider smoke no longer crashes in non-git folders; Aiki now passes Codex's verified
   `--skip-git-repo-check` flag while keeping `-s read-only`.
 - `aiki --version` now reads from `package.json`, preventing CLI/package version drift.

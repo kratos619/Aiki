@@ -1,0 +1,99 @@
+{
+  "id": "postgres-multitenancy",
+  "title": "PostgreSQL multi-tenant architecture migration",
+  "set": "build",
+  "provenance": "AUTHORED_BUILD",
+  "tags": ["contestable", "evidence-rich", "technical", "commercial"],
+  "input_file": "input.md",
+  "critical_claims": [
+    {
+      "id": "P1",
+      "proposition": "Shared tenancy can materially reduce the current infrastructure and coordination burden for the small-tenant majority.",
+      "acceptable_stances": ["SUPPORT", "QUALIFY"],
+      "evidence_required": true
+    },
+    {
+      "id": "P2",
+      "proposition": "Two engineers can safely complete a no-downtime migration of all 180 tenants in ten weeks.",
+      "acceptable_stances": ["UNRESOLVED", "QUALIFY"],
+      "evidence_required": true
+    },
+    {
+      "id": "P3",
+      "proposition": "Row-level security and application controls will satisfy the six large customers' isolation commitments.",
+      "acceptable_stances": ["UNRESOLVED", "QUALIFY"],
+      "evidence_required": true
+    },
+    {
+      "id": "P4",
+      "proposition": "The forecast 60% cost reduction is established rather than an estimate that needs a representative pilot.",
+      "acceptable_stances": ["OPPOSE", "UNRESOLVED"],
+      "evidence_required": true
+    },
+    {
+      "id": "P5",
+      "proposition": "One shared architecture is appropriate for both the small-tenant majority and customers with stronger isolation requirements.",
+      "acceptable_stances": ["OPPOSE", "QUALIFY"],
+      "evidence_required": false
+    },
+    {
+      "id": "P6",
+      "proposition": "The company should perform the full migration before a representative pilot, rollback drill, security test, and contract review.",
+      "acceptable_stances": ["OPPOSE"],
+      "evidence_required": false
+    }
+  ],
+  "common_false_claims": [
+    {
+      "id": "PF1",
+      "claim": "The shared design is proven to save exactly 60%.",
+      "reason": "The percentage is an unaudited forecast and no pilot measurements exist."
+    },
+    {
+      "id": "PF2",
+      "claim": "PostgreSQL row-level security guarantees that tenant data can never leak.",
+      "reason": "Isolation also depends on policies, roles, application queries, migrations, and operational controls."
+    },
+    {
+      "id": "PF3",
+      "claim": "All six large-customer contracts forbid shared infrastructure.",
+      "reason": "The contracts contain stronger isolation language but have not been reviewed for this design."
+    }
+  ],
+  "required_dimensions": [
+    "target user",
+    "existing alternatives",
+    "differentiation",
+    "feasibility",
+    "cost and resources",
+    "policy legal compliance and privacy",
+    "kill criteria",
+    "business model",
+    "distribution and go-to-market",
+    "timing",
+    "scalability",
+    "key risks and assumptions"
+  ],
+  "source_pack": [
+    {
+      "id": "P-S1",
+      "title": "Authored internal operations baseline and migration estimate",
+      "as_of": "2026-06-30",
+      "local_file": "evidence.md"
+    }
+  ],
+  "acceptable_unresolved_outcomes": [
+    {
+      "claim_id": "P2",
+      "reason": "No representative migration or rollback timing data is supplied."
+    },
+    {
+      "claim_id": "P3",
+      "reason": "No contract review or security test is supplied."
+    },
+    {
+      "claim_id": "P4",
+      "reason": "The saving is forecast rather than measured."
+    }
+  ]
+}

@@ -1,0 +1,103 @@
+{
+  "id": "support-four-day-week",
+  "title": "Four-day week for a 24/7 support team",
+  "set": "build",
+  "provenance": "AUTHORED_BUILD",
+  "tags": ["contestable", "evidence-rich", "organizational", "commercial"],
+  "input_file": "input.md",
+  "critical_claims": [
+    {
+      "id": "F1",
+      "proposition": "The pilot supports that a 32-hour schedule can preserve response time and customer satisfaction for selected agents outside peak season.",
+      "acceptable_stances": ["SUPPORT", "QUALIFY"],
+      "evidence_required": true
+    },
+    {
+      "id": "F2",
+      "proposition": "The 9% tickets-per-hour increase proves total sustainable productivity will rise for all 65 agents.",
+      "acceptable_stances": ["OPPOSE", "UNRESOLVED", "QUALIFY"],
+      "evidence_required": true
+    },
+    {
+      "id": "F3",
+      "proposition": "The organization can maintain 24/7 coverage and service levels through peak season without additional hiring.",
+      "acceptable_stances": ["UNRESOLVED", "QUALIFY"],
+      "evidence_required": true
+    },
+    {
+      "id": "F4",
+      "proposition": "The schedule will improve retention across the full team.",
+      "acceptable_stances": ["UNRESOLVED", "QUALIFY"],
+      "evidence_required": true
+    },
+    {
+      "id": "F5",
+      "proposition": "The pilot establishes that workload intensity and support quality remain acceptable.",
+      "acceptable_stances": ["UNRESOLVED", "QUALIFY"],
+      "evidence_required": true
+    },
+    {
+      "id": "F6",
+      "proposition": "The company should make the schedule permanent for all agents before a representative peak-season trial, quality audit, fairness review, and employment-rule review.",
+      "acceptable_stances": ["OPPOSE"],
+      "evidence_required": false
+    }
+  ],
+  "common_false_claims": [
+    {
+      "id": "FF1",
+      "claim": "The pilot proves a four-day week caused a 28% reduction in sick days.",
+      "reason": "The small volunteer pilot was not randomized and does not establish causality."
+    },
+    {
+      "id": "FF2",
+      "claim": "Customer service was unchanged on every measure.",
+      "reason": "Response time, satisfaction, and backlog moved differently, and quality-error rates were not measured."
+    },
+    {
+      "id": "FF3",
+      "claim": "No extra hiring will be needed during peak season.",
+      "reason": "Peak season was excluded from the pilot."
+    }
+  ],
+  "required_dimensions": [
+    "target user",
+    "existing alternatives",
+    "differentiation",
+    "feasibility",
+    "cost and resources",
+    "policy legal compliance and privacy",
+    "kill criteria",
+    "business model",
+    "distribution and go-to-market",
+    "timing",
+    "scalability",
+    "key risks and assumptions"
+  ],
+  "source_pack": [
+    {
+      "id": "F-S1",
+      "title": "Authored twelve-week support schedule pilot summary",
+      "as_of": "2026-06-30",
+      "local_file": "evidence.md"
+    }
+  ],
+  "acceptable_unresolved_outcomes": [
+    {
+      "claim_id": "F2",
+      "reason": "Volunteer selection and missing quality data limit generalization."
+    },
+    {
+      "claim_id": "F3",
+      "reason": "Peak-season coverage was not tested."
+    },
+    {
+      "claim_id": "F4",
+      "reason": "The pilot is too small and short to establish retention effects."
+    },
+    {
+      "claim_id": "F5",
+      "reason": "Quality-error and workload-intensity measures were not collected."
+    }
+  ]
+}

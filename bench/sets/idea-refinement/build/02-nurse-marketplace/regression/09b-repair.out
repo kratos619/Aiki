@@ -1,0 +1,63 @@
+```json
+{
+  "actions": [
+    {
+      "order": 1,
+      "effort": "1-2 days",
+      "action": "Build a unit-economics spreadsheet modeling gross margin per worked hour at realistic bill rates ($75-$95/hr) after deducting: nurse wage, FICA (7.65%), workers comp (3-5%), PEO/EOR fee (request quotes from Justworks, Deel, TriNet), malpractice premium per hour, credentialing cost per nurse, payment processing (2.9%), and support cost allocation. Test whether the 15% commission yields at least 10% gross margin under any configuration.",
+      "validates": "D1",
+      "why": "D1 is the highest-severity structural risk: if the 15% commission cannot cover statutory employer costs plus operating costs, the entire model is dead on arrival. No other validation matters until this is resolved.",
+      "kill_signal": "Gross margin per worked hour is negative or below 5% across all reasonable bill-rate scenarios, confirming the 15% commission is structurally unviable without repricing."
+    },
+    {
+      "order": 2,
+      "effort": "1 week",
+      "action": "Contact 3 PEO/EOR providers (TriNet, Justworks, Employer.com) and 2 healthcare staffing malpractice insurers (CNA, Coverys) with a one-page scenario: W-2 nurses working intermittent acute-care shifts (including ICU/ED) placed by a staffing platform. Ask each: (a) will you cover this use case, (b) what are the per-hour or per-nurse costs, (c) what indemnity terms apply, (d) what exclusions or carve-outs exist for high-acuity placements.",
+      "validates": "D6",
+      "why": "D6 flags catastrophic-tail liability risk. If no insurer will cover acute-care W-2 gig placements at viable rates, or if they carve out ICU/ED, the platform cannot operate in its highest-value segments.",
+      "kill_signal": "No PEO or insurer will cover acute-care W-2 shift placements, or quoted premiums push per-hour costs above 20% of the bill rate, making the model uninsurable at any viable take rate."
+    },
+    {
+      "order": 3,
+      "effort": "2-3 days",
+      "action": "Interview 8-10 experienced RNs in the target metro who currently work agency or per-diem shifts. Present the exact offer: W-2 status (not 1099), intermittent shifts booked via app, pay rate after the platform's commission. Ask: (a) would you complete W-2 onboarding for occasional shifts, (b) what minimum hourly rate would you accept, (c) how many shifts per month would make onboarding worthwhile, (d) what platforms do you currently use and why.",
+      "validates": "D3",
+      "why": "D3 questions whether nurses will tolerate W-2 friction for intermittent work. Direct interviews reveal whether the supply side exists at rates compatible with the margin model from action 1.",
+      "kill_signal": "Fewer than 3 of 10 nurses express willingness to complete W-2 onboarding for intermittent shifts, or the minimum acceptable hourly rate exceeds the bill rate minus platform costs by more than 10%."
+    },
+    {
+      "order": 4,
+      "effort": "3-5 days",
+      "action": "Contact the credentialing API vendor and 2 hospital compliance officers in the target metro. Present a specific scenario: a nurse credentialed via the API needs to start a night shift in the ICU in 4 hours. Ask the API vendor what they verify versus what they don't (facility-specific orientation, EMR access, unit competencies). Ask hospital compliance: would you accept API-verified credentials for same-day placement without manual re-review, and what facility-specific requirements would still need to be met in person.",
+      "validates": "D4",
+      "why": "D4 identifies a patient-safety blocker: the gap between credential document verification and operational readiness. If hospitals require in-person steps the API cannot satisfy, same-day placement is impossible.",
+      "kill_signal": "Both hospital compliance officers confirm they require facility-specific orientation, EMR provisioning, or unit competency checks that cannot be completed same-day, making last-minute placement operationally impossible without a pre-credentialed float pool."
+    },
+    {
+      "order": 5,
+      "effort": "2-4 weeks",
+      "action": "Using the founders' hospital contacts, approach 3 hospitals in the target metro and propose a 30-day paid pilot: the founders manually match pre-credentialed nurses to last-minute open shifts (concierge model, no app). Track: number of eligible shifts surfaced, number filled within 2 hours, nurse acceptance rate, hospital satisfaction, and any compliance objections raised by hospital legal or procurement.",
+      "validates": "D9",
+      "why": "D9 questions whether sufficient nurse liquidity can exist to guarantee fast fill rates. A concierge trial reveals real fill rates without the cost of building the platform, and tests whether hospitals will actually surface shifts outside their VMS.",
+      "kill_signal": "Fill rate for eligible last-minute shifts falls below 50% over the 30-day trial, or fewer than 2 hospitals agree to participate within 90 days, confirming the cold-start liquidity problem and hospital adoption friction (D8)."
+    },
+    {
+      "order": 6,
+      "effort": "1-2 days",
+      "action": "Call the VMS account managers at the 3 target hospitals (typically Medefis, ShiftWise, or Stafferlink) and ask: (a) can a new staffing vendor be added to the VMS within 30 days, (b) what VMS fees apply per placement, (c) can urgent shifts bypass the VMS if the hospital's CNO approves. Document whether VMS integration is mandatory, optional, or bypassable.",
+      "validates": "D8",
+      "why": "D8 flags that hospitals may not adopt a standalone app. Understanding VMS gatekeeping determines whether the platform can reach hospitals at all, and whether VMS fees further destroy margins.",
+      "kill_signal": "All 3 hospitals require VMS routing for all temporary staff with no exception process, and VMS fees exceed 3% of the bill rate, eliminating any remaining margin from the 15% commission."
+    },
+    {
+      "order": 7,
+      "effort": "1 day",
+      "action": "Define explicit kill criteria and a decision timeline: set a date (e.g., 8 weeks from now) by which the founders will stop or pivot if (a) unit economics cannot show 10%+ gross margin, (b) no insurer covers the use case, or (c) the concierge pilot fills fewer than 50% of shifts. Write these criteria down and share with any advisors or investors.",
+      "validates": "blind:kill criteria / failure conditions",
+      "why": "The council flagged missing kill criteria as a blind spot. Without pre-committed failure conditions, the founders risk spending the $500k on incremental pivots without a clear stop signal.",
+      "kill_signal": "Founders refuse to commit to written kill criteria, indicating unwillingness to objectively evaluate the venture's viability."
+    }
+  ],
+  "sequencing_note": "Actions 1-2 are desk research and phone calls that can run in parallel within the first week; they test whether the economics and insurance are even possible before spending time on supply-side or demand-side validation. Action 3 (nurse interviews) runs concurrently or immediately after, since nurse willingness is moot if the economics fail. Action 4 (credentialing reality check) can also run in parallel with 1-3. Action 5 (concierge pilot) is the most expensive and slowest test, so it runs only after actions 1-4 confirm the model is not dead on arrival. Action 6 (VMS check) is a quick call that can run alongside the pilot setup. Action 7 (kill criteria) should be completed on day one but is listed last because it is a meta-action that frames all others."
+}
+```

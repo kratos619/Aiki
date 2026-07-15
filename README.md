@@ -119,7 +119,12 @@ n = 10 cases, single run per arm — directional, not a p-value. Full method and
 - **Recommended: 3/3 providers ready.** Aiki can start with 2/3, but full council behavior and benchmarked
   code-review quality expect Claude Code, Codex, and Antigravity/Gemini together.
 
-Check anytime with `aiki doctor`:
+You don't have to remember to check: launching `aiki` runs this preflight automatically — per-provider
+progress rows for CLI presence, version, and auth/quota — and only opens the menu when at least 2 providers
+pass. A failing provider shows its exact fix (install command, `run <binary> once to log in`, or retry
+later). The auth/quota smoke result is cached for 6 hours, so repeat launches are instant and free.
+
+Check manually anytime with `aiki doctor`:
 
 ```bash
 aiki doctor          # lists each provider: version, ready/not, read-only mode
@@ -190,7 +195,9 @@ Plain text is never charged silently — you get a confirm step before any run s
 
 ```bash
 aiki run idea-refinement "a fridge-photo-to-recipe app for busy parents"
+aiki run idea-refinement "an early idea" --mode quick             # one structured analyst; no council claim
 aiki run idea-refinement ./idea.md
+aiki run idea-refinement ./idea.md --mode research --evidence ./research/  # grounded, source-verifying council
 aiki run code-review --base main             # review this branch vs main
 aiki run code-review --diff ./changes.patch  # review a patch file
 aiki run code-review --cheap                 # Gemini+Codex review, Claude judges only disputes (~⅓ the Opus)
@@ -198,6 +205,10 @@ aiki show <run-id> --html --open             # open the shareable decision brief
 ```
 
 An idea run **auto-opens** its report in your browser when it finishes.
+
+`--evidence` accepts one local file or directory already in your scope. Aiki records absolute paths and
+SHA-256 hashes in the run, gives those paths to the read-only scouts, and never copies the source files or
+reads provider credential directories.
 
 ## The two workflows
 
@@ -209,17 +220,20 @@ An idea run **auto-opens** its report in your browser when it finishes.
 real line in the diff) → mutual adversarial cross-examination → consensus/dispute map → the judge adjudicates
 only the disputes → report.
 
-**Idea refinement** — a contextual preflight (a few sharp questions to pin down what you actually mean) →
-intent contract → misunderstanding guard → parallel adversarial analysis → disagreement map → verifier →
-judge → a validation planner. The report is a **decision brief**, not an essay:
+**Idea refinement** — two independent preflight readings → one confirmed/defaulted decision contract →
+complementary analyst lanes → deterministic claim/evidence graph audit → only decision-critical verification
+or rebuttal → evidence-linked chair → validation planner. The report is a graph-backed **decision dossier**,
+not an essay.
+Choose `--mode quick` for one structured analyst, `--mode council` (default) for the full decision council,
+or `--mode research` for source-grounded current-fact work. Aiki never chooses a mode with a learned router:
 
-- a **BLUF recommendation** — `PROCEED` / `PROCEED WITH CONDITIONS` / `PIVOT` / `STOP`
-- the **chairman's reasoning** (what decided it, where the models split, whose side the judge took)
-- a **dimension scorecard** (which of 12 angles were examined, contested, or missed)
-- an **assumption audit** (held / failed / unverified, with confidence)
-- **the debate** (who argued what, who won)
-- an **anchored validation plan** — concrete next actions, each with an effort estimate and a *kill signal*
-- a **cost receipt** (calls per provider)
+- a **reader-first decision card** — verdict, structural confidence, critical warning, and first action before audit detail
+- a **graph-anchored recommendation and claim chain** — every decisive statement links to stored claim IDs
+- an **evidence and coverage ledger** — source, date, freshness, verification, `NOT_APPLICABLE`, and missing evidence
+- **genuine disagreements and position changes** — explicit `CONCEDE` / `COUNTER` / `NARROW` events
+- **decision sensitivity and an executable experiment plan** — anchored tests with effort and kill signals
+- a **verified contribution ledger** — unique provider claims count only after independent verification
+- an **orchestration receipt and technical fold** — calls, degradation, submissions, edges, and graph events
 
 ## Example: a real idea run
 
@@ -239,7 +253,8 @@ The council's verdict on that one:
 
 …followed by **7 anchored validation actions**, e.g. *"Pull the last 90 days of churned users and tag each
 with their primary churn reason"* (effort S, kill signal: churn isn't feature-driven). The full brief opens in
-your browser and has a **Copy report (Markdown)** button so you can paste it straight into your coding assistant.
+your browser and has a **Copy report (Markdown)** button backed by the same persisted dossier as the HTML,
+so the copied claims, evidence statuses, experiments, and receipt cannot drift from the page.
 
 ## Configuration
 
@@ -292,9 +307,10 @@ This is the part that makes aiki trustworthy to point at a real repo:
 
 ## Costs & limits
 
-- **Runs cost real model calls** against your existing CLI subscriptions/quota. Idea refinement is about
-  **12 provider calls** (~4 on Claude/Opus); code review is about **5**. `aiki run` shows an estimate and asks
-  to confirm (skip with `--yes`).
+- **Runs cost real model calls** against your existing CLI subscriptions/quota. Idea refinement is nominally
+  **3 calls in quick**, **6–8 in council**, or **8–10 in research** (schema repairs can add calls within the
+  mode-aware budget); code review is about **5**. `aiki run` shows the mode, range, budget, and reserved
+  chair/planner calls before asking to confirm (skip with `--yes`).
 - **Not a general assistant.** Questions and "explore my whole codebase" requests are redirected, not answered
   — aiki reviews a *diff* and vets a *stated idea*.
 - **Analysis, not advice.** Every report is a decision aid. Verify before acting.

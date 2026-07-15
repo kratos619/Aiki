@@ -60,6 +60,7 @@ export interface RunRequest {
   timeoutMs: number; // per-call hard timeout; default 180_000
   expectJson: boolean; // apply §14 JSON extraction when true
   readOnly?: boolean; // default true — pass the provider's read-only flag (§19)
+  research?: boolean; // R6: verified provider-native investigation; currently Codex --search only
   inputFiles?: string[]; // large inputs passed by path reference, never via stdin
   signal?: AbortSignal; // Ctrl+C (T8): aborts the in-flight process-tree; undefined = headless
 }

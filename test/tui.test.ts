@@ -18,6 +18,7 @@ import { filterCommands, parseCommand, quickActionReducer, routeInput, scopeRedi
 import { IDEA_STAGES } from '../src/workflows/idea-refinement.js';
 import type { RoleMap } from '../src/orchestration/context.js';
 import type { DisagreementMap, JudgeReport } from '../src/schemas/index.js';
+import { adaptLegacyDecisionGraph } from '../src/orchestration/legacy-idea-adapter.js';
 
 const roles: RoleMap = { analyst: 'agy', judge: 'claude', verifier: 'codex', s4: ['agy', 'codex'] };
 const available = ['agy', 'codex', 'claude'] as const;
@@ -32,13 +33,13 @@ describe('timeline: provider resolution + skeleton', () => {
     expect(stageProviders(null, roles, [...available])).toEqual([]);
   });
 
-  it('builds the 12-row skeleton all pending, providers resolved (S0/S1 = analyst, S7/S9b = judge, S5 = —)', () => {
+  it('builds the simplified 10-row skeleton with the selective-rebuttal scouts resolved', () => {
     const rows = initTimeline(IDEA_STAGES, roles, [...available]);
-    expect(rows).toHaveLength(12);
+    expect(rows).toHaveLength(10);
     expect(rows.every((r) => r.status === 'pending')).toBe(true);
-    expect(rows.find((r) => r.id === 'S0')!.providers).toEqual(['agy']);
-    expect(rows.find((r) => r.id === 'S1')!.providers).toEqual(['agy']);
-    expect(rows.find((r) => r.id === 'S7')!.providers).toEqual(['claude']); // makes the grouping call
+    expect(rows.find((r) => r.id === 'S0')!.providers).toEqual(['agy', 'codex']);
+    expect(rows.find((r) => r.id === 'S7')!.providers).toEqual([]); // graph audit is deterministic
+    expect(rows.find((r) => r.id === 'S8b')!.providers).toEqual(['agy', 'codex']);
     expect(rows.find((r) => r.id === 'S9b')!.providers).toEqual(['claude']);
     expect(rows.find((r) => r.id === 'S5')!.providers).toEqual([]);
   });
@@ -47,10 +48,10 @@ describe('timeline: provider resolution + skeleton', () => {
 describe('timeline: state transitions + elapsed', () => {
   it('marks running then done with timing', () => {
     let rows = initTimeline(IDEA_STAGES, roles, [...available]);
-    rows = markStart(rows, 'S1', 1000);
-    expect(rows.find((r) => r.id === 'S1')).toMatchObject({ status: 'running', startedAt: 1000 });
-    rows = markEnd(rows, 'S1', 'done', 3500);
-    expect(rows.find((r) => r.id === 'S1')).toMatchObject({ status: 'done', endedAt: 3500 });
+    rows = markStart(rows, 'S4', 1000);
+    expect(rows.find((r) => r.id === 'S4')).toMatchObject({ status: 'running', startedAt: 1000 });
+    rows = markEnd(rows, 'S4', 'done', 3500);
+    expect(rows.find((r) => r.id === 'S4')).toMatchObject({ status: 'done', endedAt: 3500 });
   });
 
   it('elapsedLabel: final duration when done, live seconds when running, blank when pending', () => {
@@ -66,7 +67,10 @@ describe('timeline: state transitions + elapsed', () => {
 describe('completion + error formatters', () => {
   const map: DisagreementMap = {
     consensus: [],
-    unique: [],
+    unique: [
+      { id: 'C1', statement: 'inventory is sufficient', type: 'JUDGMENT', providers: ['agy'] },
+      { id: 'C2', statement: 'pricing is viable', type: 'JUDGMENT', providers: ['codex'] },
+    ],
     contradictions: [
       { id: 'D1', claim_ids: ['C1'], attacks: [{ provider: 'agy', argument: 'weak inventory', severity: 'HIGH' }] },
       { id: 'D2', claim_ids: ['C2'], attacks: [{ provider: 'codex', argument: 'pricing risk', severity: 'MED' }] },
@@ -81,10 +85,10 @@ describe('completion + error formatters', () => {
   };
 
   it('formatCompletion: verdict + top-N disagreements with rulings + paths', () => {
-    const v = formatCompletion('.aiki/runs/x', judge, map);
+    const v = formatCompletion('.aiki/runs/x', judge, adaptLegacyDecisionGraph(map));
     expect(v.verdict).toBe('Viable behind a probe guard.');
-    expect(v.disagreements[0]).toBe('D1 → UPHOLD: weak inventory');
-    expect(v.disagreements[1]).toBe('D2 → UNRESOLVED: pricing risk'); // no adjudication → UNRESOLVED default
+    expect(v.disagreements[0]).toBe('D1 → UPHOLD: inventory is sufficient');
+    expect(v.disagreements[1]).toBe('D2 → UNRESOLVED: pricing is viable'); // no adjudication → UNRESOLVED default
     expect(v.reportPath).toBe('.aiki/runs/x/final-report.md');
   });
 
@@ -105,10 +109,20 @@ describe('smart entry router (V2)', () => {
     expect(routeInput('diff --git a/src/a.ts b/src/a.ts')).toBe('code-review');
     expect(routeInput('src/payments/charge.ts has an auth check')).toBe('code-review');
     expect(routeInput('const x = user.id;')).toBe('code-review');
+    expect(routeInput('function handler() { return user.id; }')).toBe('code-review');
+    expect(routeInput("import { z } from 'zod'")).toBe('code-review');
   });
 
   it('keeps product ideas on the idea flow', () => {
     expect(routeInput('Build a local tool that compares model critiques for code review')).toBe('idea');
+  });
+
+  // Regression: bare English words (class/export/import) and a prose semicolon are NOT code.
+  it('keeps idea prose containing code-ish words on the idea flow', () => {
+    expect(routeInput('A class scheduling app for yoga studios')).toBe('idea');
+    expect(routeInput('We should export our data to CSV and import it into Sheets')).toBe('idea');
+    expect(routeInput('First we onboard users; then we scale to other cities')).toBe('idea');
+    expect(routeInput('An import-export marketplace connecting local farmers to buyers')).toBe('idea');
   });
 
   it('maps quick actions and blocks repo actions outside git', () => {
@@ -153,8 +167,12 @@ describe('run-screen life: phrases + progress + total time (V10)', () => {
     expect(runningPhrase('S9b', 0)).toBe('planning decisive validation');
   });
 
+  it('runningPhrase covers selective rebuttal', () => {
+    expect(runningPhrase('S8b', 0)).toBe('rebutting only what could flip the verdict');
+  });
+
   it('runningPhrase covers the intent preflight stage', () => {
-    expect(runningPhrase('S0', 0)).toBe('grilling the intent');
+    expect(runningPhrase('S0', 0)).toBe('comparing two readings of your decision');
   });
 
   it('progressBar counts done/failed/skipped as finished', () => {
