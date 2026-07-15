@@ -12,7 +12,7 @@
   <img alt="Node ≥ 20" src="https://img.shields.io/badge/node-%E2%89%A5%2020-brightgreen.svg">
   <img alt="Local-first, no API keys" src="https://img.shields.io/badge/local--first-no%20API%20keys-informational.svg">
   <img alt="Read-only orchestration" src="https://img.shields.io/badge/orchestration-read--only-success.svg">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-262%20passing-success.svg">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-381%20passing-success.svg">
 </p>
 
 ---
@@ -30,7 +30,7 @@ It does two jobs, well:
 aiki is **not** a general assistant. Trivia and chat are routed away, not answered — a council adds cost, not
 accuracy, when there's one right answer.
 
-**Jump to:** [Why](#why) · [How it works](#how-aiki-works-no-apis) · [Benchmark](#benchmark) · [Requirements](#requirements) · [Install](#install) · [Quickstart](#quickstart) · [The two workflows](#the-two-workflows) · [Example](#example-a-real-idea-run) · [Configuration](#configuration) · [Sessions & resume](#sessions--resume) · [Safety](#safety-model) · [Costs & limits](#costs--limits)
+**Jump to:** [Why](#why) · [What's new](#whats-new-in-030) · [How it works](#how-aiki-works-no-apis) · [Benchmarks](#benchmarks) · [Requirements](#requirements) · [Install](#install) · [Quickstart](#quickstart) · [The two workflows](#the-two-workflows) · [Example](#example-a-real-idea-run) · [Configuration](#configuration) · [Sessions & resume](#sessions--resume) · [Safety](#safety-model) · [Costs & limits](#costs--limits)
 
 ---
 
@@ -44,6 +44,24 @@ stop copy-pasting between them by hand.
 <p align="center">
   <img src="docs/Three.png" alt="One model's field of view lets bugs slip past; three overlapping fields catch them all" width="820">
 </p>
+
+## What's new in 0.3.0
+
+- **Evidence-grounded decisions.** Supply local sources with `--evidence`; Aiki records their paths and
+  hashes, checks freshness and citations, independently verifies selected load-bearing claims, and shows the
+  remaining coverage gaps before the chair.
+- **Three explicit modes.** Use `quick` for one structured analyst, `council` for bounded multi-model
+  deliberation, or `research` for current-fact work with Codex search. Aiki never hides this choice behind a
+  learned router.
+- **A decision dossier, not an essay.** Reports lead with the recommendation, verified evidence coverage,
+  decisive facts, first action, strongest counter-case, and critical unknowns. Financial and threshold-heavy
+  decisions can include graph-anchored numbers, payback, option commitments, and a go/no-go tripwire.
+- **More resilient long runs.** Bounded rebuttal, schema-safe output recovery, mode-aware deadlines, startup
+  provider checks, and call replay make malformed model output, quotas, and timeouts less likely to waste a
+  whole run.
+
+The published code-review benchmark result below is unchanged. The new idea-decision benchmark machinery is
+included in 0.3.0, but its paid evaluation is still pending, so no idea-quality improvement claim is made yet.
 
 ## How Aiki works (no APIs)
 
@@ -59,7 +77,9 @@ Aiki is orchestration, not a hosted AI service:
 5. Your existing provider logins/subscriptions handle model access. Aiki never asks for API keys and never
    reads credential folders.
 
-## Benchmark
+## Benchmarks
+
+### Code-review benchmark — completed
 
 On a **pre-registered, 10-case held-out** code-review benchmark (frozen before the run so it couldn't be
 tuned post-hoc — see [BENCHMARK.md](BENCHMARK.md) and [RESULTS.md](RESULTS.md)):
@@ -101,6 +121,15 @@ set. It is **not** a claim of beating cheap self-consistency (that comparison is
 n = 10 cases, single run per arm — directional, not a p-value. Full method and every number in
 [RESULTS.md §7](RESULTS.md).
 
+### Idea-decision benchmark — evaluation pending
+
+Version 0.3.0 includes the frozen B/C/D2/R protocol, eight build cases, a 12-case/tag/provenance holdout
+contract that stays closed until the protocol freeze, checkpoint/resume, independently shuffled blind-rating
+packets, a frozen scorer, and post-freeze hash guards. Paid build tuning, blind ratings, and the holdout run
+are not complete, so there is **no published idea-decision performance claim yet**. See
+[BENCHMARK-IDEA-V3.md](BENCHMARK-IDEA-V3.md) for the pre-registration and
+[docs/IDEA_V3_BENCH.md](docs/IDEA_V3_BENCH.md) for the operator workflow.
+
 ## Requirements
 
 > ⚠️ **aiki drives your existing CLIs — it does not ship or host any model.** You should install and log in to
@@ -137,6 +166,9 @@ keeping the read-only sandbox enabled, so non-git folders do not crash the provi
 aiki doctor --fresh
 ```
 
+`--fresh` bypasses the six-hour cache and can make up to three tiny provider calls; use it only when you need
+to recheck authentication or quota immediately.
+
 ## Install
 
 ```bash
@@ -144,6 +176,13 @@ npm install -g aiki-cli
 ```
 
 The package is `aiki-cli`; it installs the `aiki` command.
+
+Upgrade an existing installation:
+
+```bash
+npm install -g aiki-cli@latest
+aiki --version                 # 0.3.0
+```
 
 From source:
 
@@ -227,7 +266,10 @@ not an essay.
 Choose `--mode quick` for one structured analyst, `--mode council` (default) for the full decision council,
 or `--mode research` for source-grounded current-fact work. Aiki never chooses a mode with a learned router:
 
-- a **reader-first decision card** — verdict, structural confidence, critical warning, and first action before audit detail
+- a **reader-first decision card** — recommendation, verified evidence coverage, decisive facts, first action,
+  strongest counter-case, and critical unknowns before audit detail
+- a **numeric decision snapshot when relevant** — graph-anchored decisive numbers, explicit payback, option
+  commitments labeled `KNOWN` / `TARGET_CAP` / `UNKNOWN`, and a go/no-go tripwire
 - a **graph-anchored recommendation and claim chain** — every decisive statement links to stored claim IDs
 - an **evidence and coverage ledger** — source, date, freshness, verification, `NOT_APPLICABLE`, and missing evidence
 - **genuine disagreements and position changes** — explicit `CONCEDE` / `COUNTER` / `NARROW` events
