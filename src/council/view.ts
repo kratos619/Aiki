@@ -339,6 +339,13 @@ export async function loadCouncilView(runId: string, dir: string): Promise<Counc
     }
   }
   const moderator = meta.roles?.judge ? providerName(meta.roles.judge) : undefined;
+  const hydratedDecisionReport = decisionReport?.dossier ? {
+    ...decisionReport,
+    keyFindings: decisionReport.keyFindings?.length ? decisionReport.keyFindings : judge?.key_points ?? [decisionReport.verdict.primaryReason],
+    criticalUnknowns: decisionReport.criticalUnknowns?.length
+      ? decisionReport.criticalUnknowns
+      : (narrative.openQuestions ?? []).slice(0, 3),
+  } : undefined;
   return {
     runId,
     workflow: meta.workflow,
@@ -354,7 +361,7 @@ export async function loadCouncilView(runId: string, dir: string): Promise<Counc
     flags: meta.flags ?? [],
     topic: intent?.task ?? decisionReport?.task.original,
     moderator,
-    ...(decisionReport?.dossier ? { decisionReport } : {}),
+    ...(hydratedDecisionReport ? { decisionReport: hydratedDecisionReport } : {}),
     ...narrative,
   };
 }
@@ -414,6 +421,20 @@ function dossierPct(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
+function dossierCoverageLabel(value: number): 'High' | 'Medium' | 'Low' {
+  return value >= 0.75 ? 'High' : value >= 0.5 ? 'Medium' : 'Low';
+}
+
+function dossierCouncilRead(report: DecisionReportJson): string {
+  if (report.mode === 'quick') return 'One structured analyst produced this result; no council, consensus, or independent-verification claim is being made.';
+  const scouts = report.models.filter((model) => model.roles.includes('scout')).length;
+  if (report.disagreements.length === 0) {
+    return `${scouts || 'The'} independent scout ${scouts === 1 ? 'analysis produced' : 'analyses produced'} no genuine opposing claim. The chair had less contested material to resolve.`;
+  }
+  const resolved = report.disagreements.filter((item) => item.status === 'RESOLVED').length;
+  return `${report.disagreements.length} genuine disagreement${report.disagreements.length === 1 ? '' : 's'} reached the chair; ${resolved} ${resolved === 1 ? 'was' : 'were'} resolved.`;
+}
+
 function dossierWarning(report: DecisionReportJson, flags: string[]): string {
   const active = flags.filter((flag) => report.flags.includes(flag));
   return active.length ? `<div class="warns"><span class="warn">⚑ DEGRADED: ${escapeHtml(active.join(', '))}</span></div>` : '';
@@ -422,28 +443,53 @@ function dossierWarning(report: DecisionReportJson, flags: string[]): string {
 function renderDossierIdeaBody(report: DecisionReportJson): string {
   const dossier = report.dossier;
   const confidence = report.confidenceBreakdown;
+  const coverageLabel = dossierCoverageLabel(confidence.verificationCoverage);
+  const keyFindings = report.keyFindings?.length ? report.keyFindings : [dossier.recommendation.reason];
+  const criticalUnknowns = report.criticalUnknowns?.length ? report.criticalUnknowns : report.openQuestions.slice(0, 3);
   const tone: Tone = dossier.recommendation.status === 'ACCEPTED' ? 'good'
     : dossier.recommendation.status === 'REJECTED' ? 'risk' : 'caution';
   const conditions = dossier.recommendation.conditions.length
-    ? `<div class="conditions"><span class="fk">Conditions</span><ul>${dossier.recommendation.conditions.map((condition) => `<li>${escapeHtml(condition.text)} <code>${escapeHtml(dossierRefs(condition.claimIds))}</code></li>`).join('')}</ul></div>`
+    ? `<details class="decision-details"><summary>Conditions and decision state</summary><div><p><strong>Internal state:</strong> ${escapeHtml(dossier.recommendation.status)}</p><ul>${dossier.recommendation.conditions.map((condition) => `<li>${escapeHtml(condition.text)} <code>${escapeHtml(dossierRefs(condition.claimIds))}</code></li>`).join('')}</ul></div></details>`
     : '';
   const startHere = dossier.experiments.actions[0]?.action ?? 'No executable next step was produced.';
+  const factLabels = ['Decisive result', 'Consequence', 'Supporting signal'];
+  const facts = keyFindings.slice(0, 3).map((finding, index) => `<article class="decision-fact"><span>${factLabels[index]}</span><p>${escapeHtml(finding)}</p></article>`).join('');
+  const snapshot = report.decisionSnapshot;
+  const decisiveNumbers = snapshot ? `<div class="decision-numbers">
+      <span class="section-eyebrow">Decisive numbers</span>
+      <div class="table-wrap"><table class="snapshot-table"><thead><tr><th>Metric</th><th>Value</th><th>What it means</th></tr></thead><tbody>${snapshot.decisiveNumbers.map((item) => `<tr><td>${escapeHtml(item.label)}</td><td class="number-value">${escapeHtml(item.value)}</td><td>${escapeHtml(item.meaning)} <code>${escapeHtml(dossierRefs(item.claimIds))}</code></td></tr>`).join('')}</tbody></table></div>
+      ${snapshot.payback ? `<div class="payback-result"><span>Payback · ${escapeHtml(snapshot.payback.status.replaceAll('_', ' '))}</span><strong>${escapeHtml(snapshot.payback.result)}</strong><p>${escapeHtml(snapshot.payback.basis)} <code>${escapeHtml(dossierRefs(snapshot.payback.claimIds))}</code></p></div>` : ''}
+    </div>` : '';
+  const optionComparison = snapshot ? `<div class="option-comparison">
+      <span class="section-eyebrow">Options at a glance</span>
+      <div class="table-wrap"><table class="snapshot-table"><thead><tr><th>Path</th><th>Commitment</th><th>Basis</th><th>Trade-off</th></tr></thead><tbody>${snapshot.options.map((option) => `<tr><td>${escapeHtml(option.label)}</td><td class="number-value">${escapeHtml(option.commitment)}</td><td><span class="basis-chip ${option.commitmentKind.toLowerCase()}">${escapeHtml(option.commitmentKind.replace('_', ' '))}</span></td><td>${escapeHtml(option.tradeoff)}${option.claimIds.length ? ` <code>${escapeHtml(dossierRefs(option.claimIds))}</code>` : ''}</td></tr>`).join('')}</tbody></table></div>
+    </div>` : '';
+  const tripwire = snapshot?.tripwire ? `<div class="tripwire"><span class="tag">Go/no-go tripwire</span><strong>${escapeHtml(snapshot.tripwire.metric)} · ${escapeHtml(snapshot.tripwire.threshold)}</strong><p>${escapeHtml(snapshot.tripwire.decisionRule)} <code>${escapeHtml(dossierRefs(snapshot.tripwire.claimIds))}</code></p></div>` : '';
+  const topCounterCase = dossier.counterCase.reasoning;
+  const unknowns = criticalUnknowns.length
+    ? `<ul class="critical-unknowns">${criticalUnknowns.map((unknown) => `<li>${escapeHtml(unknown)}</li>`).join('')}</ul>`
+    : '<p class="muted">No verdict-flipping unknown was recorded.</p>';
   const recommendation = `<div class="verdict tone-${tone}">
-    <span class="pill">${escapeHtml(dossier.recommendation.status)}</span>
+    <span class="pill">Council recommendation</span>
+    ${decisiveNumbers}
     <p class="verdict-text">${escapeHtml(dossier.recommendation.summary)}</p>
-    <div class="glance">
-      <div class="stat ${confidence.label === 'High' ? 'good' : confidence.label === 'Low' ? 'risk' : 'caution'}"><span class="n">${confidence.score}</span><span class="k">confidence · ${escapeHtml(confidence.label)}</span></div>
-      <div class="stat good"><span class="n">${dossierPct(confidence.verificationCoverage)}</span><span class="k">load-bearing claims verified</span></div>
-      <div class="stat caution"><span class="n">${report.consensusSummary.unresolved}</span><span class="k">unresolved claims</span></div>
+    <div class="evidence-coverage ${coverageLabel.toLowerCase()}">
+      <div><span class="fk">Evidence coverage</span><strong>${coverageLabel} · ${dossierPct(confidence.verificationCoverage)}</strong></div>
+      <div class="coverage-track"><span style="width:${Math.round(confidence.verificationCoverage * 100)}%"></span></div>
+      <p>${confidence.verificationCoverage < 0.5 ? 'Important inputs remain unchecked. Confirm them before committing.' : 'Most load-bearing claims received independent checking.'} This is not a probability that the recommendation is correct.</p>
     </div>
-    <p class="lede">Structural confidence heuristic, not an accuracy probability. Verification ${dossierPct(confidence.verificationCoverage)} · convergence ${dossierPct(confidence.independentConvergence)} · evidence quality ${dossierPct(confidence.evidenceQuality)} · stability ${dossierPct(confidence.stability)} · critical-risk penalty −${confidence.criticalRiskPenalty}.</p>
-    <div class="field"><span class="fk">Reason</span><p>${escapeHtml(dossier.recommendation.reason)}</p></div>
-    <div class="bottomline">
-      <div><span class="tag">Start here</span><p>${escapeHtml(startHere)}</p></div>
-      <div><span class="tag">Critical warning</span><p>${escapeHtml(report.verdict.criticalWarning ?? 'None recorded.')}</p></div>
+    ${snapshot ? '' : `<div class="decision-facts">${facts}</div>`}
+    <div class="action-callout"><span>Do this first</span><p>${escapeHtml(startHere)}</p></div>
+    ${optionComparison}
+    ${tripwire}
+    <div class="decision-safety">
+      <article><span class="tag">What could overturn this</span><p>${escapeHtml(topCounterCase)}</p></article>
+      <article><span class="tag">Critical unknowns</span>${unknowns}</article>
     </div>
+    ${report.verdict.criticalWarning ? `<div class="critical-warning"><span class="tag">Critical warning</span><p>${escapeHtml(report.verdict.criticalWarning)}</p></div>` : ''}
+    <p class="council-read"><strong>Council read:</strong> ${escapeHtml(dossierCouncilRead(report))}</p>
     ${conditions}
-    <div class="field"><span class="fk">Evidence anchors</span><p><code>${escapeHtml(dossierRefs(dossier.recommendation.claimIds))}</code></p></div>
+    <div class="evidence-anchors"><span>Evidence anchors</span><code>${escapeHtml(dossierRefs(dossier.recommendation.claimIds))}</code></div>
     ${dossierWarning(report, ['synthesis_suspect'])}
     ${dossier.recommendation.claimIds.length ? '' : '<div class="warns"><span class="warn">⚑ DEGRADED: recommendation has no stored graph anchor</span></div>'}
   </div>`;
@@ -520,6 +566,7 @@ function renderDossierIdeaBody(report: DecisionReportJson): string {
     <div class="field"><span class="fk">Constraints</span><p>${escapeHtml(report.task.constraints.join('; ') || 'none recorded')}</p></div>
     <div class="field"><span class="fk">Success criteria</span><p>${escapeHtml(report.task.successCriteria.join('; ') || 'none recorded')}</p></div>
     <div class="field"><span class="fk">Models and roles</span><p>${escapeHtml(report.models.map((model) => `${model.name} (${model.roles.join(', ')})`).join(' · ') || 'none recorded')}</p></div>
+    <div class="field"><span class="fk">Structural score</span><p>${confidence.score}/100 (${escapeHtml(confidence.label)}) · heuristic, not benchmark-calibrated</p></div>
   </article>${receipt}`;
   const technical = `<details class="fold"><summary>Original submissions and graph events</summary><div class="fold-body">
     <h4 class="fold-h">Original submissions</h4><ul>${dossier.technical.submissions.map((item) => `<li><strong>${escapeHtml(item.name)}:</strong> ${escapeHtml(item.strongestVersion)} <code>${escapeHtml(dossierRefs(item.positionIds))}</code></li>`).join('') || '<li>none</li>'}</ul>
@@ -970,37 +1017,77 @@ export function renderCouncilHtml(view: CouncilView): string {
   --serif:"Iowan Old Style","Palatino Linotype",Palatino,Charter,Georgia,"Times New Roman",serif;
   --sans:-apple-system,BlinkMacSystemFont,"Avenir Next","Segoe UI",system-ui,sans-serif;
   --mono:"SF Mono","JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
-  --paper:#ffffff; --panel:#f7f8fa; --ink:#1a1c1f; --soft:#5b6470; --faint:#9aa1ab; --line:#e6e8ec;
-  --good:#15803d; --good-bg:#e9f7ef; --risk:#c0392b; --risk-bg:#fbeae7;
-  --caution:#b45309; --caution-bg:#fdf2e2; --slate:#475569; --accent:#2563eb;
+  --paper:#fbfaf7; --panel:#f1efe9; --ink:#171a18; --soft:#59625e; --faint:#8b928e; --line:#dcded8;
+  --good:#176b52; --good-bg:#e5f3ed; --risk:#a63a30; --risk-bg:#f8e8e4;
+  --caution:#a96813; --caution-bg:#f8eedc; --slate:#4f5e59; --accent:#155f55;
 }
 *{box-sizing:border-box;}
 html{-webkit-text-size-adjust:100%;}
 body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.6;}
-main{max-width:800px;margin:0 auto;padding:34px 24px 90px;}
+main{max-width:880px;margin:0 auto;padding:34px 24px 90px;}
 a{color:var(--accent);}
-h1,h2,h3,h4{font-family:var(--sans);font-weight:650;letter-spacing:-.01em;}
+h1{font-family:var(--serif);font-weight:600;letter-spacing:-.025em;}
+h2,h3,h4{font-family:var(--sans);font-weight:650;letter-spacing:-.01em;}
 p{margin:0 0 .6em;}
 
 /* masthead */
-.mast{border-bottom:2px solid var(--ink);padding-bottom:22px;margin-bottom:30px;}
+.mast{border-bottom:1px solid var(--ink);padding-bottom:22px;margin-bottom:30px;}
 .kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--accent);}
-.mast h1{font-size:clamp(28px,4.6vw,42px);line-height:1.12;margin:12px 0 16px;}
+.mast h1{font-size:clamp(32px,5.4vw,50px);line-height:1.05;margin:12px 0 18px;max-width:18ch;}
 .mmeta{display:flex;flex-wrap:wrap;gap:7px;}
 .mmeta span{font-family:var(--mono);font-size:11.5px;color:var(--soft);border:1px solid var(--line);background:var(--panel);border-radius:100px;padding:3px 10px;}
 .warns{margin-top:12px;display:flex;flex-wrap:wrap;gap:8px;}
 .warn{font-family:var(--mono);font-size:11.5px;color:var(--caution);background:var(--caution-bg);border:1px solid #e6d09b;border-radius:6px;padding:3px 9px;}
 
 /* verdict hero */
-.verdict{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:14px;
-  padding:26px 28px 22px;margin-bottom:18px;overflow:hidden;}
+.verdict{position:relative;background:#fff;border:1px solid var(--line);border-radius:18px;
+  padding:30px 32px 26px;margin-bottom:18px;overflow:hidden;box-shadow:0 18px 50px rgba(32,45,40,.07);}
 .verdict::before{content:"";position:absolute;left:0;top:0;bottom:0;width:6px;}
 .tone-good::before{background:var(--good);} .tone-caution::before{background:var(--caution);} .tone-risk::before{background:var(--risk);}
 .pill{display:inline-block;font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:.02em;
   padding:5px 13px;border-radius:100px;margin-bottom:14px;}
 .tone-good .pill{background:var(--good-bg);color:var(--good);} .tone-caution .pill{background:var(--caution-bg);color:var(--caution);}
 .tone-risk .pill{background:var(--risk-bg);color:var(--risk);}
-.verdict-text{font-family:var(--sans);font-weight:520;font-size:clamp(18px,2.3vw,21px);line-height:1.5;color:var(--ink);margin:0;}
+.verdict-text{font-family:var(--serif);font-weight:600;font-size:clamp(22px,3vw,29px);line-height:1.32;color:var(--ink);margin:0;max-width:28ch;}
+.section-eyebrow{display:block;font-family:var(--mono);font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--accent);margin-bottom:9px;}
+.decision-numbers{margin:4px 0 22px;}.snapshot-table{width:100%;border-collapse:collapse;font-size:13.5px;line-height:1.4;}
+.snapshot-table th{padding:8px 10px;text-align:left;font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);border-bottom:1px solid var(--line);}
+.snapshot-table td{padding:11px 10px;vertical-align:top;border-bottom:1px solid var(--line);}.snapshot-table tbody tr:last-child td{border-bottom:0;}
+.snapshot-table .number-value{font-family:var(--serif);font-size:17px;font-weight:700;color:var(--ink);white-space:nowrap;}
+.snapshot-table code,.payback-result code,.tripwire code{font-size:9.5px;color:var(--faint);white-space:nowrap;}
+.payback-result{display:grid;grid-template-columns:auto 1fr;gap:3px 16px;align-items:baseline;margin-top:10px;padding:14px 16px;background:var(--paper);border:1px solid var(--line);border-radius:10px;}
+.payback-result span{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);}.payback-result strong{font-family:var(--serif);font-size:18px;}.payback-result p{grid-column:1/-1;margin:2px 0 0;font-size:12.5px;color:var(--soft);}
+.evidence-coverage{margin:24px 0 18px;padding:14px 16px;background:var(--paper);border:1px solid var(--line);border-radius:12px;}
+.evidence-coverage>div:first-child{display:flex;align-items:end;justify-content:space-between;gap:12px;}
+.evidence-coverage strong{font-family:var(--mono);font-size:13px;color:var(--ink);}
+.coverage-track{height:5px;margin:10px 0;border-radius:99px;background:var(--line);overflow:hidden;}
+.coverage-track span{display:block;height:100%;border-radius:inherit;background:var(--accent);}
+.evidence-coverage.low .coverage-track span{background:var(--risk);}.evidence-coverage.medium .coverage-track span{background:var(--caution);}
+.evidence-coverage p{font-size:13.5px;color:var(--soft);margin:0;}
+.decision-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin:18px 0;}
+.decision-fact{padding:16px;background:var(--paper);border:1px solid var(--line);border-radius:12px;}
+.decision-fact span,.action-callout>span{display:block;font-family:var(--mono);font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--accent);margin-bottom:7px;}
+.decision-fact p{margin:0;font-size:14.5px;line-height:1.5;}
+.action-callout{position:relative;margin:20px 0;padding:20px 22px 20px 26px;background:var(--ink);color:var(--paper);border-radius:12px;}
+.action-callout::before{content:"→";position:absolute;right:20px;top:12px;font-family:var(--serif);font-size:34px;color:#8fc7b9;}
+.action-callout>span{color:#8fc7b9;}.action-callout p{font-size:17px;line-height:1.5;margin:0;padding-right:34px;}
+.option-comparison{margin:22px 0;}.basis-chip{display:inline-block;padding:3px 7px;border-radius:99px;background:var(--good-bg);color:var(--good);font-family:var(--mono);font-size:9px;letter-spacing:.04em;white-space:nowrap;}
+.basis-chip.target_cap{background:var(--caution-bg);color:var(--caution);}.basis-chip.unknown{background:var(--risk-bg);color:var(--risk);}
+.tripwire{margin:14px 0;padding:16px 18px;border:1px solid #b9d5cd;border-left:4px solid var(--accent);border-radius:10px;background:#f2f8f6;}
+.tripwire .tag{display:block;color:var(--accent);margin-bottom:6px;}.tripwire strong{display:block;font-family:var(--serif);font-size:19px;}.tripwire p{margin:5px 0 0;font-size:13.5px;color:var(--soft);}
+.decision-safety{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:18px;}
+.decision-safety article{padding:17px 18px;background:var(--paper);border:1px solid var(--line);border-radius:12px;}
+.decision-safety article:first-child{border-left:4px solid var(--risk);}
+.decision-safety p{font-size:14px;margin:0;}
+.critical-unknowns{margin:0;padding-left:18px;}.critical-unknowns li{font-size:13.5px;margin:0 0 6px;}
+.critical-warning{margin-top:12px;padding:14px 16px;background:var(--risk-bg);border:1px solid #e1b8b1;border-radius:10px;}
+.critical-warning .tag{color:var(--risk);}.critical-warning p{font-size:13.5px;margin:0;}
+.council-read{margin:15px 0 0;font-size:13.5px;color:var(--soft);}
+.decision-details{margin-top:14px;border-top:1px solid var(--line);padding-top:12px;}
+.decision-details summary{cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--soft);text-transform:uppercase;letter-spacing:.08em;}
+.decision-details>div{padding-top:10px;font-size:13.5px;}.decision-details ul{margin:8px 0;padding-left:18px;}
+.evidence-anchors{display:flex;gap:10px;align-items:center;margin-top:12px;font-family:var(--mono);font-size:10.5px;color:var(--faint);}
+.evidence-anchors span{text-transform:uppercase;letter-spacing:.1em;}
 
 /* top action bar + copy */
 .bar{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:12px;
@@ -1123,7 +1210,9 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-fa
 @keyframes rise{to{opacity:1;transform:none;}}
 @media (max-width:640px){
   main{padding:34px 16px 60px;}
-  .glance,.bottomline,.checks,.redteam{grid-template-columns:1fr;}
+  .verdict{padding:24px 20px 20px;}
+  .glance,.bottomline,.checks,.redteam,.decision-safety{grid-template-columns:1fr;}
+  .snapshot-table{min-width:560px;}.payback-result{grid-template-columns:1fr;}.payback-result p{grid-column:1;}
 }
 @media (prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none;animation:none;}}
 @media print{.reveal{opacity:1;transform:none;animation:none;}.fold[open]{break-inside:avoid;}}

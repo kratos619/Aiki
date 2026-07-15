@@ -285,6 +285,28 @@ describe('R5 chair guards', () => {
     }, withPivotRisk, verified())).toEqual([]);
   });
 
+  it('rejects decision-summary numbers that are not anchored to a graph claim', () => {
+    const conflict = graph([
+      { provider: 'agy', stance: 'SUPPORT' },
+      { provider: 'codex', stance: 'OPPOSE' },
+    ]);
+    const report = {
+      adjudications: [],
+      recommendation: 'PROCEED' as const,
+      recommendation_claim_ids: ['G1'],
+      strongest_counter_case: { claim_ids: ['G1'], reasoning: 'The fee may still fail.' },
+      decision_snapshot: {
+        decisive_numbers: [{ label: 'Monthly margin', value: '$10k', meaning: 'Positive.', claim_ids: ['G999'] }],
+        options: [
+          { label: 'Proceed', commitment: '$10k', commitment_kind: 'KNOWN' as const, tradeoff: 'Spend now.', claim_ids: ['G999'] },
+          { label: 'Wait', commitment: 'Unknown', commitment_kind: 'UNKNOWN' as const, tradeoff: 'Delay learning.', claim_ids: [] },
+        ],
+      },
+    };
+
+    expect(chairRecommendationIssues(report, conflict, verified()).join(' ')).toContain('unknown decision snapshot claim id: G999');
+  });
+
   it('refuses STOP without a failed load-bearing graph node', () => {
     const conflict = graph([
       { provider: 'agy', stance: 'SUPPORT' },

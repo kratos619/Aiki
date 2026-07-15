@@ -815,6 +815,47 @@ const Adjudication = z
 
 export const Recommendation = z.enum(['PROCEED', 'PROCEED_WITH_CONDITIONS', 'PIVOT', 'STOP']);
 
+const DecisionSnapshotItem = z.object({
+  label: z.string().min(1),
+  value: z.string().min(1),
+  meaning: z.string().min(1),
+  claim_ids: z.array(z.string().min(1)).min(1).max(4),
+}).strict();
+
+const DecisionOption = z.object({
+  label: z.string().min(1),
+  commitment: z.string().min(1),
+  commitment_kind: z.enum(['KNOWN', 'TARGET_CAP', 'UNKNOWN']),
+  tradeoff: z.string().min(1),
+  claim_ids: z.array(z.string().min(1)).max(4),
+}).strict().superRefine((option, ctx) => {
+  if (option.commitment_kind !== 'UNKNOWN' && option.claim_ids.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['claim_ids'],
+      message: 'known commitments and target caps require a graph claim anchor',
+    });
+  }
+});
+
+/** Reader-first, graph-anchored numeric comparison for decision tasks where amounts or thresholds matter. */
+export const DecisionSnapshot = z.object({
+  decisive_numbers: z.array(DecisionSnapshotItem).min(1).max(5),
+  payback: z.object({
+    status: z.enum(['ACHIEVED', 'NOT_ACHIEVED', 'NOT_COMPUTABLE']),
+    result: z.string().min(1),
+    basis: z.string().min(1),
+    claim_ids: z.array(z.string().min(1)).min(1).max(4),
+  }).strict().optional(),
+  options: z.array(DecisionOption).min(2).max(4),
+  tripwire: z.object({
+    metric: z.string().min(1),
+    threshold: z.string().min(1),
+    decision_rule: z.string().min(1),
+    claim_ids: z.array(z.string().min(1)).min(1).max(4),
+  }).strict().optional(),
+}).strict();
+
 const JudgeReportBase = z
   .object({
     adjudications: z.array(Adjudication),
@@ -831,6 +872,7 @@ const JudgeReportBase = z
       claim_ids: z.array(z.string().min(1)).min(1).max(4),
       reasoning: z.string().min(1),
     }).strict().optional(),
+    decision_snapshot: DecisionSnapshot.optional(),
     key_points: z.array(z.string()).max(10).optional(), // chairman's bulleted reasoning (idea workflow); code-review omits it
     dissent: z.array(z.string()).min(1), // ≥1 — empty dissent is invalid (§9); strongest counter-argument
     confidence_notes: z.string().min(1), // which conclusions are HIGH/MEDIUM/LOW and why

@@ -22,29 +22,79 @@ function pct(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
+function coverageLabel(value: number): 'High' | 'Medium' | 'Low' {
+  return value >= 0.75 ? 'High' : value >= 0.5 ? 'Medium' : 'Low';
+}
+
+function councilRead(report: DecisionReportJson): string {
+  if (report.mode === 'quick') return 'One structured analyst produced this result; no council, consensus, or independent-verification claim is being made.';
+  const scouts = report.models.filter((model) => model.roles.includes('scout')).length;
+  if (report.disagreements.length === 0) {
+    return `${scouts || 'The'} independent scout ${scouts === 1 ? 'analysis produced' : 'analyses produced'} no genuine opposing claim; the chair had less contested material to resolve.`;
+  }
+  const resolved = report.disagreements.filter((item) => item.status === 'RESOLVED').length;
+  return `${report.disagreements.length} genuine disagreement${report.disagreements.length === 1 ? '' : 's'} reached the chair; ${resolved} ${resolved === 1 ? 'was' : 'were'} resolved.`;
+}
+
 /** Canonical R7 Markdown. HTML and Copy-Markdown consume the same persisted dossier object. */
 export function renderDecisionDossierMarkdown(report: DecisionReportJson): string {
   const { dossier } = report;
+  const keyFindings = report.keyFindings?.length ? report.keyFindings : [dossier.recommendation.reason];
+  const criticalUnknowns = report.criticalUnknowns?.length ? report.criticalUnknowns : report.openQuestions.slice(0, 3);
+  const coverage = report.confidenceBreakdown.verificationCoverage;
   const L: string[] = [report.mode === 'quick' ? '# Single-Model Decision Report' : '# Multi-Model Decision Report', ''];
 
   L.push('## 1. Decision', '', ...degradation(report, ['synthesis_suspect']));
-  L.push(`**${dossier.recommendation.status}** — ${dossier.recommendation.summary}`, '');
-  L.push(`**Confidence:** ${report.confidenceBreakdown.score}/100 — ${report.confidenceBreakdown.label}`);
-  L.push('> Structural confidence heuristic, not an accuracy probability.');
-  L.push(`Confidence basis: verification ${pct(report.confidenceBreakdown.verificationCoverage)} · independent convergence ${pct(report.confidenceBreakdown.independentConvergence)} · evidence quality ${pct(report.confidenceBreakdown.evidenceQuality)} · stability ${pct(report.confidenceBreakdown.stability)} · critical-risk penalty −${report.confidenceBreakdown.criticalRiskPenalty}`, '');
-  L.push(`Reason: ${dossier.recommendation.reason}`);
-  L.push(`**Critical warning:** ${report.verdict.criticalWarning ?? 'None recorded.'}`);
-  L.push(`**Start here:** ${dossier.experiments.actions[0]?.action ?? 'No executable next step was produced.'}`);
+  if (report.decisionSnapshot) {
+    L.push('### Decisive numbers', '', '| Metric | Value | What it means | Evidence |', '|---|---:|---|---|');
+    for (const item of report.decisionSnapshot.decisiveNumbers) {
+      L.push(`| ${cell(item.label)} | ${cell(item.value)} | ${cell(item.meaning)} | ${refs(item.claimIds)} |`);
+    }
+    if (report.decisionSnapshot.payback) {
+      const payback = report.decisionSnapshot.payback;
+      L.push('', `**Payback — ${payback.status.replaceAll('_', ' ')}:** ${payback.result}`);
+      L.push(`Basis: ${payback.basis} (${refs(payback.claimIds)})`, '');
+    } else L.push('');
+  }
+  L.push(`**Recommendation:** ${dossier.recommendation.summary}`, '');
+  L.push(`**Evidence coverage:** ${coverageLabel(coverage)} — ${pct(coverage)} of load-bearing claims independently verified.`);
+  L.push(coverage < 0.5
+    ? '> Low coverage means important inputs remain unchecked; it is not a probability that the recommendation is correct.'
+    : '> Evidence coverage measures independent checking; it is not a probability that the recommendation is correct.', '');
+  if (!report.decisionSnapshot) {
+    L.push('### Decisive findings', '');
+    for (const finding of keyFindings.slice(0, 3)) L.push(`- ${finding}`);
+  }
+  L.push('', '### Do this first', '', dossier.experiments.actions[0]?.action ?? 'No executable next step was produced.', '');
+  if (report.decisionSnapshot) {
+    L.push('### Options at a glance', '', '| Path | Commitment | Basis | Trade-off | Evidence |', '|---|---:|---|---|---|');
+    for (const option of report.decisionSnapshot.options) {
+      L.push(`| ${cell(option.label)} | ${cell(option.commitment)} | ${option.commitmentKind.replace('_', ' ')} | ${cell(option.tradeoff)} | ${refs(option.claimIds)} |`);
+    }
+    if (report.decisionSnapshot.tripwire) {
+      const tripwire = report.decisionSnapshot.tripwire;
+      L.push('', '### Go/no-go tripwire', '', `**${tripwire.metric}: ${tripwire.threshold}** — ${tripwire.decisionRule} (${refs(tripwire.claimIds)})`, '');
+    }
+  }
+  L.push('### What could overturn this', '', dossier.counterCase.available ? dossier.counterCase.reasoning : dossier.counterCase.reasoning, '');
+  L.push('### Critical unknowns', '');
+  if (criticalUnknowns.length) for (const unknown of criticalUnknowns) L.push(`- ${unknown}`);
+  else L.push('- None recorded.');
+  L.push('', `**Critical warning:** ${report.verdict.criticalWarning ?? 'None recorded.'}`);
+  L.push(`**Council read:** ${councilRead(report)}`);
   L.push(`Evidence anchors: ${refs(dossier.recommendation.claimIds)}`, '');
-  if (report.mode === 'quick') L.push('Protocol: one structured analyst; no council, consensus, or independent-verification claim.', '');
   if (!dossier.recommendation.claimIds.length) L.push('> ⚠ DEGRADED: recommendation has no stored graph anchor.', '');
+  L.push('<details>', '<summary>Decision conditions and technical confidence</summary>', '');
+  L.push(`- Decision state: ${dossier.recommendation.status}`);
+  L.push(`- Structural score: ${report.confidenceBreakdown.score}/100 (${report.confidenceBreakdown.label}); heuristic, not benchmark-calibrated.`);
+  L.push(`- Basis: verification ${pct(coverage)} · independent convergence ${pct(report.confidenceBreakdown.independentConvergence)} · evidence quality ${pct(report.confidenceBreakdown.evidenceQuality)} · stability ${pct(report.confidenceBreakdown.stability)} · critical-risk penalty −${report.confidenceBreakdown.criticalRiskPenalty}`);
   if (dossier.recommendation.conditions.length) {
-    L.push('Conditions:');
+    L.push('', 'Conditions:');
     for (const condition of dossier.recommendation.conditions) {
       L.push(`- ${condition.text} (${refs(condition.claimIds)})`);
     }
-    L.push('');
   }
+  L.push('', '</details>', '');
 
   L.push('## 2. Action plan', '', ...degradation(report, ['plan_fallback', 'plan_skipped']));
   if (dossier.experiments.status === 'DEGRADED') L.push(`> ⚠ DEGRADED: ${dossier.experiments.note}`, '');

@@ -50,6 +50,8 @@ Output ONLY JSON matching the ActionPlan schema:
   - an open-question prefix as "Q:<question prefix>"
 - why ties the action to the risk, blind spot, or question.
 - kill_signal is the result that should stop or reshape the idea.
+- Preserve the chair's numeric distinctions: operating break-even is not capital payback, and a target cap
+  is not a known cost. Do not introduce or reinterpret a number that is absent from decision_snapshot.
 - sequencing_note explains why this order is cheapest and decisive.
 
 CONTEXT: {{CONTEXT_JSON}}`;
@@ -101,6 +103,7 @@ export function buildActionPlannerPrompt(input: {
   task: string;
   recommendation?: string;
   conditions?: string[];
+  decision_snapshot?: JudgeReport['decision_snapshot'];
   upheld_risks: UpheldRisk[];
   blind_spots: string[];
   open_questions: string[];
@@ -207,6 +210,7 @@ export async function s9bPlan(
     task: contract.task,
     recommendation: judgeReport.recommendation,
     conditions: judgeReport.conditions,
+    decision_snapshot: judgeReport.decision_snapshot,
     upheld_risks: risks,
     blind_spots: blindSpots,
     open_questions: openQuestions,

@@ -90,6 +90,29 @@ describe('R4 evidence and calculation integrity', () => {
     expect(bad.issues.join(' ')).toMatch(/matching units|does not match/);
   });
 
+  it('canonicalizes ordinary plural, currency-margin, and ratio units', () => {
+    const ledger: CalculationLedger = {
+      id: 'C-rate',
+      claim_id: 'P1',
+      inputs: [
+        { id: 'visitors', name: 'monthly visitors', value: 4000, unit: 'visitors/month', evidence_ids: ['E1'] },
+        { id: 'conversion', name: 'conversion', value: 0.06, unit: 'orders/visitor', evidence_ids: ['E1'] },
+        { id: 'aov', name: 'average order value', value: 2400, unit: 'INR/order', evidence_ids: ['E1'] },
+        { id: 'margin', name: 'gross margin', value: 0.58, unit: 'INR gross profit/INR revenue', evidence_ids: ['E1'] },
+        { id: 'share', name: 'revenue share', value: 0.08, unit: 'ratio', evidence_ids: ['E1'] },
+      ],
+      steps: [
+        { id: 'orders', operation: 'MULTIPLY', left: 'visitors', right: 'conversion', result: 240, unit: 'orders/month' },
+        { id: 'revenue', operation: 'MULTIPLY', left: 'orders', right: 'aov', result: 576000, unit: 'INR/month' },
+        { id: 'gross_profit', operation: 'MULTIPLY', left: 'revenue', right: 'margin', result: 334080, unit: 'INR/month' },
+        { id: 'revenue_share', operation: 'MULTIPLY', left: 'revenue', right: 'share', result: 46080, unit: 'INR/month' },
+      ],
+      result_step: 'gross_profit',
+    };
+
+    expect(evaluateCalculation(ledger)).toMatchObject({ status: 'PASS', issues: [] });
+  });
+
   it('keeps a load-bearing claim unresolved when its deterministic calculation fails', () => {
     const input = submission('A $10 price across 3 customers produces $30 monthly revenue.');
     input.calculations = [calculation({
