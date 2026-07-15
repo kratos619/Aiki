@@ -5,13 +5,29 @@ interface Quantity {
   unit: string;
 }
 
+const UNIT_ALIASES: Record<string, string> = {
+  ratios: '1', ratio: '1', percentage: '1', percent: '1', '%': '1', dimensionless: '1',
+  visitors: 'visitor', orders: 'order', customers: 'customer', users: 'user',
+  months: 'month', years: 'year', units: 'unit', items: 'item',
+};
+
+/** Keep unit meaning atomic. Model ledgers sometimes decorate currency tokens ("INR revenue") or
+ * use ordinary plurals; those are the same physical dimensions and must cancel algebraically. */
+function canonicalUnitToken(token: string): string {
+  const normalized = token.trim().toLowerCase().replace(/\s+/g, ' ');
+  const currency = normalized.match(/^(inr|usd|eur|gbp|jpy|aud|cad|cny|sgd|aed)(?:\b|$)/)?.[1];
+  if (currency) return currency;
+  return UNIT_ALIASES[normalized] ?? normalized;
+}
+
 function unitPowers(unit: string): Map<string, number> {
   const powers = new Map<string, number>();
   let sign = 1;
   for (const token of unit.split(/([*/])/).map((part) => part.trim()).filter(Boolean)) {
     if (token === '*') { sign = 1; continue; }
     if (token === '/') { sign = -1; continue; }
-    if (token !== '1') powers.set(token, (powers.get(token) ?? 0) + sign);
+    const canonical = canonicalUnitToken(token);
+    if (canonical !== '1') powers.set(canonical, (powers.get(canonical) ?? 0) + sign);
   }
   return new Map([...powers].filter(([, power]) => power !== 0));
 }

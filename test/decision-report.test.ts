@@ -59,6 +59,15 @@ function fixtures(stanceB: Stance = 'SUPPORT') {
     recommendation: 'PROCEED',
     recommendation_claim_ids: ['G1'],
     strongest_counter_case: { claim_ids: ['G1'], reasoning: 'Churn could erase the apparent demand advantage.' },
+    decision_snapshot: {
+      decisive_numbers: [{ label: 'Paid demand', value: 'Corroborated', meaning: 'The focused segment clears the first demand gate.', claim_ids: ['G1'] }],
+      payback: { status: 'NOT_COMPUTABLE', result: 'No payback period available', basis: 'No investment and cash-flow horizon were supplied.', claim_ids: ['G1'] },
+      options: [
+        { label: 'Proceed', commitment: 'Under $10k', commitment_kind: 'TARGET_CAP', tradeoff: 'Tests demand without authorizing a full build.', claim_ids: ['G1'] },
+        { label: 'Wait', commitment: 'Unknown', commitment_kind: 'UNKNOWN', tradeoff: 'Preserves cash but delays learning.', claim_ids: [] },
+      ],
+      tripwire: { metric: 'Qualified-user conversion', threshold: 'At least 5%', decision_rule: 'Stop or reshape the idea below this threshold.', claim_ids: ['G1'] },
+    },
     key_points: ['Willingness to pay is corroborated.'],
     dissent: ['Churn could erode the economics.'],
     confidence_notes: 'HIGH on demand, MEDIUM on economics.',
@@ -142,6 +151,10 @@ describe('machine-readable decision report', () => {
     expect(claim.ruling).toBe('ACCEPTED'); // chair REJECTed the objection → the claim holds
     expect(report.verdict.confidence).toBeGreaterThan(0);
     expect(report.verdict.confidence).toBeLessThanOrEqual(1);
+    expect(report.keyFindings).toEqual(['Willingness to pay is corroborated.']);
+    expect(report.criticalUnknowns).toEqual(['What is the actual churn rate?']);
+    expect(report.decisionSnapshot?.payback?.status).toBe('NOT_COMPUTABLE');
+    expect(report.decisionSnapshot?.options[0]).toMatchObject({ commitment: 'Under $10k', commitmentKind: 'TARGET_CAP' });
   });
 
   it('preserves the minority report and dissent', () => {
@@ -197,9 +210,19 @@ describe('R7 decision dossier', () => {
       expect(index, `missing ${header}`).toBeGreaterThan(previous);
       previous = index;
     }
-    expect(md).toContain(`**Confidence:** ${built.confidenceBreakdown.score}/100 — ${built.confidenceBreakdown.label}`);
-    expect(md).toContain('Structural confidence heuristic, not an accuracy probability.');
-    expect(md).toContain('**Start here:** Run a paid-demand test.');
+    expect(md).toContain('**Recommendation:** Proceed with the focused version.');
+    expect(md).toContain('### Decisive numbers');
+    expect(md.indexOf('### Decisive numbers')).toBeLessThan(md.indexOf('**Recommendation:**'));
+    expect(md).toContain('Payback — NOT COMPUTABLE');
+    expect(md).toContain('### Options at a glance');
+    expect(md).toContain('TARGET CAP');
+    expect(md).toContain('### Go/no-go tripwire');
+    expect(md).toContain('### What could overturn this');
+    expect(md).toContain('### Critical unknowns');
+    expect(md).toContain('Evidence coverage');
+    expect(md).toContain('not a probability that the recommendation is correct');
+    expect(md).toContain('### Do this first');
+    expect(md).toContain('Run a paid-demand test.');
     expect(md).toContain('**Critical warning:**');
     expect(md).toContain('G1');
     expect(md).toContain('agy/E-P1');
@@ -230,8 +253,19 @@ describe('R7 decision dossier', () => {
       const embedded = JSON.stringify(md).replace(/</g, '\\u003c');
       expect(html).toContain(`const REPORT_MD = ${embedded};`);
       expect(html.indexOf('Decision')).toBeLessThan(html.indexOf('Action plan'));
-      expect(html).toContain(`${report.confidenceBreakdown.score}/100`);
-      expect(html).toContain('Start here');
+      expect(html).toContain('Council recommendation');
+      expect(html).toContain('Decisive numbers');
+      expect(html).toContain('Payback · NOT COMPUTABLE');
+      expect(html).toContain('Options at a glance');
+      expect(html).toContain('TARGET CAP');
+      expect(html).toContain('Go/no-go tripwire');
+      const decisionBody = html.slice(html.indexOf('Council recommendation'));
+      expect(decisionBody.indexOf('Decisive numbers')).toBeLessThan(decisionBody.indexOf('verdict-text'));
+      expect(html).toContain('Do this first');
+      expect(html).toContain('What could overturn this');
+      expect(html).toContain('Critical unknowns');
+      const hero = html.slice(html.indexOf('<section class="verdict'), html.indexOf('</section>', html.indexOf('<section class="verdict')));
+      expect(hero).not.toContain(`${report.confidenceBreakdown.score}/100`);
     },
   );
 
@@ -340,8 +374,13 @@ describe('terminal summary (level 1)', () => {
 
     expect(text).toContain('MULTI-MODEL DECISION REPORT');
     expect(text).toContain('Verdict:');
-    expect(text).toContain('Status: ACCEPTED');
-    expect(text).toMatch(/Confidence: \d+\/100/);
+    expect(text).toContain('Decision state: ACCEPTED');
+    expect(text).toContain('Evidence coverage:');
+    expect(text).toContain('not a probability of correctness');
+    expect(text).toContain('Decision numbers:');
+    expect(text).toContain('Payback (not computable): No payback period available');
+    expect(text).toContain('Options: Proceed — Under $10k (target cap)');
+    expect(text).toContain('Go/no-go tripwire:');
     expect(text).toContain('./r.md');
     expect(text).toContain('./r.json');
   });

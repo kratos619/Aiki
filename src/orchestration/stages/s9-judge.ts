@@ -38,6 +38,13 @@ Output ONLY JSON matching the judge schema:
 - condition_claim_ids: required only for PROCEED_WITH_CONDITIONS; 1-8 graph IDs anchoring its conditions.
 - pivot: required only for PIVOT; {changed_claim_id, new_risk_claim_id}, both existing graph IDs.
 - strongest_counter_case: {claim_ids (1-4), reasoning}; it must argue against the verdict from the same graph.
+- decision_snapshot: include this for decisions involving money, rates, quantities, or numeric thresholds:
+  {decisive_numbers:[{label,value,meaning,claim_ids}], payback?:{status:ACHIEVED|NOT_ACHIEVED|NOT_COMPUTABLE,
+  result,basis,claim_ids}, options:[{label,commitment,commitment_kind:KNOWN|TARGET_CAP|UNKNOWN,
+  tradeoff,claim_ids}], tripwire?:{metric,threshold,decision_rule,claim_ids}}.
+  Every numeric statement must already exist in the graph's evidence or calculation records and cite its graph claim IDs.
+  Never invent arithmetic. Keep operating break-even distinct from capital-payback targets. A proposed budget or cap is
+  TARGET_CAP, not a known cost; use UNKNOWN when an option's commitment was not established.
 - key_points: 4-8 standalone decision-relevant bullets.
 - dissent: a JSON array of strings (an array even when there is only one) — the strongest arguments
   against your verdict.
@@ -61,7 +68,7 @@ export function recommendationIssues(report: { recommendation?: Recommendation; 
 }
 
 export function chairRecommendationIssues(
-  report: Pick<JudgeReportT, 'recommendation' | 'recommendation_claim_ids' | 'condition_claim_ids' | 'pivot' | 'strongest_counter_case' | 'adjudications'>,
+  report: Pick<JudgeReportT, 'recommendation' | 'recommendation_claim_ids' | 'condition_claim_ids' | 'pivot' | 'strongest_counter_case' | 'decision_snapshot' | 'adjudications'>,
   graph: DecisionGraph,
   verifications: ClaimVerificationSet,
 ): string[] {
@@ -77,6 +84,15 @@ export function chairRecommendationIssues(
   const counter = report.strongest_counter_case;
   if (!counter) issues.push('strongest counter-case is required');
   for (const id of counter?.claim_ids ?? []) if (!claimById.has(id)) issues.push(`unknown counter-case claim id: ${id}`);
+
+  const snapshot = report.decision_snapshot;
+  const snapshotIds = [
+    ...(snapshot?.decisive_numbers.flatMap((item) => item.claim_ids) ?? []),
+    ...(snapshot?.payback?.claim_ids ?? []),
+    ...(snapshot?.options.flatMap((item) => item.claim_ids) ?? []),
+    ...(snapshot?.tripwire?.claim_ids ?? []),
+  ];
+  for (const id of snapshotIds) if (!claimById.has(id)) issues.push(`unknown decision snapshot claim id: ${id}`);
 
   if (report.recommendation === 'PIVOT') {
     if (!report.pivot) issues.push('pivot claim links are required for PIVOT');
@@ -363,8 +379,12 @@ export async function s9Judge(
     conditionClaimIds = undefined;
   }
 
+  const snapshotInvalid = chairIssues.some((issue) => issue.startsWith('unknown decision snapshot claim id:'));
+  if (snapshotInvalid) ctx.addFlag('synthesis_suspect');
+  const { decision_snapshot: decisionSnapshot, ...reportWithoutSnapshot } = report;
   const final: JudgeReportT = {
-    ...report,
+    ...reportWithoutSnapshot,
+    ...(!snapshotInvalid && decisionSnapshot ? { decision_snapshot: decisionSnapshot } : {}),
     adjudications,
     dissent,
     recommendation,

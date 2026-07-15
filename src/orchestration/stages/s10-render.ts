@@ -208,6 +208,17 @@ export interface DecisionReportJson {
     primaryReason: string;
     criticalWarning: string | null;
   };
+  /** Reader-first findings from the chair, ordered most decision-relevant first. */
+  keyFindings: string[];
+  /** Highest-priority unanswered questions; a short subset of the full open-question ledger. */
+  criticalUnknowns: string[];
+  /** Optional graph-anchored numeric summary for financial or threshold-heavy decisions. */
+  decisionSnapshot?: {
+    decisiveNumbers: Array<{ label: string; value: string; meaning: string; claimIds: string[] }>;
+    payback?: { status: 'ACHIEVED' | 'NOT_ACHIEVED' | 'NOT_COMPUTABLE'; result: string; basis: string; claimIds: string[] };
+    options: Array<{ label: string; commitment: string; commitmentKind: 'KNOWN' | 'TARGET_CAP' | 'UNKNOWN'; tradeoff: string; claimIds: string[] }>;
+    tripwire?: { metric: string; threshold: string; decisionRule: string; claimIds: string[] };
+  };
   confidenceBreakdown: ConfidenceBreakdown;
   models: Array<{ provider: ProviderId; name: string; roles: string[] }>;
   positions: Array<{ provider: ProviderId; name: string; initialConclusion: string; mainArgument: string; keyRisk: string; finalPosition: 'Support' | 'Oppose' | 'Conditional' }>;
@@ -486,6 +497,7 @@ export function buildDecisionReport(ctx: RunCtx, args: S10Args): DecisionReportJ
   const rulingById = new Map(judgeReport.adjudications.map((a) => [a.id, a]));
   const positionById = new Map(graph.positions.map((position) => [position.id, position]));
   const claimById = new Map(graph.claims.map((claim) => [claim.id, claim]));
+  const openQuestions = mergeOpenQuestions(seats);
 
   const claims = graph.claims.map((claim) => {
     const stances: Partial<Record<ProviderId, MapStance>> = {};
@@ -615,6 +627,37 @@ export function buildDecisionReport(ctx: RunCtx, args: S10Args): DecisionReportJ
     rebuttals: args.rebuttals,
     rubric: args.rubric ?? [],
   });
+  const decisionSnapshot = judgeReport.decision_snapshot ? {
+    decisiveNumbers: judgeReport.decision_snapshot.decisive_numbers.map((item) => ({
+      label: item.label,
+      value: item.value,
+      meaning: item.meaning,
+      claimIds: item.claim_ids,
+    })),
+    ...(judgeReport.decision_snapshot.payback ? {
+      payback: {
+        status: judgeReport.decision_snapshot.payback.status,
+        result: judgeReport.decision_snapshot.payback.result,
+        basis: judgeReport.decision_snapshot.payback.basis,
+        claimIds: judgeReport.decision_snapshot.payback.claim_ids,
+      },
+    } : {}),
+    options: judgeReport.decision_snapshot.options.map((option) => ({
+      label: option.label,
+      commitment: option.commitment,
+      commitmentKind: option.commitment_kind,
+      tradeoff: option.tradeoff,
+      claimIds: option.claim_ids,
+    })),
+    ...(judgeReport.decision_snapshot.tripwire ? {
+      tripwire: {
+        metric: judgeReport.decision_snapshot.tripwire.metric,
+        threshold: judgeReport.decision_snapshot.tripwire.threshold,
+        decisionRule: judgeReport.decision_snapshot.tripwire.decision_rule,
+        claimIds: judgeReport.decision_snapshot.tripwire.claim_ids,
+      },
+    } : {}),
+  } : undefined;
 
   return {
     reportId: ctx.runId,
@@ -638,6 +681,9 @@ export function buildDecisionReport(ctx: RunCtx, args: S10Args): DecisionReportJ
       primaryReason: judgeReport.key_points?.[0] ?? judgeReport.verdict,
       criticalWarning,
     },
+    keyFindings: (judgeReport.key_points?.length ? judgeReport.key_points : [judgeReport.verdict]).slice(0, 4),
+    criticalUnknowns: openQuestions.slice(0, 3),
+    ...(decisionSnapshot ? { decisionSnapshot } : {}),
     confidenceBreakdown: confidence,
     models,
     positions,
@@ -665,7 +711,7 @@ export function buildDecisionReport(ctx: RunCtx, args: S10Args): DecisionReportJ
     recommendedActions: actionPlan && !('kind' in actionPlan)
       ? actionPlan.actions.map((action) => ({ order: action.order, action: action.action, why: action.why, effort: action.effort, killSignal: action.kill_signal }))
       : [],
-    openQuestions: mergeOpenQuestions(seats),
+    openQuestions,
     flags: [...ctx.flags],
     receipt: { calls: ctx.calls.length, budget: ctx.budget.limit, byProvider, modelTimeMs, categories: receiptCategories(ctx) },
     dossier,
@@ -686,23 +732,30 @@ const RULE = '─'.repeat(52);
 export function renderTerminalSummary(report: DecisionReportJson, paths: { markdownPath: string; jsonPath: string }): string {
   const summary = report.consensusSummary;
   const c = report.confidenceBreakdown;
+  const snapshot = report.decisionSnapshot;
+  const decisiveLines = snapshot ? [
+    'Decision numbers:',
+    ...snapshot.decisiveNumbers.slice(0, 3).map((item) => `${item.label}: ${item.value} — ${item.meaning}`),
+    ...(snapshot.payback ? [`Payback (${snapshot.payback.status.replaceAll('_', ' ').toLowerCase()}): ${snapshot.payback.result}`] : []),
+    `Options: ${snapshot.options.map((option) => `${option.label} — ${option.commitment} (${option.commitmentKind.replace('_', ' ').toLowerCase()})`).join(' · ')}`,
+  ] : ['Decisive result:', report.verdict.primaryReason];
   const checks: string[] = [
     `[${c.verificationCoverage >= 0.5 ? 'PASS' : 'WARN'}] Verification coverage ${pct(c.verificationCoverage)} of load-bearing claims`,
     `[PASS] Minority opinion preserved (${report.minority.dissent.length} dissent item(s))`,
     `[${report.verification.refuted === 0 ? 'PASS' : 'WARN'}] Verifier refutations: ${report.verification.refuted}`,
     ...(report.flags.length ? [`[WARN] Degradation flags: ${report.flags.join(', ')}`] : []),
-    '[WARN] Confidence score is heuristic — not yet benchmark-calibrated',
+    `[WARN] Structural score ${c.score}/100 is heuristic — not yet benchmark-calibrated`,
   ];
   return [
     report.mode === 'quick' ? 'SINGLE-MODEL DECISION REPORT' : 'MULTI-MODEL DECISION REPORT',
     RULE,
     `Verdict: ${report.verdict.summary}`,
-    `Status: ${report.verdict.status}`,
-    `Confidence: ${c.score}/100 (${c.label})`,
+    `Decision state: ${report.verdict.status}`,
+    `Evidence coverage: ${pct(c.verificationCoverage)} of load-bearing claims independently verified`,
+    'Coverage note: unchecked inputs remain; this is not a probability of correctness.',
     `${report.mode === 'quick' ? 'Claims' : 'Consensus'}: ${report.verdict.consensusType.replaceAll('_', ' ')} — ${summary.accepted} accepted · ${summary.rejected} rejected · ${summary.unresolved} unresolved`,
     '',
-    'Primary reason:',
-    report.verdict.primaryReason,
+    ...decisiveLines,
     '',
     ...(report.verdict.criticalWarning ? ['Critical warning:', report.verdict.criticalWarning, ''] : []),
     ...(report.minority.dissent[0] ? ['Critical dissent:', report.minority.dissent[0], ''] : []),
@@ -710,6 +763,7 @@ export function renderTerminalSummary(report: DecisionReportJson, paths: { markd
     ...checks,
     '',
     ...(report.recommendedActions[0] ? ['Recommended action:', report.recommendedActions[0].action, ''] : []),
+    ...(snapshot?.tripwire ? ['Go/no-go tripwire:', `${snapshot.tripwire.metric}: ${snapshot.tripwire.threshold} — ${snapshot.tripwire.decisionRule}`, ''] : []),
     `Full report: ${paths.markdownPath}`,
     `Audit JSON:  ${paths.jsonPath}`,
   ].join('\n');
