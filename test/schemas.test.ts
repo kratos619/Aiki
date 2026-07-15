@@ -247,6 +247,78 @@ describe('RoleOutput (workflow-discriminated union)', () => {
     expect(salvaged.positions.every((position) => position.evidence_ids.length === 0)).toBe(true);
   });
 
+  it('canonicalizes a leading stance token with trailing prose (20260714-2142 codex vocabulary)', () => {
+    const { workflow: _workflow, ...modelOutput } = idea;
+    const parse = (support: string) => IdeaRoleOutputModel.safeParse({
+      ...modelOutput,
+      evidence: [{ ...modelOutput.evidence[0], support }],
+    });
+
+    expect(parse('SUPPORTS: the quote lists exact hardware costs.').data?.evidence[0]?.support).toBe('SUPPORTS');
+    expect(parse('OPPOSES: the clinic has no full-time IT staff.').data?.evidence[0]?.support).toBe('CONTRADICTS');
+    expect(parse('OPPOSES unconditional retention: the longest outage exceeded tolerance.').data?.evidence[0]?.support).toBe('CONTRADICTS');
+    expect(parse('MIXED: achievable but conditional on registration status.').success).toBe(false);
+    expect(parse('The vendor retains data for two years.').success).toBe(false);
+  });
+
+  it('accepts both documented coverage shapes and a question without an id (20260714-2142 agy shapes)', () => {
+    const { workflow: _workflow, ...modelOutput } = idea;
+    const parsed = IdeaRoleOutputModel.parse({
+      ...modelOutput,
+      coverage: [
+        { dimension_id: 'R1', status: 'COVERED', position_ids: ['P1'] },
+        { dimension_id: 'R2', status: 'NOT_APPLICABLE', rationale: 'No market dimension in a pure policy decision.' },
+      ],
+      decision_questions: [{ question: 'How long is the certification queue?', claim_ids: ['P1'] }],
+    });
+
+    expect(parsed.coverage[1]?.position_ids).toEqual([]);
+    expect(parsed.decision_questions[0]?.id).toBeUndefined();
+    expect(IdeaRoleOutputModel.safeParse({
+      ...modelOutput,
+      coverage: [{ dimension_id: 'R2', status: 'NOT_APPLICABLE' }],
+    }).success).toBe(false);
+  });
+
+  it('salvage drops a calculation whose position or evidence anchor was dropped', () => {
+    const { workflow: _workflow, ...modelOutput } = idea;
+    const broken = {
+      ...modelOutput,
+      evidence: [{ ...modelOutput.evidence[0], support: 'prose that never matches any token' }],
+      calculations: [{
+        id: 'C1', claim_id: 'P1',
+        inputs: [{ id: 'C1I1', name: 'cost', value: 100, unit: 'INR', evidence_ids: ['E1'] }],
+        steps: [{ id: 'C1S1', operation: 'MULTIPLY', left: 'C1I1', right: 'C1I1', result: 10000, unit: 'INR' }],
+        result_step: 'C1S1',
+      }],
+    };
+
+    const salvaged = IdeaRoleOutputModel.parse(salvageIdeaRoleOutputModel(broken));
+    expect(salvaged.evidence).toHaveLength(0); // E1 dropped → the ledger anchored on it goes too
+    expect(salvaged.calculations).toHaveLength(0);
+  });
+
+  it('replays the 20260714-2142 failed codex repair: stance vocabulary canonicalized, MIXED card dropped, ledger capped', () => {
+    const raw = JSON.parse(readFileSync(new URL('./fixtures/s4-repair-support-vocab.json', import.meta.url), 'utf8'));
+
+    expect(IdeaRoleOutputModel.safeParse(raw).success).toBe(false); // MIXED card + 10 calculations
+    const salvaged = IdeaRoleOutputModel.parse(salvageIdeaRoleOutputModel(raw));
+    expect(salvaged.positions).toHaveLength(12);
+    expect(salvaged.evidence).toHaveLength(11); // E6 (MIXED) dropped, stance vocabulary canonicalized
+    expect(salvaged.evidence.some((card) => card.id === 'E6')).toBe(false);
+    expect(salvaged.calculations).toHaveLength(8); // deterministic cap, order preserved
+    expect(salvaged.calculations.map((calc) => calc.id)).toEqual(['C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8']);
+  });
+
+  it('replays the 20260714-2142 failed agy repair: documented coverage/question shapes validate without salvage', () => {
+    const raw = JSON.parse(readFileSync(new URL('./fixtures/s4-repair-coverage-shape.json', import.meta.url), 'utf8'));
+
+    const parsed = IdeaRoleOutputModel.parse(raw);
+    expect(parsed.positions).toHaveLength(6);
+    expect(parsed.coverage).toHaveLength(9);
+    expect(parsed.decision_questions).toHaveLength(3);
+  });
+
   it('rejects position references to missing evidence', () => {
     expect(() => RoleOutput.parse({ ...idea, positions: [{ ...idea.positions[0], evidence_ids: ['E404'] }] })).toThrow();
   });

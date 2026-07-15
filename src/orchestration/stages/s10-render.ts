@@ -538,8 +538,14 @@ export function buildDecisionReport(ctx: RunCtx, args: S10Args): DecisionReportJ
     .filter((claim) => claim.load_bearing && claim.evidence_state !== 'SUPPORTED')
     .map((claim) => ({ risk: claim.proposition, severity: SEVERITY_MAP[claim.sensitivity] ?? 'Medium' }));
 
-  const criticalWarning = graph.claims.find(
-    (claim) => claim.load_bearing && claim.if_false === 'STOP' && claim.evidence_state !== 'SUPPORTED')?.proposition ?? null;
+  // Frame the slot as what it is — a decisive assumption that is NOT proven. Echoing the bare
+  // proposition inverts the meaning when the claim is phrased affirmatively (run 20260714-2321:
+  // "a cutover can preserve compliance" read as reassurance, the opposite of the verdict).
+  const criticalClaim = graph.claims.find(
+    (claim) => claim.load_bearing && claim.if_false === 'STOP' && claim.evidence_state !== 'SUPPORTED');
+  const criticalWarning = criticalClaim
+    ? `Unverified decisive assumption (if false, STOP): ${criticalClaim.proposition} — evidence ${criticalClaim.evidence_state}.`
+    : null;
 
   const verificationResults = verifications.verifications.map((v) => {
     if ('claim_id' in v) {

@@ -109,7 +109,7 @@ export function coverageHoleQueue(
   for (const { submission } of submissions) {
     const positions = new Map(submission.positions.map((position) => [position.local_id, position]));
     for (const entry of submission.coverage) {
-      if (entry.status === 'NOT_APPLICABLE' && entry.rationale.trim()) covered.add(entry.dimension_id);
+      if (entry.status === 'NOT_APPLICABLE' && entry.rationale?.trim()) covered.add(entry.dimension_id);
       if (entry.status === 'COVERED' && entry.position_ids.some((id) => positions.get(id)?.dimension_id === entry.dimension_id)) {
         covered.add(entry.dimension_id);
       }

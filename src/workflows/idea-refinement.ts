@@ -61,14 +61,17 @@ Produce ONLY JSON matching {{S4_SCHEMA_REF}} with:
 - positions: explicit claim positions with local_id, proposition, rubric dimension_id, stance
   SUPPORT|OPPOSE|MIXED|UNKNOWN, basis EVIDENCE|INFERENCE|ASSUMPTION, load_bearing, if_false
   STOP|PIVOT|CONDITION|MINOR, concise reasoning, evidence_ids, and depends_on position ids.
-- evidence: evidence cards with source_kind USER|PRIMARY|SECONDARY|MODEL_KNOWLEDGE, support direction,
-  freshness, locators, and accessed dates for current external sources. MODEL_KNOWLEDGE freshness is
-  UNKNOWN. Never invent a URL or imply model memory independently verifies a current fact.
+- evidence: evidence cards {id, claim_supported, source_kind USER|PRIMARY|SECONDARY|MODEL_KNOWLEDGE,
+  support SUPPORTS|CONTRADICTS|CONTEXT_ONLY (exact token, no extra words), freshness CURRENT|DATED|UNKNOWN,
+  locator/url, accessed_at for current external sources}. MODEL_KNOWLEDGE freshness is UNKNOWN. Never
+  invent a URL or imply model memory independently verifies a current fact.
 - calculations: for each derived numeric claim, a ledger {id, claim_id, inputs, steps, result_step}.
   Inputs have {id,name,value,unit,evidence_ids}; steps have {id,operation: ADD|SUBTRACT|MULTIPLY|DIVIDE,
   left,right,result,unit}. Use exact prior input/step ids and explicit units. Otherwise use [].
-- coverage: rubric dimensions marked COVERED with position_ids, or NOT_APPLICABLE with a rationale.
-- decision_questions: questions whose answers could change the verdict, anchored by claim_ids.
+- coverage: one entry per rubric dimension {dimension_id, status COVERED|NOT_APPLICABLE,
+  position_ids ([] when none), rationale (required for NOT_APPLICABLE)}.
+- decision_questions: questions {question, claim_ids} whose answers could change the verdict.
+Caps: at most 12 positions, 20 evidence cards, 8 calculations, 8 decision_questions.
 Rules: no motivation, no summaries of your own output, no markdown, JSON only.`;
 
 /**

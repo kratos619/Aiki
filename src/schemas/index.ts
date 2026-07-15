@@ -299,18 +299,29 @@ export const CalculationLedger = z.object({
   result_step: z.string().min(1),
 }).strict();
 
-export const CoverageEntry = z
+// Live 20260714-2142 killed both seats on shape ceremony the prompt never promised: rationale on
+// COVERED entries and a question id have no consumer, so the schema now matches the documented
+// either/or shape (NOT_APPLICABLE still requires its rationale).
+const CoverageEntryBase = z
   .object({
     dimension_id: z.string().min(1),
     status: z.enum(['COVERED', 'NOT_APPLICABLE']),
-    position_ids: z.array(z.string().min(1)),
-    rationale: z.string().min(1),
+    position_ids: z.array(z.string().min(1)).default([]),
+    rationale: z.string().min(1).optional(),
   })
   .strict();
 
+function checkCoverageEntry(entry: z.infer<typeof CoverageEntryBase>, ctx: z.RefinementCtx): void {
+  if (entry.status === 'NOT_APPLICABLE' && !entry.rationale) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['rationale'], message: 'NOT_APPLICABLE coverage requires a rationale' });
+  }
+}
+
+export const CoverageEntry = CoverageEntryBase.superRefine(checkCoverageEntry);
+
 export const DecisionQuestion = z
   .object({
-    id: z.string().min(1),
+    id: z.string().min(1).optional(),
     question: z.string().min(1),
     claim_ids: z.array(z.string().min(1)),
   })
@@ -434,6 +445,17 @@ function canonicalEnum(value: unknown, canon: readonly string[], aliases: Record
   return canon.includes(mapped) ? mapped : value;
 }
 
+/** Match a leading canonical/alias token with trailing prose ("OPPOSES: <reason>"), the observed
+ *  20260714-2142 codex vocabulary. The FIRST word must itself be the token; free prose whose first
+ *  word is not a known token still never matches. */
+function canonicalEnumLeadingToken(value: unknown, canon: readonly string[], aliases: Record<string, string> = {}): unknown {
+  if (typeof value !== 'string') return value;
+  const token = value.trim().match(/^[A-Za-z_]+/)?.[0]?.toUpperCase();
+  if (!token) return value;
+  const mapped = aliases[token] ?? token;
+  return canon.includes(mapped) ? mapped : value;
+}
+
 /** Canonicalize enum spellings observed in live provider repairs (SUPPORT, current, Current);
  *  anything that is not the exact word in some casing stays invalid. */
 function canonicalizeIdeaRoleOutputModel(input: unknown): unknown {
@@ -447,21 +469,27 @@ function canonicalizeIdeaRoleOutputModel(input: unknown): unknown {
       const evidence = item as Record<string, unknown>;
       return {
         ...evidence,
-        support: canonicalEnum(evidence.support, ['SUPPORTS', 'CONTRADICTS', 'CONTEXT_ONLY'], { SUPPORT: 'SUPPORTS' }),
+        support: canonicalEnumLeadingToken(evidence.support, ['SUPPORTS', 'CONTRADICTS', 'CONTEXT_ONLY'],
+          { SUPPORT: 'SUPPORTS', OPPOSES: 'CONTRADICTS', OPPOSE: 'CONTRADICTS' }),
         freshness: canonicalEnum(evidence.freshness, ['CURRENT', 'DATED', 'UNKNOWN']),
       };
     }),
   };
 }
 
-/** Deterministic last resort after a failed §14 repair. Two live Gemini failures shaped it:
+/** Deterministic last resort after a failed §14 repair. Three live failures shaped it:
  *  run 20260712-0011 wrote evidence prose into `support`; run 20260713-1503 added an unknown `content`
- *  key to every card and leaked `MODEL_KNOWLEDGE` into a position's `basis`, which killed the seat and
- *  then quorum. Policy, strictly deterministic (never invents a value):
+ *  key to every card and leaked `MODEL_KNOWLEDGE` into a position's `basis`; run 20260714-2142 killed
+ *  BOTH seats via an over-cap calculation ledger and coverage/question entries the old salvage never
+ *  touched. Policy, strictly deterministic (never invents a value):
  *  - unknown extra keys are stripped (zod `.strip()` re-parse);
  *  - an evidence card that still fails is dropped, and its id scrubbed from positions;
  *  - a position that still fails is dropped, and its id scrubbed from depends_on / coverage /
  *    decision_questions — one bad position costs one position, not the whole seat;
+ *  - a calculation that still fails, or whose position/evidence anchors were dropped, is dropped;
+ *    the survivors are truncated to the schema cap in order (one bad ledger costs one ledger);
+ *  - a coverage entry or decision question that still fails is dropped (a dropped coverage entry
+ *    becomes a visible structural hole downstream, never a dead seat);
  *  - a seat with NO surviving position stays a hard failure (nothing to analyze). */
 export function salvageIdeaRoleOutputModel(input: unknown): unknown {
   const canonical = canonicalizeIdeaRoleOutputModel(input);
@@ -496,12 +524,27 @@ export function salvageIdeaRoleOutputModel(input: unknown): unknown {
     });
   };
 
+  const parseOrDrop = (value: unknown, parse: (item: unknown) => { success: boolean; data?: unknown }): unknown =>
+    Array.isArray(value)
+      ? value.map((item) => parse(item)).flatMap((result) => (result.success ? [result.data] : []))
+      : value;
+
+  const calculations = Array.isArray(output.calculations)
+    ? (parseOrDrop(output.calculations, (item) => CalculationLedger.strip().safeParse(item)) as Array<z.infer<typeof CalculationLedger>>)
+      .filter((calc) => keptPositions.has(calc.claim_id)
+        && calc.inputs.every((input) => input.evidence_ids.every((id) => keptEvidence.has(id))))
+      .slice(0, 8)
+    : output.calculations;
+
   return {
     ...output,
     evidence,
     positions,
-    coverage: scrubIds(output.coverage, 'position_ids'),
-    decision_questions: scrubIds(output.decision_questions, 'claim_ids'),
+    calculations,
+    coverage: parseOrDrop(scrubIds(output.coverage, 'position_ids'),
+      (item) => CoverageEntryBase.strip().superRefine(checkCoverageEntry).safeParse(item)),
+    decision_questions: parseOrDrop(scrubIds(output.decision_questions, 'claim_ids'),
+      (item) => DecisionQuestion.strip().safeParse(item)),
   };
 }
 

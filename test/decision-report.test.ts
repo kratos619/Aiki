@@ -149,6 +149,29 @@ describe('machine-readable decision report', () => {
     const report = buildDecisionReport(ctx, args);
     expect(report.minority.dissent).toContain('Churn could erode the economics.');
   });
+
+  // Regression (run 20260714-2321): an affirmatively-phrased decisive-but-unproven claim was rendered
+  // as the bare proposition, so the warning read as reassurance — the opposite of the verdict.
+  it('frames the critical warning as an unverified assumption, not an echoed affirmative claim', () => {
+    const { ctx, args, graph } = fixtures();
+    const affirmative = 'A six-week cutover can preserve continuous compliance.';
+    const conflicted = {
+      ...graph,
+      claims: graph.claims.map((claim) => ({
+        ...claim,
+        load_bearing: true,
+        if_false: 'STOP' as const,
+        evidence_state: 'CONFLICTED' as const,
+        proposition: affirmative,
+      })),
+    };
+    const report = buildDecisionReport(ctx, { ...args, graph: conflicted });
+
+    expect(report.verdict.criticalWarning).not.toBe(affirmative); // the inversion bug
+    expect(report.verdict.criticalWarning).toContain('Unverified decisive assumption');
+    expect(report.verdict.criticalWarning).toContain('CONFLICTED');
+    expect(report.verdict.criticalWarning).toContain(affirmative); // still surfaces the claim
+  });
 });
 
 describe('R7 decision dossier', () => {
