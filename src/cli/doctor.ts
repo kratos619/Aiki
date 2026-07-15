@@ -21,44 +21,72 @@ const READONLY_LABEL: Record<ReadOnlyFlag, string> = {
 
 const pad = (s: string, w: number) => s.padEnd(w);
 
-interface Row {
+export interface ProviderRow {
   det: Detection;
   flags?: FlagProfile;
   smoke?: Smoke;
   cached?: boolean; // smoke result came from the §242 cache, not a fresh call
 }
 
+export interface DoctorReport {
+  rows: ProviderRow[];
+  ready: number;
+  fixes: string[];
+}
+
 /**
- * `aiki doctor` — detection + flag probe + (optional) smoke test, table output, actionable
- * fixes. Exit 0 iff ≥2 providers are "ready" (§5, §8 quorum). With smoke on, ready = smoke
- * passed; with --no-smoke, ready = detected.
- *
- * Smoke results are cached 6h in `.aiki/smoke-cache.json` (§242); `--fresh` bypasses the cache.
- * A cache entry is reused only when its provider version still matches (an upgrade re-smokes).
+ * The shared check engine behind `aiki doctor` and the TUI startup preflight: detection + flag
+ * probe + (optional) smoke test per provider. `onRow` fires as each provider finishes, so a UI
+ * can show live progress. Smoke results are cached 6h in `.aiki/smoke-cache.json` (§242);
+ * `fresh` bypasses the cache. A cache entry is reused only when its provider version still
+ * matches (an upgrade re-smokes).
  */
-export async function doctor(opts: { smoke?: boolean; fresh?: boolean } = {}): Promise<number> {
+export async function runDoctorChecks(
+  opts: { smoke?: boolean; fresh?: boolean; onRow?: (row: ProviderRow) => void } = {},
+): Promise<DoctorReport> {
   const runSmoke = opts.smoke !== false;
   const cache = runSmoke ? await readSmokeCache() : {};
   const now = Date.now();
   const updates: SmokeCache = {};
 
-  const rows: Row[] = await Promise.all(
-    PROVIDER_IDS.map(async (id): Promise<Row> => {
-      const det = await detect(id);
-      if (det.status !== 'READY') return { det };
-      const flags = await probeFlags(id);
-      if (!runSmoke) return { det, flags };
-      const cached = opts.fresh ? undefined : cache[id];
-      if (cached && isFresh(cached, det.version ?? null, now)) {
-        return { det, flags, smoke: entryToSmoke(cached), cached: true };
-      }
-      const smoke = await smokeTest(id, flags);
-      updates[id] = toEntry(smoke, det.version ?? null, new Date(now));
-      return { det, flags, smoke };
+  const check = async (id: ProviderId): Promise<ProviderRow> => {
+    const det = await detect(id);
+    if (det.status !== 'READY') return { det };
+    const flags = await probeFlags(id);
+    if (!runSmoke) return { det, flags };
+    const cached = opts.fresh ? undefined : cache[id];
+    if (cached && isFresh(cached, det.version ?? null, now)) {
+      return { det, flags, smoke: entryToSmoke(cached), cached: true };
+    }
+    const smoke = await smokeTest(id, flags);
+    updates[id] = toEntry(smoke, det.version ?? null, new Date(now));
+    return { det, flags, smoke };
+  };
+
+  const rows: ProviderRow[] = await Promise.all(
+    PROVIDER_IDS.map(async (id): Promise<ProviderRow> => {
+      const row = await check(id);
+      opts.onRow?.(row);
+      return row;
     }),
   );
 
   if (Object.keys(updates).length) await writeSmokeCache({ ...cache, ...updates });
+
+  return {
+    rows,
+    ready: rows.filter((row) => isReady(row, runSmoke)).length,
+    fixes: rows.flatMap(fixLines),
+  };
+}
+
+/**
+ * `aiki doctor` — runs the checks, prints the table + actionable fixes. Exit 0 iff ≥2 providers
+ * are "ready" (§5, §8 quorum). With smoke on, ready = smoke passed; with --no-smoke, ready = detected.
+ */
+export async function doctor(opts: { smoke?: boolean; fresh?: boolean } = {}): Promise<number> {
+  const runSmoke = opts.smoke !== false;
+  const { rows, ready, fixes } = await runDoctorChecks(opts);
 
   const lines: string[] = [];
   lines.push('');
@@ -67,14 +95,7 @@ export async function doctor(opts: { smoke?: boolean; fresh?: boolean } = {}): P
   lines.push(`  ${pad('PROVIDER', 10)}${pad('VERSION', 11)}${pad('STATUS', 15)}${pad('JSON', 6)}${pad('READ-ONLY', 11)}${pad('SMOKE', 14)}ROLE`);
   lines.push(`  ${'─'.repeat(82)}`);
 
-  let ready = 0;
-  const fixes: string[] = [];
-
-  for (const row of rows) {
-    lines.push(renderRow(row, runSmoke));
-    if (isReady(row, runSmoke)) ready++;
-    fixes.push(...fixLines(row));
-  }
+  for (const row of rows) lines.push(renderRow(row, runSmoke));
 
   lines.push('');
   lines.push(`  ${ready}/3 providers ready. Engine minimum quorum: 2.`);
@@ -90,12 +111,12 @@ export async function doctor(opts: { smoke?: boolean; fresh?: boolean } = {}): P
   return ready >= 2 ? 0 : 1;
 }
 
-function isReady(row: Row, runSmoke: boolean): boolean {
+function isReady(row: ProviderRow, runSmoke: boolean): boolean {
   if (row.det.status !== 'READY') return false;
   return runSmoke ? row.smoke?.ok === true : true;
 }
 
-function renderRow(row: Row, runSmoke: boolean): string {
+function renderRow(row: ProviderRow, runSmoke: boolean): string {
   const { det, flags, smoke } = row;
   const status = det.status === 'READY' ? '✔ ready' : '✖ NOT_INSTALLED';
   const version = det.version ?? '—';
@@ -112,19 +133,40 @@ function renderSmoke(detected: boolean, runSmoke: boolean, smoke?: Smoke): strin
   return `✖ ${smoke.error ?? 'FAIL'}`;
 }
 
-function fixLines(row: Row): string[] {
+/** The actionable fix for a failing row, or undefined when the row is healthy.
+ *  Fixes are user-facing (show display name) but reference the real binary for commands. */
+function fixFor(row: ProviderRow): string | undefined {
   const { det, smoke } = row;
-  const name = DISPLAY_NAME[det.id];
-  // Fixes are user-facing (show display name) but reference the real binary for commands.
-  if (det.status !== 'READY' && det.hint) return [`  ${name}: ${det.hint}`];
+  if (det.status !== 'READY') return det.hint;
   if (smoke && !smoke.ok) {
-    const fix =
-      smoke.error === 'AUTH'
-        ? `run \`${det.id}\` once to log in`
-        : smoke.error === 'QUOTA'
-          ? 'provider quota/rate limited — retry later'
-          : (smoke.detail ?? 'smoke failed');
-    return [`  ${name}: ${fix}`];
+    return smoke.error === 'AUTH'
+      ? `run \`${det.id}\` once to log in`
+      : smoke.error === 'QUOTA'
+        ? 'retry later — quota/rate limit resets on its own'
+        : (smoke.detail ?? 'smoke failed');
   }
-  return [];
+  return undefined;
+}
+
+function fixLines(row: ProviderRow): string[] {
+  const fix = fixFor(row);
+  return fix ? [`  ${DISPLAY_NAME[row.det.id]}: ${fix}`] : [];
+}
+
+/** One TUI preflight row: status icon + human label + the fix to show when it failed. */
+export function preflightLine(row: ProviderRow): { ok: boolean; label: string; fix?: string } {
+  const name = DISPLAY_NAME[row.det.id];
+  if (row.det.status !== 'READY') return { ok: false, label: `${name} — not installed`, fix: fixFor(row) };
+  const version = row.det.version ? ` ${row.det.version}` : '';
+  const { smoke } = row;
+  if (!smoke) return { ok: true, label: `${name}${version} — CLI detected` };
+  if (smoke.ok) {
+    const timing = row.cached ? 'cached ≤6h' : `${(smoke.durationMs / 1000).toFixed(1)}s`;
+    return { ok: true, label: `${name}${version} — ready (smoke ${timing})` };
+  }
+  const reason =
+    smoke.error === 'AUTH' ? 'auth failed'
+      : smoke.error === 'QUOTA' ? 'quota/rate limited'
+        : `smoke failed (${smoke.error ?? 'unknown'})`;
+  return { ok: false, label: `${name}${version} — ${reason}`, fix: fixFor(row) };
 }

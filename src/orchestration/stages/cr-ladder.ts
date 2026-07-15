@@ -6,8 +6,12 @@
 // over the diff + tier-1 findings, so it's fully unit-tested without any model call. RISK_DEFS are FROZEN
 // by the L1 pre-registration — do not tune them without a new amendment.
 
-import type { Finding } from '../../schemas/index.js';
+import { CodeReviewRoleOutputModel, type Finding, type ReviewMap } from '../../schemas/index.js';
+import type { RunCtx } from '../context.js';
 import { parseDiffFiles } from '../git.js';
+import { jsonCall } from '../jsonStage.js';
+import { sameFinding } from './cr-map.js';
+import { countLines, filterValidFindings, type ReviewerFindings } from './cr-s4-review.js';
 
 export interface RiskDef {
   id: string;
@@ -78,4 +82,87 @@ export function detectCoverageHoles(diff: string, findings: Pick<Finding, 'categ
     if (!covered) holes.push({ risk: r.id, label: r.label, categories: r.categories, files: scope });
   }
   return holes;
+}
+
+const TARGETED_PROMPT = `ROLE: Senior targeted coverage-hole reviewer.
+You have READ-ONLY access to the repository at your working directory.
+
+Review ONLY the {{RISK_LABEL}} risk in these changed files: {{FILES_JSON}}.
+Report ONLY categories {{CATEGORIES_JSON}} and ONLY findings whose file is in that list. Investigate
+surrounding code as needed, but do not report unrelated defects.
+
+Produce ONLY JSON:
+- task_echo (≤2 sentences),
+- findings: ≤12, each {id "F1"..., file, line_start, line_end, severity P0|P1|P2|P3,
+  category CORRECTNESS|SECURITY|CONCURRENCY|ERROR_HANDLING|PERF|MAINTAINABILITY,
+  claim, evidence, suggested_fix, self_confidence 0-1}.
+Every finding MUST cite a verified file and line range. JSON only.
+
+SCOPED DIFF:
+{{DIFF}}`;
+
+/** Keep only complete `diff --git` sections whose HEAD file is in `files`. */
+export function scopeDiff(diff: string, files: string[]): string {
+  const wanted = new Set(files);
+  return diff
+    .split(/(?=^diff --git )/m)
+    .filter((section) => parseDiffFiles(section).some((file) => wanted.has(file)))
+    .join('')
+    .trim();
+}
+
+/** Arm L tier 2(b): one Claude call per frozen coverage hole, validated back to that hole's scope. */
+export async function runCoverageHunts(
+  ctx: RunCtx,
+  diff: string,
+  tier1: ReviewerFindings[],
+): Promise<ReviewerFindings | null> {
+  const holes = detectCoverageHoles(diff, tier1.flatMap((reviewer) => reviewer.findings));
+  if (holes.length === 0) return null;
+
+  const findings: Finding[] = [];
+  const dropped: Finding[] = [];
+  let raised = 0;
+  for (const hole of holes) {
+    const prompt = TARGETED_PROMPT
+      .replace('{{RISK_LABEL}}', hole.label)
+      .replace('{{FILES_JSON}}', JSON.stringify(hole.files))
+      .replace('{{CATEGORIES_JSON}}', JSON.stringify(hole.categories))
+      .replace('{{DIFF}}', scopeDiff(diff, hole.files));
+    const model = await jsonCall(ctx, ctx.handle('claude'), `L-${hole.risk}`, prompt, CodeReviewRoleOutputModel);
+    await ctx.writer.writeRoleOutput(`claude-ladder-${hole.risk}`, { workflow: 'code-review', ...model });
+    raised += model.findings.length;
+
+    const wrongCategory = model.findings.filter((finding) => !hole.categories.includes(finding.category));
+    const inCategory = model.findings.filter((finding) => hole.categories.includes(finding.category));
+    const checked = filterValidFindings(inCategory, new Set(hole.files), await countLines(ctx.cwd, hole.files));
+    dropped.push(...wrongCategory, ...checked.dropped);
+    for (const finding of checked.valid) {
+      if (findings.some((kept) => sameFinding(kept, finding))) dropped.push(finding);
+      else findings.push(finding);
+    }
+  }
+
+  return { provider: 'claude', findings, dropped, raised };
+}
+
+/** Merge validated ladder findings into the kept, MEDIUM-confidence set without self-adjudication. */
+export function mergeCoverageHunt(map: ReviewMap, hunt: ReviewerFindings | null): ReviewMap {
+  if (!hunt) return map;
+  const existing = [...map.consensus, ...map.disputed, ...map.single_reviewer].map((item) => item.finding);
+  const novel = hunt.findings.filter((finding) => !existing.some((item) => sameFinding(item, finding)));
+  let next = existing.length;
+  const added = novel.map((finding) => ({
+    finding: { ...finding, id: `G${++next}` },
+    reviewers: ['claude' as const],
+    cross_verdict: 'NONE' as const,
+  }));
+  return {
+    ...map,
+    single_reviewer: [...map.single_reviewer, ...added],
+    per_reviewer: [
+      ...map.per_reviewer,
+      { provider: 'claude', raised: hunt.raised, kept: added.length, dropped: hunt.raised - added.length },
+    ],
+  };
 }

@@ -1,0 +1,82 @@
+{
+  "id": "water-reminder",
+  "title": "Subscription water-reminder app",
+  "set": "build",
+  "provenance": "INSPECTED_BUILD",
+  "tags": ["obvious", "evidence-poor", "commercial"],
+  "input_file": "input.md",
+  "critical_claims": [
+    {
+      "id": "W1",
+      "proposition": "A broad consumer segment will pay $9.99 per month for a reminder-only hydration app.",
+      "acceptable_stances": ["OPPOSE", "UNRESOLVED"],
+      "evidence_required": true
+    },
+    {
+      "id": "W2",
+      "proposition": "The product is meaningfully differentiated from free alarms, habit trackers, and hydration apps.",
+      "acceptable_stances": ["OPPOSE"],
+      "evidence_required": false
+    },
+    {
+      "id": "W3",
+      "proposition": "Word of mouth alone can seed and sustain acquisition for this private, low-social-signalling utility.",
+      "acceptable_stances": ["OPPOSE", "UNRESOLVED"],
+      "evidence_required": true
+    },
+    {
+      "id": "W4",
+      "proposition": "A reminder-only subscription retains recurring value after the user forms the target habit.",
+      "acceptable_stances": ["OPPOSE", "QUALIFY"],
+      "evidence_required": false
+    },
+    {
+      "id": "W5",
+      "proposition": "The idea should proceed as specified without first changing or validating segment, value, distribution, and retention assumptions.",
+      "acceptable_stances": ["OPPOSE"],
+      "evidence_required": false
+    }
+  ],
+  "common_false_claims": [
+    {
+      "id": "WF1",
+      "claim": "Willingness to pay is known to be near zero.",
+      "reason": "The prompt supplies no pricing research or target-segment evidence."
+    },
+    {
+      "id": "WF2",
+      "claim": "Hydration habits always form within a fixed number of days and then churn approaches 100%.",
+      "reason": "No evidence pack supports a universal duration or churn rate."
+    },
+    {
+      "id": "WF3",
+      "claim": "A water-reminder app necessarily incurs medical-data compliance obligations.",
+      "reason": "The specified reminder-only product need not collect medical data or make medical claims."
+    }
+  ],
+  "required_dimensions": [
+    "target user",
+    "existing alternatives",
+    "differentiation",
+    "feasibility",
+    "cost and resources",
+    "policy legal compliance and privacy",
+    "kill criteria",
+    "business model",
+    "distribution and go-to-market",
+    "timing",
+    "scalability",
+    "key risks and assumptions"
+  ],
+  "source_pack": [],
+  "acceptable_unresolved_outcomes": [
+    {
+      "claim_id": "W1",
+      "reason": "No willingness-to-pay evidence is supplied."
+    },
+    {
+      "claim_id": "W3",
+      "reason": "No referral, retention, or acquisition evidence is supplied."
+    }
+  ]
+}

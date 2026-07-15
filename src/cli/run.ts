@@ -2,13 +2,18 @@
 // code-review computes a git diff from --base/--head (or reads --diff) and reviews it at the repo root.
 
 import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { createInterface } from 'node:readline';
+import { renderTerminalSummary, type DecisionReportJson } from '../orchestration/stages/s10-render.js';
 import { run as runEngine } from '../orchestration/engine.js';
 import type { RoleMap, WorkflowId } from '../orchestration/context.js';
 import { ConfigError, loadLayeredConfig } from '../config/config.js';
 import { computeDiff, detectDefaultBranch, GitError, repoToplevel } from '../orchestration/git.js';
 import { resolveRunsRoot } from '../storage/paths.js';
 import { openCouncilHtml } from '../council/open.js';
+import { buildEvidencePack, type EvidencePack } from '../orchestration/evidence-pack.js';
+import { IdeaModeSchema, type IdeaMode } from '../schemas/index.js';
+import { defaultBudgetFor, defaultDeadlineFor, IDEA_MODE_PLANS } from '../orchestration/modes.js';
 
 const WORKFLOWS: WorkflowId[] = ['idea-refinement', 'code-review'];
 
@@ -19,13 +24,29 @@ export interface RunFlags {
   diff?: string; // path to a patch file (alternative to --base/--head)
   cheap?: boolean; // code-review: agy+codex reviewers, claude judge (Opus-thrift; experimental — bench Arm E)
   yes?: boolean; // skip the run-cost confirmation (also skipped when non-interactive)
+  evidence?: string; // idea-refinement: user-scoped local source file/directory
+  mode?: string; // idea-refinement: quick | council | research
 }
 
 /** Rough provider-call estimate for the run-cost preview (V5). Approximate — the real count varies with
  *  §14 repairs, cross-exam skips, and quorum. `opus` = the Claude/Opus subset (the metered-cost driver). */
-export function estimateRun(workflow: WorkflowId, opts: { cheap?: boolean } = {}): { calls: number; opus: number } {
+export interface RunEstimate {
+  calls: number;
+  opus: number;
+  minCalls?: number;
+  reserved?: number;
+}
+
+export function estimateRun(workflow: WorkflowId, opts: { cheap?: boolean; mode?: IdeaMode } = {}): RunEstimate {
   if (workflow === 'code-review') return { calls: 5, opus: opts.cheap ? 1 : 2 };
-  return { calls: 12, opus: 4 }; // idea-refinement (S0/S1/S3 on agy; S2 has claude; S7 + S9 + S9b run on the claude judge)
+  const mode = opts.mode ?? 'council';
+  const plan = IDEA_MODE_PLANS[mode];
+  return {
+    calls: plan.maxCalls,
+    opus: mode === 'quick' ? 1 : 2,
+    minCalls: mode === 'research' ? 8 : plan.baseCalls,
+    reserved: plan.reservedCalls,
+  };
 }
 
 /** Thin y/N prompt (default yes). Only used on an interactive TTY. */
@@ -91,8 +112,22 @@ export async function runCommand(workflow: string, input: string | undefined, op
     return 1;
   }
 
+  let mode: IdeaMode | undefined;
+  if (workflow === 'idea-refinement') {
+    const parsed = IdeaModeSchema.safeParse(opts.mode ?? 'council');
+    if (!parsed.success) {
+      process.stderr.write(`unknown idea mode "${opts.mode}". Available: quick, council, research\n`);
+      return 1;
+    }
+    mode = parsed.data;
+  } else if (opts.mode) {
+    process.stderr.write('--mode only applies to idea-refinement.\n');
+    return 1;
+  }
+
   let text: string;
   let cwd: string | undefined;
+  let evidencePack: EvidencePack | undefined;
   if (workflow === 'code-review') {
     const r = await resolveCodeReview(opts);
     if ('done' in r) return r.done;
@@ -104,6 +139,19 @@ export async function runCommand(workflow: string, input: string | undefined, op
       return 1;
     }
     text = resolved;
+  }
+
+  if (opts.evidence) {
+    if (workflow !== 'idea-refinement') {
+      process.stderr.write('--evidence only applies to idea-refinement.\n');
+      return 1;
+    }
+    try {
+      evidencePack = await buildEvidencePack(opts.evidence);
+    } catch (error) {
+      process.stderr.write(`cannot load evidence pack: ${error instanceof Error ? error.message : String(error)}\n`);
+      return 1;
+    }
   }
 
   // Precedence (§10/T9): --budget flag > config.budget > built-in default. roles/deadline/models are
@@ -128,8 +176,12 @@ export async function runCommand(workflow: string, input: string | undefined, op
   }
 
   // Run-cost preview (V5): show the estimate; confirm interactively unless --yes or non-interactive.
-  const est = estimateRun(workflow as WorkflowId, { cheap: opts.cheap });
-  const note = `  ≈${est.calls} provider call(s), ~${est.opus} on Claude/Opus (the metered part).`;
+  const est = estimateRun(workflow as WorkflowId, { cheap: opts.cheap, mode });
+  const callEstimate = est.minCalls !== undefined && est.minCalls !== est.calls ? `${est.minCalls}–${est.calls}` : `${est.calls}`;
+  const resolvedBudget = opts.budget ?? cfg.budget ?? defaultBudgetFor(workflow as WorkflowId, mode);
+  const reservation = est.reserved ? `; ${est.reserved} call(s) reserved for chair + planner` : '';
+  const modeLabel = mode ? ` in ${mode} mode` : '';
+  const note = `  ≈${callEstimate} provider call(s)${modeLabel}, ~${est.opus} on Claude/Opus; budget ${resolvedBudget}${reservation}.`;
   if (!opts.yes && process.stdin.isTTY && process.stdout.isTTY) {
     if (!(await confirm(`${note}\n  Continue? [Y/n] `))) {
       process.stdout.write('  cancelled.\n');
@@ -140,16 +192,29 @@ export async function runCommand(workflow: string, input: string | undefined, op
   }
 
   const outcome = await runEngine(workflow as WorkflowId, text, {
-    budget: opts.budget ?? cfg.budget,
-    deadlineMs: cfg.deadlineMs,
+    mode,
+    budget: resolvedBudget,
+    deadlineMs: cfg.deadlineMs ?? defaultDeadlineFor(workflow as WorkflowId, mode),
     roleOverrides,
     cwd, // code-review: repo root; idea-refinement: undefined → run dir
     runsRoot: await resolveRunsRoot(), // hybrid: repo .aiki when in a repo, else ~/.aiki
     providerModels: cfg.models, // V8: per-provider model → CLI --model
+    evidencePack,
   });
 
   if (outcome.ok) {
-    process.stdout.write(`\n  ✔ run ${outcome.runId} complete — ${outcome.callCount} provider call(s)\n  artifacts: ${outcome.dir}\n`);
+    process.stdout.write(`\n  ✔ run ${outcome.runId} complete — ${outcome.callCount} provider call(s)\n  artifacts: ${outcome.dir}\n\n`);
+    // Level-1 terminal summary from the machine-readable report (idea runs; absent for code-review).
+    try {
+      const report = JSON.parse(await readFile(join(outcome.dir, '10-decision-report.json'), 'utf8')) as DecisionReportJson;
+      const summary = renderTerminalSummary(report, {
+        markdownPath: join(outcome.dir, 'final-report.md'),
+        jsonPath: join(outcome.dir, '10-decision-report.json'),
+      });
+      process.stdout.write(summary.split('\n').map((line) => `  ${line}`).join('\n') + '\n');
+    } catch {
+      /* code-review runs and pre-v4 artifacts have no decision report — the line above already links artifacts */
+    }
     // Auto-open the readable report in the browser (interactive terminals only; skipped in pipes/CI).
     if (process.stdout.isTTY) {
       const html = await openCouncilHtml(outcome.runId, outcome.dir);

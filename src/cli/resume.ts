@@ -12,6 +12,7 @@ import { buildReplayCache } from '../storage/replay.js';
 import { findSession } from '../storage/sessions.js';
 import { readJsonArtifact, resolveRunId, runDir } from '../storage/runs-read.js';
 import type { RunMeta } from '../schemas/index.js';
+import { EvidencePack, type EvidencePack as EvidencePackT } from '../orchestration/evidence-pack.js';
 
 export async function resumeCommand(runArg: string | undefined, opts: { root?: string } = {}): Promise<number> {
   if (!runArg) {
@@ -50,6 +51,11 @@ export async function resumeCommand(runArg: string | undefined, opts: { root?: s
     }
     workflow = meta.workflow;
   }
+  const previousMeta = await readJsonArtifact<RunMeta>(oldDir, 'meta.json');
+  if (!previousMeta) {
+    process.stderr.write(`cannot read meta.json for ${oldId} — nothing to resume.\n`);
+    return 1;
+  }
 
   // Recover the original input the run was started with.
   const inputFile = workflow === 'code-review' ? 'diff.patch' : 'idea.md';
@@ -59,6 +65,16 @@ export async function resumeCommand(runArg: string | undefined, opts: { root?: s
   } catch {
     process.stderr.write(`cannot recover the input (inputs/${inputFile}) for ${oldId} — nothing to resume.\n`);
     return 1;
+  }
+  let evidencePack: EvidencePackT | undefined;
+  const savedEvidencePack = await readJsonArtifact(oldDir, 'inputs/evidence-pack.json');
+  if (savedEvidencePack) {
+    const parsed = EvidencePack.safeParse(savedEvidencePack);
+    if (!parsed.success) {
+      process.stderr.write(`cannot validate inputs/evidence-pack.json for ${oldId} — nothing to resume.\n`);
+      return 1;
+    }
+    evidencePack = parsed.data;
   }
 
   const replay = await buildReplayCache(oldDir);
@@ -80,6 +96,7 @@ export async function resumeCommand(runArg: string | undefined, opts: { root?: s
 
   process.stdout.write(`  resuming ${oldId} (${workflow}) — replaying ${replay.size} completed call(s); only the rest will hit a model.\n`);
   const outcome = await runEngine(workflow, input, {
+    mode: previousMeta.mode,
     budget: cfg.budget,
     deadlineMs: cfg.deadlineMs,
     roleOverrides: cfg.roles,
@@ -88,6 +105,7 @@ export async function resumeCommand(runArg: string | undefined, opts: { root?: s
     replay,
     resumedFrom: oldId,
     providerModels: cfg.models,
+    evidencePack,
   });
 
   if (outcome.ok) {

@@ -10,7 +10,7 @@
 // - Full audit (§15): every call's exact prompt and raw output are written under `raw/`.
 
 import { randomBytes } from 'node:crypto';
-import type { CallRecord, GrillAnswer, RunBriefDraft, RunMeta } from '../schemas/index.js';
+import type { CallRecord, GrillAnswer, IdeaMode, RunBriefDraft, RunMeta } from '../schemas/index.js';
 import type { Adapter, FlagProfile, ProviderId, ReadOnlyFlag, RunResultAdapter } from '../providers/types.js';
 import { PROVIDER_IDS } from '../providers/types.js';
 import { ADAPTERS } from '../providers/adapters.js';
@@ -19,15 +19,17 @@ import { detect } from '../providers/detect.js';
 import { probeFlags } from '../providers/probe.js';
 import type { RunWriter } from '../storage/runs.js';
 import { replayKey } from '../storage/replay.js';
+import type { EvidencePack } from './evidence-pack.js';
+import { callCategory, defaultBudgetFor, IDEA_MODE_PLANS, isOptionalStage, LEGACY_DEFAULT_BUDGET } from './modes.js';
 
 export type WorkflowId = 'idea-refinement' | 'code-review';
 
 /**
  * Optional observation/interaction seam for the TUI (T8). Entirely additive: headless runs pass no
  * `events`, so the engine does not block on user input. `grill` and `clarify` are the interactive
- * points; when absent, S0 uses best-judgment answers and S2 falls back to the majority cluster.
+ * preflight points; when absent, the contract records headless defaults and the majority reading.
  */
-/** The user's answer to an S2 clarification: pick one reading, combine them all, or type their own. */
+/** The user's answer to a preflight clarification: pick one reading, combine them, or type their own. */
 export type ClarifyChoice =
   | { kind: 'pick'; index: number }
   | { kind: 'both' }
@@ -37,9 +39,9 @@ export interface RunEvents {
   onStart?(runId: string, dir: string): void;
   onStageStart?(id: string): void;
   onStageEnd?(id: string, status: 'done' | 'failed' | 'skipped'): void;
-  /** Ask the user to answer the S0 contextual grill before the expensive council stages run. */
+  /** Ask the user to answer the merged contextual questions before the expensive stages run. */
   grill?(brief: RunBriefDraft): Promise<GrillAnswer[]>;
-  /** Ask the user to resolve diverging S2 interpretations (pick / combine / type their own). */
+  /** Ask the user to resolve diverging preflight interpretations. */
   clarify?(question: string, options: string[]): Promise<ClarifyChoice>;
 }
 
@@ -65,17 +67,16 @@ export async function runStage<T>(ctx: RunCtx, id: string, fn: () => Promise<T>)
   }
 }
 
-export const DEFAULT_BUDGET = 18; // full idea pipeline min = S0(1)+S1(1)+S2(3)+S3(1)+S4(2)+S7-group(1)+
-// S8(1)+S9(1)+S9b(1) = 12. But S2 runs 3 providers that EACH can repair, plus S9 + S9b anchor repairs —
-// a live run spent 3 repairs and died at 13 before S9b. 18 = 12 + ~6 repair headroom so the validation
-// plan actually renders; a true repair-storm still fails gracefully. Overridable via `--budget`/config.
+/** Legacy/code-review fallback. Idea-refinement defaults are adaptive by explicit mode (R6). */
+export const DEFAULT_BUDGET = LEGACY_DEFAULT_BUDGET;
 // §19 was 10 min; raised to 20 (user-authorized 2026-07-06). Evidence: a real Opus judge (S9) on a
 // 9-dispute idea ran ~360s and the whole run was ~14 min → the 10-min wall-clock aborted a legitimate run.
 export const DEFAULT_DEADLINE_MS = 20 * 60 * 1000; // wall-clock cap
-// §7.1 was 180s; raised to 300 (user-authorized 2026-07-06). The adapter retries a TIMEOUT once, so 180s
-// gave a 360s ceiling and the deep-reasoning judge blew it (observed exactly 360.1s → TIMEOUT). 300s per
-// attempt covers the Opus judge; the wall-clock deadline above remains the outer bound.
-const DEFAULT_CALL_TIMEOUT_MS = 300_000;
+// §7.1 was 180s; raised to 300 (user-authorized 2026-07-06) for the deep-reasoning judge; raised to 900
+// (2026-07-13) after the spawn timeout became actually enforced and killed a LEGITIMATE deep call: codex's
+// S4 analysis of a hard build case ran ~10 min to a valid output (run 20260713-1341, 13:44→13:54). 900s
+// per attempt covers observed deep work; the wall-clock deadline above remains the outer bound.
+const DEFAULT_CALL_TIMEOUT_MS = 900_000;
 
 export class BudgetExceeded extends Error {
   constructor(limit: number) {
@@ -115,7 +116,7 @@ export interface ProviderHandle {
 
 /** Default role assignment for a workflow (§10). `s4` = the fan-out analyst/reviewer seats. */
 export interface RoleMap {
-  analyst: ProviderId; // S1 intent + S3 prompt-gen (+ one S4 seat)
+  analyst: ProviderId; // retained for config/backward compatibility; preflight uses two scout readings
   judge: ProviderId; // S9 adjudication — must not author an S4 output (§10)
   verifier: ProviderId; // S8 cross-exam
   s4: ProviderId[]; // S4 fan-out seats
@@ -128,23 +129,29 @@ export interface RunCtxOpts {
   roles: RoleMap;
   writer: RunWriter;
   cwd: string; // working dir for provider calls (run inputs dir for non-repo workflows)
+  mode?: IdeaMode; // idea-refinement only; default council
   budget?: number;
   deadlineMs?: number;
   signal?: AbortSignal;
   events?: RunEvents; // TUI observation/interaction seam (T8); absent = headless
   now?: () => number; // injectable clock (tests)
   replay?: Map<string, string>; // resume (V6.3): (provider,prompt)→prior output; matched calls skip the model
+  evidencePack?: EvidencePack; // R4: user-scoped local paths + hashes; contents are not copied
 }
 
 export class RunCtx {
   readonly runId: string;
   readonly workflow: WorkflowId;
+  readonly mode: IdeaMode;
   readonly roles: RoleMap;
   readonly writer: RunWriter;
   readonly cwd: string;
   readonly events?: RunEvents;
+  readonly evidencePack?: EvidencePack;
   readonly budget: { limit: number; used: number };
   readonly calls: CallRecord[] = [];
+  /** Logical provider-call stages, including resume cache hits. Used by bounded protocol caps. */
+  readonly attemptedStages: string[] = [];
   /** §16 report-header flags accumulated by stages (S4 → low_diversity, S7 → low_diversity,
    *  S9 → synthesis_suspect). Folded into meta.json at finalize by `buildMeta`. */
   readonly flags = new Set<NonNullable<RunMeta['flags']>[number]>();
@@ -160,11 +167,13 @@ export class RunCtx {
   constructor(opts: RunCtxOpts) {
     this.runId = opts.runId;
     this.workflow = opts.workflow;
+    this.mode = opts.mode ?? 'council';
     this.roles = opts.roles;
     this.writer = opts.writer;
     this.cwd = opts.cwd;
     this.events = opts.events;
-    this.budget = { limit: opts.budget ?? DEFAULT_BUDGET, used: 0 };
+    this.evidencePack = opts.evidencePack;
+    this.budget = { limit: opts.budget ?? defaultBudgetFor(opts.workflow, this.mode), used: 0 };
     this.handles = new Map(opts.handles.map((h) => [h.id, h]));
     this.signal = opts.signal;
     this.deadlineMs = opts.deadlineMs ?? DEFAULT_DEADLINE_MS;
@@ -201,6 +210,23 @@ export class RunCtx {
     if (this.now() > this.deadlineAt) throw new DeadlineExceeded(this.deadlineMs);
   }
 
+  /** Calls optional stages may still spend after preserving this mode's required tail calls. */
+  optionalCallsRemaining(): number {
+    if (this.workflow !== 'idea-refinement') return 0;
+    const plan = IDEA_MODE_PLANS[this.mode];
+    const logicalUsed = this.attemptedStages.filter(isOptionalStage).length;
+    const protocolRoom = Math.max(0, plan.optionalCalls - logicalUsed);
+    const budgetRoom = Math.max(0, this.budget.limit - this.budget.used - plan.reservedCalls);
+    return Math.min(protocolRoom, budgetRoom);
+  }
+
+  /** Actual-call receipt. Resume replay is free and therefore intentionally absent. */
+  receipt(): NonNullable<RunMeta['receipt']> {
+    const receipt = { discovery: 0, verification: 0, repair: 0, planning: 0 };
+    for (const call of this.calls) receipt[call.category ?? callCategory(call.stage)]++;
+    return receipt;
+  }
+
   /**
    * Make one budgeted provider call. Decrements budget (throws `BudgetExceeded` if it would go
    * over), records a `CallRecord`, and dumps the exact prompt + raw output under `raw/` (§15).
@@ -211,6 +237,7 @@ export class RunCtx {
     stage: string,
   ): Promise<RunResultAdapter> {
     this.guard();
+    this.attemptedStages.push(stage);
     const seq = ++this.seq;
     await this.writer.writeRaw(`${stage}-${handle.id}-${seq}.prompt.txt`, req.prompt);
 
@@ -230,6 +257,7 @@ export class RunCtx {
           timeoutMs: req.timeoutMs ?? DEFAULT_CALL_TIMEOUT_MS,
           expectJson: req.expectJson,
           readOnly: true,
+          research: this.mode === 'research' && stage.startsWith('S4'),
           signal: this.signal, // Ctrl+C kills the in-flight child (T8); undefined headless
         },
         handle.flags,
@@ -239,6 +267,7 @@ export class RunCtx {
       this.calls.push({
         provider: handle.id,
         stage,
+        category: callCategory(stage),
         durationMs: res.durationMs,
         ...(res.ok ? {} : { error: res.error }),
       });
@@ -274,6 +303,7 @@ export class RunCtx {
     return {
       run_id: this.runId,
       workflow: this.workflow,
+      ...(this.workflow === 'idea-refinement' ? { mode: this.mode } : {}),
       provider_versions,
       flag_profiles,
       roles,
@@ -281,6 +311,7 @@ export class RunCtx {
       calls: this.calls,
       call_count: this.calls.length,
       budget: { limit: this.budget.limit, used: this.budget.used },
+      receipt: this.receipt(),
       exit_status: exitStatus,
       aborted,
       ...(allFlags.length ? { flags: allFlags } : {}),

@@ -1,0 +1,99 @@
+{
+  "id": "library-sunday-hours",
+  "title": "City library Sunday-hours allocation",
+  "set": "build",
+  "provenance": "AUTHORED_BUILD",
+  "tags": ["ambiguous", "evidence-rich", "non-commercial", "public-service"],
+  "input_file": "input.md",
+  "critical_claims": [
+    {
+      "id": "L1",
+      "proposition": "The eight-week pilot provides evidence of meaningful demand for access outside existing library hours.",
+      "acceptable_stances": ["SUPPORT", "QUALIFY"],
+      "evidence_required": true
+    },
+    {
+      "id": "L2",
+      "proposition": "The proposed eight-hour schedule for all 52 Sundays fits within the $180,000 annual budget before contingency.",
+      "acceptable_stances": ["OPPOSE"],
+      "evidence_required": true
+    },
+    {
+      "id": "L3",
+      "proposition": "The pilot's attendance and optional survey generalize to year-round citywide demand.",
+      "acceptable_stances": ["UNRESOLVED", "QUALIFY"],
+      "evidence_required": true
+    },
+    {
+      "id": "L4",
+      "proposition": "Central-branch Sunday hours distribute access benefits equitably across neighborhoods.",
+      "acceptable_stances": ["UNRESOLVED", "QUALIFY"],
+      "evidence_required": true
+    },
+    {
+      "id": "L5",
+      "proposition": "Permanent Sunday opening produces greater public value than expanding the waitlisted weekday programs.",
+      "acceptable_stances": ["UNRESOLVED", "QUALIFY"],
+      "evidence_required": true
+    },
+    {
+      "id": "L6",
+      "proposition": "The system should commit the full annual budget without testing seasonality, visitor origin, or a mixed allocation.",
+      "acceptable_stances": ["OPPOSE"],
+      "evidence_required": false
+    }
+  ],
+  "common_false_claims": [
+    {
+      "id": "LF1",
+      "claim": "Sixty-one percent of all city residents cannot use the library during existing hours.",
+      "reason": "The figure comes from an optional survey of pilot visitors, not a representative city sample."
+    },
+    {
+      "id": "LF2",
+      "claim": "The Sunday proposal costs $180,000 per year.",
+      "reason": "Observed cost annualizes to $189,800 before contingency."
+    },
+    {
+      "id": "LF3",
+      "claim": "Weekday program expansion would serve exactly 520 additional people successfully.",
+      "reason": "The waitlist is not guaranteed enrollment and the observed completion rate is 72%."
+    }
+  ],
+  "required_dimensions": [
+    "target user",
+    "existing alternatives",
+    "differentiation",
+    "feasibility",
+    "cost and resources",
+    "policy legal compliance and privacy",
+    "kill criteria",
+    "business model",
+    "distribution and go-to-market",
+    "timing",
+    "scalability",
+    "key risks and assumptions"
+  ],
+  "source_pack": [
+    {
+      "id": "L-S1",
+      "title": "Authored Sunday pilot and weekday-program summary",
+      "as_of": "2026-06-15",
+      "local_file": "evidence.md"
+    }
+  ],
+  "acceptable_unresolved_outcomes": [
+    {
+      "claim_id": "L3",
+      "reason": "The pilot excludes major seasons and uses a self-selected survey."
+    },
+    {
+      "claim_id": "L4",
+      "reason": "Visitor-origin and neighborhood-access data were not collected."
+    },
+    {
+      "claim_id": "L5",
+      "reason": "The evidence does not put Sunday visits and completed weekday-program outcomes on a common value measure."
+    }
+  ]
+}

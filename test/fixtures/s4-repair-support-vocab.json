@@ -1,0 +1,1028 @@
+{
+  "task_echo": "Decide whether the 20-bed Pune clinic should replace its cloud EMR with self-hosted Bahmni/OpenMRS, retain the incumbent, or negotiate renewal terms. The decision must protect uninterrupted ABDM/DPDP compliance and two-hour recovery while showing year-1 and steady-state costs.",
+  "strongest_version": "A standardized 20-bed clinic could use an implementation partner and its existing Linux contractor to replace escalating per-bed fees with an open-source system it controls. The vendor's CSV export creates a migration route, the quoted hardware is below the board-approval threshold, and known recurring self-host costs before the existing contractor and omitted items are ₹2,56,000 per year versus the increased cloud subscription of ₹3,86,400. A parallel migration test could expose data problems before cutover. This version wins only if the clinic obtains an uninterrupted ABDM certification path, two-hour recovery coverage, and a reconciled migration; none is presently demonstrated.",
+  "positions": [
+    {
+      "local_id": "P1",
+      "proposition": "The clinic is presently a suitable target for production self-hosting.",
+      "dimension_id": "R1",
+      "stance": "OPPOSE",
+      "basis": "EVIDENCE",
+      "load_bearing": true,
+      "if_false": "PIVOT",
+      "reasoning": "A 20-bed clinic with no full-time IT staff, only two contractor half-days per week, and a two-hour downtime ceiling has unusually little operational capacity for owning an on-premises clinical system.",
+      "evidence_ids": [
+        "E1",
+        "E3"
+      ],
+      "depends_on": []
+    },
+    {
+      "local_id": "P2",
+      "proposition": "The clinic should negotiate the incumbent renewal first and, if negotiations fail, renew for one year rather than perform a production self-host cutover in this renewal window.",
+      "dimension_id": "R2",
+      "stance": "SUPPORT",
+      "basis": "INFERENCE",
+      "load_bearing": true,
+      "if_false": "PIVOT",
+      "reasoning": "The incumbent already supplies working ABHA linking, while the self-host compliance, recovery, and migration gates remain unmet. Renewal must still negotiate uptime, export, termination, and recovery terms because the incumbent has also exceeded the clinic's downtime tolerance.",
+      "evidence_ids": [
+        "E2",
+        "E5",
+        "E11"
+      ],
+      "depends_on": [
+        "P5",
+        "P7",
+        "P8",
+        "P9"
+      ]
+    },
+    {
+      "local_id": "P3",
+      "proposition": "Self-hosted Bahmni/OpenMRS has a sufficiently differentiated advantage over the incumbent to justify switching now.",
+      "dimension_id": "R3",
+      "stance": "MIXED",
+      "basis": "INFERENCE",
+      "load_bearing": false,
+      "if_false": "MINOR",
+      "reasoning": "Control over deployment and a lower quoted steady-state cost floor are real advantages, but they do not outweigh unpriced resilience, certification, migration, and staffing obligations. Open-source licensing does not remove operational ownership.",
+      "evidence_ids": [
+        "E2",
+        "E6",
+        "E8",
+        "E9"
+      ],
+      "depends_on": [
+        "P7",
+        "P8",
+        "P10"
+      ]
+    },
+    {
+      "local_id": "P4",
+      "proposition": "The smallest reversible first step is a written incumbent negotiation plus a non-production import and reconciliation of a representative vendor CSV sample, with no production cutover or hardware purchase.",
+      "dimension_id": "R9",
+      "stance": "SUPPORT",
+      "basis": "INFERENCE",
+      "load_bearing": false,
+      "if_false": "CONDITION",
+      "reasoning": "This tests incumbent concessions, export usability, identifiers, balances, and workflow fit without surrendering the currently certified system. The clinic should require a fixed pilot price and written deletion controls before sharing patient data.",
+      "evidence_ids": [
+        "E2",
+        "E4",
+        "E12"
+      ],
+      "depends_on": [
+        "P2",
+        "P9"
+      ]
+    },
+    {
+      "local_id": "P5",
+      "proposition": "A safe production self-host switch can credibly be completed within the six-week decision window.",
+      "dimension_id": "R10",
+      "stance": "OPPOSE",
+      "basis": "EVIDENCE",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "reasoning": "The clinic's previous vendor migration took over four months, and its consultant describes self-host certification as typically taking months. A three-week implementation claim does not cover certification continuity or proven recovery.",
+      "evidence_ids": [
+        "E4",
+        "E5",
+        "E12"
+      ],
+      "depends_on": [
+        "P7",
+        "P9"
+      ]
+    },
+    {
+      "local_id": "P6",
+      "proposition": "The existing part-time contractor can independently operate the self-hosted clinical system at the required service level.",
+      "dimension_id": "R13",
+      "stance": "OPPOSE",
+      "basis": "EVIDENCE",
+      "load_bearing": true,
+      "if_false": "CONDITION",
+      "reasoning": "The contractor is present only two half-days per week and has Linux experience but no Bahmni/OpenMRS deployment history. The quote does not supply continuous incident coverage that compensates for this capability gap.",
+      "evidence_ids": [
+        "E3",
+        "E7"
+      ],
+      "depends_on": []
+    },
+    {
+      "local_id": "P7",
+      "proposition": "The proposed self-hosted deployment can preserve uninterrupted ABDM/ABHA status and adequate DPDP controls through migration and operation.",
+      "dimension_id": "D1",
+      "stance": "OPPOSE",
+      "basis": "EVIDENCE",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "reasoning": "The clinic currently relies on the vendor's certification. The consultant could not establish certification timing or the effect of a temporary gap, while the partner promises only achievable milestones conditional on facility registration. That is not continuity evidence.",
+      "evidence_ids": [
+        "E5",
+        "E6"
+      ],
+      "depends_on": []
+    },
+    {
+      "local_id": "P8",
+      "proposition": "The quoted self-host support and infrastructure can restore clinical service within two hours.",
+      "dimension_id": "D3",
+      "stance": "OPPOSE",
+      "basis": "EVIDENCE",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "reasoning": "The support plan has a four-hour response SLA, not a two-hour restoration commitment, and excludes after-hours coverage and any necessary UPS upgrade. Response beginning after four hours cannot satisfy a two-hour recovery ceiling.",
+      "evidence_ids": [
+        "E7"
+      ],
+      "depends_on": [
+        "P6"
+      ]
+    },
+    {
+      "local_id": "P9",
+      "proposition": "The partner's three-week, zero-backlog migration claim is sufficiently credible for a production commitment.",
+      "dimension_id": "D5",
+      "stance": "OPPOSE",
+      "basis": "EVIDENCE",
+      "load_bearing": true,
+      "if_false": "CONDITION",
+      "reasoning": "The claim lacks a reconciliation protocol or acceptance thresholds. The clinic's previous migration took over four months, tripled billing errors for two months, and created ₹68,000 of overtime, making an untested zero-backlog promise unsafe.",
+      "evidence_ids": [
+        "E4",
+        "E12"
+      ],
+      "depends_on": []
+    },
+    {
+      "local_id": "P10",
+      "proposition": "The known cost case alone justifies switching.",
+      "dimension_id": "R5",
+      "stance": "MIXED",
+      "basis": "EVIDENCE",
+      "load_bearing": false,
+      "if_false": "CONDITION",
+      "reasoning": "The current and increased cloud subscriptions are ₹3,36,000 and ₹3,86,400 per year. Known self-host costs are at least ₹7,46,000 in year 1 and ₹2,56,000 per steady-state year before the existing contractor and omitted costs; allocating the full current contractor retainer makes them ₹9,26,000 and ₹4,36,000. The comparable cloud total including that same retainer is ₹5,66,400. The apparent ₹1,30,400 steady-state saving before the shared retainer can be erased by UPS, after-hours support, replacements, migration disruption, or additional contractor work.",
+      "evidence_ids": [
+        "E8",
+        "E9",
+        "E10"
+      ],
+      "depends_on": []
+    },
+    {
+      "local_id": "P11",
+      "proposition": "Self-hosting should be removed from this renewal decision if any mandatory gate fails: written certification continuity, demonstrated sub-two-hour recovery, complete migration reconciliation, or an approved all-in budget.",
+      "dimension_id": "R7",
+      "stance": "SUPPORT",
+      "basis": "INFERENCE",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "reasoning": "Each gate protects a stated non-negotiable constraint. Cost savings cannot compensate for a compliance lapse, unrecoverable outage, corrupted patient or billing data, or unauthorized expenditure.",
+      "evidence_ids": [
+        "E1",
+        "E5",
+        "E7",
+        "E8"
+      ],
+      "depends_on": [
+        "P7",
+        "P8",
+        "P9",
+        "P10"
+      ]
+    },
+    {
+      "local_id": "P12",
+      "proposition": "Self-hosting is technically viable only as a later, parallel-tested option with managed support and documented compliance, not as the current six-week production migration.",
+      "dimension_id": "R4",
+      "stance": "MIXED",
+      "basis": "INFERENCE",
+      "load_bearing": true,
+      "if_false": "PIVOT",
+      "reasoning": "The implementation quote establishes that a deployment path exists, but the current staffing, response SLA, certification uncertainty, omitted infrastructure, and migration history prevent treating deployability as production viability.",
+      "evidence_ids": [
+        "E3",
+        "E4",
+        "E5",
+        "E7",
+        "E12"
+      ],
+      "depends_on": [
+        "P6",
+        "P7",
+        "P8",
+        "P9"
+      ]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "E1",
+      "claim_supported": "P1",
+      "source_kind": "USER",
+      "support": "OPPOSES: the clinic has no full-time IT staff, only two hours of paper fallback, and non-negotiable compliance continuity.",
+      "freshness": "CURRENT",
+      "locator": "/Users/gaurav/Documents/Personal-Learning/AiKi/.aiki/runs/20260714-2142-idea-refinement-ef38/inputs/idea-brief.md#Constraints"
+    },
+    {
+      "id": "E2",
+      "claim_supported": "P2",
+      "source_kind": "USER",
+      "support": "SUPPORTS: the incumbent currently provides working ABHA linking; renewal is annual with a 60-day exit notice and CSV-only export.",
+      "freshness": "CURRENT",
+      "locator": "/case/evidence/clinic-financials.md#Current-cloud-EMR"
+    },
+    {
+      "id": "E3",
+      "claim_supported": "P6",
+      "source_kind": "USER",
+      "support": "OPPOSES: the contractor works two half-days weekly and has no prior OpenMRS or Bahmni deployment experience.",
+      "freshness": "CURRENT",
+      "locator": "/case/evidence/clinic-financials.md#IT-capacity"
+    },
+    {
+      "id": "E4",
+      "claim_supported": "P9",
+      "source_kind": "USER",
+      "support": "OPPOSES: the prior migration exceeded four months, billing errors roughly tripled for two months, and overtime cost ₹68,000.",
+      "freshness": "CURRENT",
+      "locator": "/case/evidence/clinic-financials.md#History-note-relevant"
+    },
+    {
+      "id": "E5",
+      "claim_supported": "P7",
+      "source_kind": "USER",
+      "support": "OPPOSES: certification is expected to take months, sandbox availability is unconfirmed, and the effect of a temporary certification gap is unresolved.",
+      "freshness": "CURRENT",
+      "locator": "/case/evidence/compliance-note.md"
+    },
+    {
+      "id": "E6",
+      "claim_supported": "P7",
+      "source_kind": "USER",
+      "support": "MIXED: the partner says milestones 1 and 2 are achievable but makes timing conditional on the facility's ABDM registration status.",
+      "freshness": "CURRENT",
+      "locator": "/case/evidence/self-host-quote.md#Partner-claims-verbatim-from-quote"
+    },
+    {
+      "id": "E7",
+      "claim_supported": "P8",
+      "source_kind": "USER",
+      "support": "OPPOSES: support is business-hours only with a four-hour response SLA; UPS upgrades and after-hours coverage are excluded.",
+      "freshness": "CURRENT",
+      "locator": "/case/evidence/self-host-quote.md#Recurring"
+    },
+    {
+      "id": "E8",
+      "claim_supported": "P10",
+      "source_kind": "USER",
+      "support": "SUPPORTS: the quote lists ₹1,80,000 hardware, ₹2,50,000 implementation, ₹40,000 annual maintenance, and ₹8,000 monthly application support.",
+      "freshness": "CURRENT",
+      "locator": "/case/evidence/self-host-quote.md#One-time"
+    },
+    {
+      "id": "E9",
+      "claim_supported": "P10",
+      "source_kind": "USER",
+      "support": "SUPPORTS: estimated compliance costs are ₹60,000 one-time and ₹1,20,000 annually.",
+      "freshness": "CURRENT",
+      "locator": "/case/evidence/compliance-note.md"
+    },
+    {
+      "id": "E10",
+      "claim_supported": "P10",
+      "source_kind": "USER",
+      "support": "SUPPORTS: cloud subscription is ₹1,400 per bed per month for 20 beds, increasing by 15%, and the contractor retainer is ₹15,000 monthly.",
+      "freshness": "CURRENT",
+      "locator": "/case/evidence/clinic-financials.md"
+    },
+    {
+      "id": "E11",
+      "claim_supported": "P2",
+      "source_kind": "USER",
+      "support": "OPPOSES unconditional retention: the longest incumbent outage was 3.5 hours, exceeding the clinic's two-hour tolerance, and recovery entry took about 1.5 days after paper fallback.",
+      "freshness": "CURRENT",
+      "locator": "/case/evidence/clinic-financials.md#Downtime"
+    },
+    {
+      "id": "E12",
+      "claim_supported": "P9",
+      "source_kind": "USER",
+      "support": "OPPOSES: the partner claims a three-week migration with zero backlog but supplies no reconciliation evidence or acceptance criteria.",
+      "freshness": "CURRENT",
+      "locator": "/case/evidence/self-host-quote.md#Partner-claims-verbatim-from-quote"
+    }
+  ],
+  "calculations": [
+    {
+      "id": "C1",
+      "claim_id": "P10",
+      "inputs": [
+        {
+          "id": "C1I1",
+          "name": "Cloud price per bed per month",
+          "value": 1400,
+          "unit": "INR/bed/month",
+          "evidence_ids": [
+            "E10"
+          ]
+        },
+        {
+          "id": "C1I2",
+          "name": "Beds",
+          "value": 20,
+          "unit": "beds",
+          "evidence_ids": [
+            "E10"
+          ]
+        },
+        {
+          "id": "C1I3",
+          "name": "Months per year",
+          "value": 12,
+          "unit": "months/year",
+          "evidence_ids": [
+            "E10"
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "id": "C1S1",
+          "operation": "MULTIPLY",
+          "left": "C1I1",
+          "right": "C1I2",
+          "result": 28000,
+          "unit": "INR/month"
+        },
+        {
+          "id": "C1S2",
+          "operation": "MULTIPLY",
+          "left": "C1S1",
+          "right": "C1I3",
+          "result": 336000,
+          "unit": "INR/year"
+        }
+      ],
+      "result_step": "C1S2"
+    },
+    {
+      "id": "C2",
+      "claim_id": "P10",
+      "inputs": [
+        {
+          "id": "C2I1",
+          "name": "Current annual cloud subscription",
+          "value": 336000,
+          "unit": "INR/year",
+          "evidence_ids": [
+            "E10"
+          ]
+        },
+        {
+          "id": "C2I2",
+          "name": "Renewal multiplier after 15 percent increase",
+          "value": 1.15,
+          "unit": "multiplier",
+          "evidence_ids": [
+            "E10"
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "id": "C2S1",
+          "operation": "MULTIPLY",
+          "left": "C2I1",
+          "right": "C2I2",
+          "result": 386400,
+          "unit": "INR/year"
+        }
+      ],
+      "result_step": "C2S1"
+    },
+    {
+      "id": "C3",
+      "claim_id": "P10",
+      "inputs": [
+        {
+          "id": "C3I1",
+          "name": "Server hardware",
+          "value": 180000,
+          "unit": "INR_in_year_1",
+          "evidence_ids": [
+            "E8"
+          ]
+        },
+        {
+          "id": "C3I2",
+          "name": "Implementation migration and training",
+          "value": 250000,
+          "unit": "INR_in_year_1",
+          "evidence_ids": [
+            "E8"
+          ]
+        },
+        {
+          "id": "C3I3",
+          "name": "Annual maintenance",
+          "value": 40000,
+          "unit": "INR_in_year_1",
+          "evidence_ids": [
+            "E8"
+          ]
+        },
+        {
+          "id": "C3I4",
+          "name": "Monthly application support",
+          "value": 8000,
+          "unit": "INR/month",
+          "evidence_ids": [
+            "E8"
+          ]
+        },
+        {
+          "id": "C3I5",
+          "name": "Months in year 1",
+          "value": 12,
+          "unit": "months",
+          "evidence_ids": [
+            "E8"
+          ]
+        },
+        {
+          "id": "C3I6",
+          "name": "Annual security audit and documentation",
+          "value": 120000,
+          "unit": "INR_in_year_1",
+          "evidence_ids": [
+            "E9"
+          ]
+        },
+        {
+          "id": "C3I7",
+          "name": "One-time compliance gap assessment",
+          "value": 60000,
+          "unit": "INR_in_year_1",
+          "evidence_ids": [
+            "E9"
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "id": "C3S1",
+          "operation": "MULTIPLY",
+          "left": "C3I4",
+          "right": "C3I5",
+          "result": 96000,
+          "unit": "INR_in_year_1"
+        },
+        {
+          "id": "C3S2",
+          "operation": "ADD",
+          "left": "C3I1",
+          "right": "C3I2",
+          "result": 430000,
+          "unit": "INR_in_year_1"
+        },
+        {
+          "id": "C3S3",
+          "operation": "ADD",
+          "left": "C3S2",
+          "right": "C3I7",
+          "result": 490000,
+          "unit": "INR_in_year_1"
+        },
+        {
+          "id": "C3S4",
+          "operation": "ADD",
+          "left": "C3I3",
+          "right": "C3S1",
+          "result": 136000,
+          "unit": "INR_in_year_1"
+        },
+        {
+          "id": "C3S5",
+          "operation": "ADD",
+          "left": "C3S4",
+          "right": "C3I6",
+          "result": 256000,
+          "unit": "INR_in_year_1"
+        },
+        {
+          "id": "C3S6",
+          "operation": "ADD",
+          "left": "C3S3",
+          "right": "C3S5",
+          "result": 746000,
+          "unit": "INR_in_year_1"
+        }
+      ],
+      "result_step": "C3S6"
+    },
+    {
+      "id": "C4",
+      "claim_id": "P10",
+      "inputs": [
+        {
+          "id": "C4I1",
+          "name": "Annual maintenance",
+          "value": 40000,
+          "unit": "INR/year",
+          "evidence_ids": [
+            "E8"
+          ]
+        },
+        {
+          "id": "C4I2",
+          "name": "Monthly application support",
+          "value": 8000,
+          "unit": "INR/month",
+          "evidence_ids": [
+            "E8"
+          ]
+        },
+        {
+          "id": "C4I3",
+          "name": "Months per year",
+          "value": 12,
+          "unit": "months/year",
+          "evidence_ids": [
+            "E8"
+          ]
+        },
+        {
+          "id": "C4I4",
+          "name": "Annual security audit and documentation",
+          "value": 120000,
+          "unit": "INR/year",
+          "evidence_ids": [
+            "E9"
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "id": "C4S1",
+          "operation": "MULTIPLY",
+          "left": "C4I2",
+          "right": "C4I3",
+          "result": 96000,
+          "unit": "INR/year"
+        },
+        {
+          "id": "C4S2",
+          "operation": "ADD",
+          "left": "C4I1",
+          "right": "C4S1",
+          "result": 136000,
+          "unit": "INR/year"
+        },
+        {
+          "id": "C4S3",
+          "operation": "ADD",
+          "left": "C4S2",
+          "right": "C4I4",
+          "result": 256000,
+          "unit": "INR/year"
+        }
+      ],
+      "result_step": "C4S3"
+    },
+    {
+      "id": "C5",
+      "claim_id": "P10",
+      "inputs": [
+        {
+          "id": "C5I1",
+          "name": "Monthly contractor retainer",
+          "value": 15000,
+          "unit": "INR/month",
+          "evidence_ids": [
+            "E10"
+          ]
+        },
+        {
+          "id": "C5I2",
+          "name": "Months per year",
+          "value": 12,
+          "unit": "months/year",
+          "evidence_ids": [
+            "E10"
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "id": "C5S1",
+          "operation": "MULTIPLY",
+          "left": "C5I1",
+          "right": "C5I2",
+          "result": 180000,
+          "unit": "INR/year"
+        }
+      ],
+      "result_step": "C5S1"
+    },
+    {
+      "id": "C6",
+      "claim_id": "P10",
+      "inputs": [
+        {
+          "id": "C6I1",
+          "name": "Known self-host year-1 cost before contractor",
+          "value": 746000,
+          "unit": "INR_in_year_1",
+          "evidence_ids": [
+            "E8",
+            "E9"
+          ]
+        },
+        {
+          "id": "C6I2",
+          "name": "Existing annual contractor retainer",
+          "value": 180000,
+          "unit": "INR_in_year_1",
+          "evidence_ids": [
+            "E10"
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "id": "C6S1",
+          "operation": "ADD",
+          "left": "C6I1",
+          "right": "C6I2",
+          "result": 926000,
+          "unit": "INR_in_year_1"
+        }
+      ],
+      "result_step": "C6S1"
+    },
+    {
+      "id": "C7",
+      "claim_id": "P10",
+      "inputs": [
+        {
+          "id": "C7I1",
+          "name": "Known steady-state self-host cost before contractor",
+          "value": 256000,
+          "unit": "INR/year",
+          "evidence_ids": [
+            "E8",
+            "E9"
+          ]
+        },
+        {
+          "id": "C7I2",
+          "name": "Existing annual contractor retainer",
+          "value": 180000,
+          "unit": "INR/year",
+          "evidence_ids": [
+            "E10"
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "id": "C7S1",
+          "operation": "ADD",
+          "left": "C7I1",
+          "right": "C7I2",
+          "result": 436000,
+          "unit": "INR/year"
+        }
+      ],
+      "result_step": "C7S1"
+    },
+    {
+      "id": "C8",
+      "claim_id": "P10",
+      "inputs": [
+        {
+          "id": "C8I1",
+          "name": "Increased annual cloud subscription",
+          "value": 386400,
+          "unit": "INR/year",
+          "evidence_ids": [
+            "E10"
+          ]
+        },
+        {
+          "id": "C8I2",
+          "name": "Existing annual contractor retainer",
+          "value": 180000,
+          "unit": "INR/year",
+          "evidence_ids": [
+            "E10"
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "id": "C8S1",
+          "operation": "ADD",
+          "left": "C8I1",
+          "right": "C8I2",
+          "result": 566400,
+          "unit": "INR/year"
+        }
+      ],
+      "result_step": "C8S1"
+    },
+    {
+      "id": "C9",
+      "claim_id": "P10",
+      "inputs": [
+        {
+          "id": "C9I1",
+          "name": "Known self-host year-1 cost including contractor",
+          "value": 926000,
+          "unit": "INR_in_year_1",
+          "evidence_ids": [
+            "E8",
+            "E9",
+            "E10"
+          ]
+        },
+        {
+          "id": "C9I2",
+          "name": "Increased cloud year cost including contractor",
+          "value": 566400,
+          "unit": "INR_in_year_1",
+          "evidence_ids": [
+            "E10"
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "id": "C9S1",
+          "operation": "SUBTRACT",
+          "left": "C9I1",
+          "right": "C9I2",
+          "result": 359600,
+          "unit": "INR_year_1_self_host_premium"
+        }
+      ],
+      "result_step": "C9S1"
+    },
+    {
+      "id": "C10",
+      "claim_id": "P10",
+      "inputs": [
+        {
+          "id": "C10I1",
+          "name": "Increased annual cloud subscription",
+          "value": 386400,
+          "unit": "INR/year",
+          "evidence_ids": [
+            "E10"
+          ]
+        },
+        {
+          "id": "C10I2",
+          "name": "Known steady-state self-host cost before shared contractor",
+          "value": 256000,
+          "unit": "INR/year",
+          "evidence_ids": [
+            "E8",
+            "E9"
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "id": "C10S1",
+          "operation": "SUBTRACT",
+          "left": "C10I1",
+          "right": "C10I2",
+          "result": 130400,
+          "unit": "INR/year_apparent_saving"
+        }
+      ],
+      "result_step": "C10S1"
+    }
+  ],
+  "coverage": [
+    {
+      "dimension_id": "R1",
+      "status": "COVERED",
+      "position_ids": [
+        "P1"
+      ],
+      "rationale": "Assesses whether a small clinic with minimal IT capacity is the actual target for self-hosting."
+    },
+    {
+      "dimension_id": "R2",
+      "status": "COVERED",
+      "position_ids": [
+        "P2"
+      ],
+      "rationale": "Compares switching with negotiation, renewed status quo, and absorbing the increase."
+    },
+    {
+      "dimension_id": "R3",
+      "status": "COVERED",
+      "position_ids": [
+        "P3"
+      ],
+      "rationale": "Tests whether control and apparent recurring savings create sufficient differentiation."
+    },
+    {
+      "dimension_id": "R4",
+      "status": "COVERED",
+      "position_ids": [
+        "P12",
+        "P6",
+        "P7",
+        "P8",
+        "P9"
+      ],
+      "rationale": "Separates basic deployability from safe production viability under staffing, compliance, recovery, and migration constraints."
+    },
+    {
+      "dimension_id": "R5",
+      "status": "COVERED",
+      "position_ids": [
+        "P10"
+      ],
+      "rationale": "Shows cloud, year-1 self-host, steady-state self-host, contractor-inclusive, and omitted-cost implications."
+    },
+    {
+      "dimension_id": "R6",
+      "status": "COVERED",
+      "position_ids": [
+        "P7"
+      ],
+      "rationale": "Addresses ABDM certification continuity and transfer of DPDP duties to the clinic."
+    },
+    {
+      "dimension_id": "R7",
+      "status": "COVERED",
+      "position_ids": [
+        "P11"
+      ],
+      "rationale": "Defines mandatory kill gates whose failure removes self-hosting from this renewal decision."
+    },
+    {
+      "dimension_id": "R8",
+      "status": "NOT_APPLICABLE",
+      "position_ids": [],
+      "rationale": "This is an internal clinical-system procurement decision, not a venture or product requiring monetization."
+    },
+    {
+      "dimension_id": "R9",
+      "status": "COVERED",
+      "position_ids": [
+        "P4"
+      ],
+      "rationale": "Covers the procurement motion: incumbent negotiation and a bounded non-production migration test."
+    },
+    {
+      "dimension_id": "R10",
+      "status": "COVERED",
+      "position_ids": [
+        "P5"
+      ],
+      "rationale": "Tests the six-week renewal window against historical migration duration and expected certification timing."
+    },
+    {
+      "dimension_id": "R11",
+      "status": "COVERED",
+      "position_ids": [
+        "P6",
+        "P8",
+        "P12"
+      ],
+      "rationale": "Assesses whether the support model can absorb incidents, additional workflows, and operational growth without full-time staff."
+    },
+    {
+      "dimension_id": "R12",
+      "status": "COVERED",
+      "position_ids": [
+        "P7",
+        "P8",
+        "P9",
+        "P10",
+        "P11"
+      ],
+      "rationale": "Identifies the compliance, recovery, migration, cost, and approval assumptions that must be validated first."
+    },
+    {
+      "dimension_id": "R13",
+      "status": "COVERED",
+      "position_ids": [
+        "P6"
+      ],
+      "rationale": "Compares contractor experience and availability with the execution demands of a clinical self-host."
+    },
+    {
+      "dimension_id": "D1",
+      "status": "COVERED",
+      "position_ids": [
+        "P7"
+      ],
+      "rationale": "Directly tests uninterrupted ABDM integration, certification, ABHA workflows, and DPDP control ownership."
+    },
+    {
+      "dimension_id": "D2",
+      "status": "COVERED",
+      "position_ids": [
+        "P10"
+      ],
+      "rationale": "Calculates known TCO floors and identifies omitted costs that could eliminate apparent savings."
+    },
+    {
+      "dimension_id": "D3",
+      "status": "COVERED",
+      "position_ids": [
+        "P8"
+      ],
+      "rationale": "Compares the two-hour recovery requirement with the quoted four-hour response SLA and infrastructure omissions."
+    },
+    {
+      "dimension_id": "D4",
+      "status": "COVERED",
+      "position_ids": [
+        "P6",
+        "P8",
+        "P12"
+      ],
+      "rationale": "Addresses power, support coverage, contractor availability, and the absence of a demonstrated recovery design."
+    },
+    {
+      "dimension_id": "D5",
+      "status": "COVERED",
+      "position_ids": [
+        "P9",
+        "P4"
+      ],
+      "rationale": "Challenges the migration promise and requires representative record, identifier, billing, and workflow reconciliation before commitment."
+    }
+  ],
+  "decision_questions": [
+    {
+      "id": "Q1",
+      "question": "Will ABDM or the clinic's empanelment authority confirm in writing that the proposed migration sequence preserves certification and ABHA-linked workflows with zero gap?",
+      "claim_ids": [
+        "P2",
+        "P5",
+        "P7",
+        "P11"
+      ]
+    },
+    {
+      "id": "Q2",
+      "question": "Will a named support provider contractually guarantee service restoration within two hours, 24 hours a day, and pass a witnessed recovery drill before cutover?",
+      "claim_ids": [
+        "P1",
+        "P6",
+        "P8",
+        "P11",
+        "P12"
+      ]
+    },
+    {
+      "id": "Q3",
+      "question": "Can a non-production import reconcile 100% of sampled patient identifiers, ABHA links, opening balances, invoices, payments, and discharge-summary fields against the incumbent export?",
+      "claim_ids": [
+        "P4",
+        "P9",
+        "P11"
+      ]
+    },
+    {
+      "id": "Q4",
+      "question": "What is the fixed year-1 self-host total after adding UPS, backup and restore infrastructure, after-hours support, replacement reserve, extra contractor hours, certification fees, and migration overtime?",
+      "claim_ids": [
+        "P3",
+        "P10",
+        "P11"
+      ]
+    },
+    {
+      "id": "Q5",
+      "question": "Will the incumbent offer a written renewal at or below ₹3,36,000 per year, or an equivalent concession through a two-hour restoration SLA, exit flexibility, and a complete documented export?",
+      "claim_ids": [
+        "P2",
+        "P4"
+      ]
+    },
+    {
+      "id": "Q6",
+      "question": "Will the owner-board approve the final self-host budget if accounting treatment or omitted infrastructure pushes financial-year capex above ₹5,00,000?",
+      "claim_ids": [
+        "P10",
+        "P11"
+      ]
+    }
+  ]
+}

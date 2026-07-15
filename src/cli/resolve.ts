@@ -7,11 +7,12 @@
 // (repeatable, used by tests/automation). Both funnel through the pure core in storage/feedback.ts.
 
 import { createInterface, type Interface } from 'node:readline';
-import type { DisagreementMap, Finding, JudgeReport, ReviewMap, RunMeta } from '../schemas/index.js';
+import type { DecisionGraph, DisagreementMap, Finding, JudgeReport, ReviewMap, RunMeta } from '../schemas/index.js';
 import type { WorkflowId } from '../orchestration/context.js';
 import { scoreFindings } from '../orchestration/stages/cr-report.js';
 import { readJsonArtifact, resolveRunId, runDir } from '../storage/runs-read.js';
 import { appendFeedback, buildFeedbackEntries, FeedbackError, parseVerdictFlags, VERDICT_VOCAB, type AdjItem, type FeedbackEntry, type Verdict } from '../storage/feedback.js';
+import { adaptLegacyDecisionGraph } from '../orchestration/legacy-idea-adapter.js';
 
 export interface ResolveOptions {
   verdict?: string[]; // repeatable --verdict <id>=<verdict>; presence ⇒ non-interactive
@@ -26,11 +27,10 @@ interface Annotatable {
 }
 
 /** Build the annotatable list for an idea-refinement run (adjudicated contradictions). */
-function ideaItems(judge: JudgeReport, map: DisagreementMap | null): Annotatable[] {
+function ideaItems(judge: JudgeReport, graph: DecisionGraph | null): Annotatable[] {
   return judge.adjudications.map((a) => {
-    const c = map?.contradictions.find((x) => x.id === a.id);
-    const dispute = c?.attacks[0]?.argument ?? '';
-    return { id: a.id, ruling: a.ruling, label: `[${a.ruling}] ${dispute || a.reasoning}` };
+    const claim = graph?.claims.find((item) => item.id === a.id);
+    return { id: a.id, ruling: a.ruling, label: `[${a.ruling}] ${claim?.proposition ?? a.reasoning}` };
   });
 }
 
@@ -127,8 +127,9 @@ export async function resolve(runArg: string | undefined, opts: ResolveOptions =
       process.stdout.write(`  run ${match.runId} has no adjudicated disputes to annotate.\n`);
       return 0;
     }
-    const map = await readJsonArtifact<DisagreementMap>(dir, '07-disagreement-map.json');
-    items = ideaItems(judge, map);
+    const storedGraph = await readJsonArtifact<DecisionGraph>(dir, '07-decision-graph.json');
+    const legacyMap = storedGraph ? null : await readJsonArtifact<DisagreementMap>(dir, '07-disagreement-map.json');
+    items = ideaItems(judge, storedGraph ?? (legacyMap ? adaptLegacyDecisionGraph(legacyMap) : null));
     itemType = 'adjudication';
   }
   if (items.length === 0) {

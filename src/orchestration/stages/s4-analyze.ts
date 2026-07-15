@@ -12,28 +12,34 @@
 
 import type { ProviderId } from '../../providers/types.js';
 import type { IdeaRoleOutput } from '../../schemas/index.js';
-import { IdeaRoleOutputModel } from '../../schemas/index.js';
+import { IdeaRoleOutputModel, salvageIdeaRoleOutputModel } from '../../schemas/index.js';
 import { isFatal, StageError, type RunCtx } from '../context.js';
 import { jsonCall } from '../jsonStage.js';
+import { IDEA_LANES, type IdeaLane, type LanePrompts } from '../idea-lanes.js';
 
 /** One surviving S4 seat: the validated analyst output plus which provider produced it. */
 export interface SeatOutput {
   provider: ProviderId;
+  sample?: string;
+  lane?: IdeaLane;
   output: IdeaRoleOutput;
 }
 
 /** Run one analyst seat → validated `RoleOutput`, persisted to 04-role-outputs/<label>.json.
  *  `label` doubles as the artifact filename, so a resample uses a distinct label. */
-async function runSeat(ctx: RunCtx, seat: ProviderId, label: string, prompt: string): Promise<SeatOutput> {
-  const model = await jsonCall(ctx, ctx.handle(seat), `S4-${label}`, prompt, IdeaRoleOutputModel);
+async function runSeat(ctx: RunCtx, seat: ProviderId, label: string, lane: IdeaLane, prompt: string): Promise<SeatOutput> {
+  const model = await jsonCall(ctx, ctx.handle(seat), `S4-${label}`, prompt, IdeaRoleOutputModel, { salvage: salvageIdeaRoleOutputModel });
   const output: IdeaRoleOutput = { workflow: 'idea-refinement', ...model };
   await ctx.writer.writeRoleOutput(label, output);
-  return { provider: seat, output };
+  return { provider: seat, sample: label, lane, output };
 }
 
-export async function s4Analyze(ctx: RunCtx, analystPrompt: string): Promise<SeatOutput[]> {
+export async function s4Analyze(ctx: RunCtx, prompts: LanePrompts): Promise<SeatOutput[]> {
   const seats = ctx.roles.s4;
-  const settled = await Promise.allSettled(seats.map((seat) => runSeat(ctx, seat, seat, analystPrompt)));
+  const settled = await Promise.allSettled(seats.map((seat, index) => {
+    const lane = IDEA_LANES[index % IDEA_LANES.length]!;
+    return runSeat(ctx, seat, seat, lane, prompts[lane]);
+  }));
 
   const survivors: SeatOutput[] = [];
   const dropped: Array<{ provider: ProviderId; error: string }> = [];
@@ -53,7 +59,8 @@ export async function s4Analyze(ctx: RunCtx, analystPrompt: string): Promise<Sea
   if (survivors.length === 1) {
     const only = survivors[0]!;
     ctx.addFlag('low_diversity');
-    const resample = await runSeat(ctx, only.provider, `${only.provider}-2`, analystPrompt);
+    const lane = only.lane ?? IDEA_LANES[0];
+    const resample = await runSeat(ctx, only.provider, `${only.provider}-2`, lane, prompts[lane]);
     return [only, resample];
   }
 

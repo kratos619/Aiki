@@ -26,6 +26,8 @@ export interface ScoreResult {
   seeded: number; // total seeded bugs
   matched: number; // seeded bugs found by ≥1 finding
   recall: number; // matched / seeded (0 when seeded === 0)
+  matchedRelaxed: number; // same file + overlapping lines, category ignored (L1 diagnostic)
+  recallRelaxed: number;
   reported: number; // findings reported by the arm
   unmatched: number; // findings matching no seeded bug — candidate FPs (UNADJUDICATED, not precision)
   matchedBugIds: string[];
@@ -34,11 +36,16 @@ export interface ScoreResult {
 /** Score one arm's findings against a case's seeded bugs (BENCHMARK.md §3). Pure. */
 export function scoreRun(findings: Finding[], bugs: SeededBug[]): ScoreResult {
   const matchedBugIds = bugs.filter((bug) => findings.some((f) => sameFinding(f, bug))).map((b) => b.id);
+  const sameLocation = (finding: Finding, bug: SeededBug) =>
+    finding.file === bug.file && finding.line_start <= bug.line_end && bug.line_start <= finding.line_end;
+  const matchedRelaxed = bugs.filter((bug) => findings.some((finding) => sameLocation(finding, bug))).length;
   const unmatched = findings.filter((f) => !bugs.some((bug) => sameFinding(f, bug))).length;
   return {
     seeded: bugs.length,
     matched: matchedBugIds.length,
     recall: bugs.length === 0 ? 0 : matchedBugIds.length / bugs.length,
+    matchedRelaxed,
+    recallRelaxed: bugs.length === 0 ? 0 : matchedRelaxed / bugs.length,
     reported: findings.length,
     unmatched,
     matchedBugIds,

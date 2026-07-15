@@ -1,6 +1,6 @@
 // Pure formatters for the completion + error screens (T8, §4.3, §471). No Ink — unit-tested directly.
 
-import type { DisagreementMap, JudgeReport } from '../schemas/index.js';
+import type { DecisionGraph, JudgeReport } from '../schemas/index.js';
 
 export interface CompletionView {
   verdict: string;
@@ -10,12 +10,11 @@ export interface CompletionView {
 }
 
 /** Completion summary (§4.3): verdict + the top-N contradictions with their adjudication ruling. */
-export function formatCompletion(dir: string, judge: JudgeReport, map: DisagreementMap, topN = 3): CompletionView {
+export function formatCompletion(dir: string, judge: JudgeReport, graph: DecisionGraph, topN = 3): CompletionView {
   const ruling = new Map(judge.adjudications.map((a) => [a.id, a.ruling]));
-  const disagreements = map.contradictions.slice(0, topN).map((d) => {
-    const r = ruling.get(d.id) ?? 'UNRESOLVED';
-    const arg = d.attacks[0]?.argument ?? '';
-    return `${d.id} → ${r}: ${arg}`;
+  const disagreements = graph.claims.filter((claim) => claim.state === 'DISAGREEMENT').slice(0, topN).map((claim) => {
+    const result = ruling.get(claim.id) ?? 'UNRESOLVED';
+    return `${claim.id} → ${result}: ${claim.proposition}`;
   });
   return { verdict: judge.verdict, disagreements, reportPath: `${dir}/final-report.md`, rawPath: `${dir}/raw/` };
 }

@@ -8,10 +8,10 @@ import Spinner from 'ink-spinner';
 import TextInput from 'ink-text-input';
 import { readFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
-import { DISPLAY_NAME, type ProviderId } from '../providers/types.js';
+import { DISPLAY_NAME, PROVIDER_IDS, type ProviderId } from '../providers/types.js';
+import { preflightLine, runDoctorChecks, type DoctorReport } from '../cli/doctor.js';
 import {
   RunCtx,
-  DEFAULT_BUDGET,
   makeRunId,
   resolveRoles,
   setupProviders,
@@ -32,7 +32,9 @@ import { CR_STAGES, runCodeReview } from '../workflows/code-review.js';
 import { computeDiff, computeWorkingTreeDiff, detectRepoStatus, type RepoStatus } from '../orchestration/git.js';
 import { loadCouncilView, type CouncilView } from '../council/view.js';
 import { openCouncilHtml } from '../council/open.js';
-import type { GrillAnswer, RunBriefDraft } from '../schemas/index.js';
+import type { GrillAnswer, IdeaMode, RunBriefDraft, RunMeta } from '../schemas/index.js';
+import { readJsonArtifact } from '../storage/runs-read.js';
+import { defaultBudgetFor } from '../orchestration/modes.js';
 import { GLYPH, displayNames, elapsedLabel, initTimeline, markEnd, markStart, progressBar, runningPhrase, totalElapsed, type StageRow } from './timeline.js';
 import { formatCompletion, formatError, type CompletionView, type ErrorView } from './format.js';
 import { COMMANDS, PRODUCT_LINE, filterCommands, parseCommand, routeInput, scopeRedirect, suggestCommand, type ParsedCommand, type QuickAction } from './smart-entry.js';
@@ -44,7 +46,7 @@ async function loadCompletion(dir: string): Promise<CompletionView | null> {
   try {
     const [judge, map] = await Promise.all([
       readFile(join(dir, '09-judge-report.json'), 'utf8').then((s) => JSON.parse(s)),
-      readFile(join(dir, '07-disagreement-map.json'), 'utf8').then((s) => JSON.parse(s)),
+      readFile(join(dir, '07-decision-graph.json'), 'utf8').then((s) => JSON.parse(s)),
     ]);
     return formatCompletion(dir, judge, map);
   } catch {
@@ -92,16 +94,23 @@ export function App(props: AppProps): React.JSX.Element {
   const [aborted, setAborted] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const ctxRef = useRef<RunCtx | null>(null);
+  // Startup preflight (full doctor: CLI presence, version, auth/quota smoke — smoke cached ≤6h).
+  const [checks, setChecks] = useState<Partial<Record<ProviderId, ReturnType<typeof preflightLine>>>>({});
+  const [preflightFail, setPreflightFail] = useState<DoctorReport | null>(null);
 
-  // Detect providers + repo context once, up front.
+  // Full doctor preflight + provider handles + repo context once, up front. The menu only shows
+  // when ≥2 providers pass; a failure stays on this screen with the exact fix per provider.
   useEffect(() => {
     let alive = true;
-    void Promise.all([setupProviders(providerModels), detectRepoStatus(process.cwd())]).then(([hs, repoStatus]) => {
+    void Promise.all([
+      setupProviders(providerModels),
+      runDoctorChecks({ onRow: (row) => { if (alive) setChecks((prev) => ({ ...prev, [row.det.id]: preflightLine(row) })); } }),
+      detectRepoStatus(process.cwd()),
+    ]).then(([hs, report, repoStatus]) => {
       if (!alive) return;
       setRepo(repoStatus);
-      if (hs.length < 2) {
-        setErrorView(formatError('QUORUM'));
-        setPhase('finished');
+      if (report.ready < 2 || hs.length < 2) {
+        setPreflightFail(report);
         return;
       }
       setHandles(hs);
@@ -118,6 +127,9 @@ export function App(props: AppProps): React.JSX.Element {
     const t = setInterval(() => setNow(Date.now()), 500);
     return () => clearInterval(t);
   }, [phase]);
+
+  // Preflight rows that failed but left quorum intact — surfaced as a warning on the home screen.
+  const degraded = Object.values(checks).filter((line): line is NonNullable<typeof line> => !!line && !line.ok);
 
   // V10 command palette: matches for what's being typed (only on the input screen, not mid-confirm).
   const paletteMatches = phase === 'input' && pendingIdea === null ? filterCommands(idea) : [];
@@ -154,6 +166,11 @@ export function App(props: AppProps): React.JSX.Element {
       }
       if (clarify) clarify.resolve({ kind: 'pick', index: 0 }); // unblock S2 so the run reaches its abort guard
       if (phase === 'detecting' || phase === 'input' || phase === 'finished') exit();
+      return;
+    }
+    // Failed preflight: any of q / Esc / Enter leaves — there is nothing else to do here.
+    if (phase === 'detecting' && preflightFail && (input === 'q' || key.escape || key.return)) {
+      exit();
       return;
     }
     // V10 confirm gate: the TextInput is unmounted while pending, so Enter/Esc arrive here only.
@@ -214,7 +231,7 @@ export function App(props: AppProps): React.JSX.Element {
     if (phase === 'finished') exit();
   });
 
-  const startRun = (wf: WorkflowId, text: string, cwd: string | null, runner: WorkflowRunner, stages: typeof IDEA_STAGES, replay?: Map<string, string>): void => {
+  const startRun = (wf: WorkflowId, text: string, cwd: string | null, runner: WorkflowRunner, stages: typeof IDEA_STAGES, replay?: Map<string, string>, mode?: IdeaMode): void => {
     const trimmed = text.trim();
     if (!trimmed) return;
     setPanel(null);
@@ -259,7 +276,7 @@ export function App(props: AppProps): React.JSX.Element {
           setPhase('clarify');
         }),
     };
-    const ctx = new RunCtx({ runId, workflow: wf, handles, roles: rs, writer, cwd: cwd ?? writer.dir, budget: budgetOverride, signal: controller.signal, events, replay });
+    const ctx = new RunCtx({ runId, workflow: wf, mode, handles, roles: rs, writer, cwd: cwd ?? writer.dir, budget: budgetOverride, signal: controller.signal, events, replay });
     ctxRef.current = ctx;
     setWorkflow(wf);
     setRows(initTimeline(stages, rs, available));
@@ -354,7 +371,8 @@ export function App(props: AppProps): React.JSX.Element {
     const replay = await buildReplayCache(oldDir);
     if (replay.size === 0) return void setRouterMessage(`no completed calls for ${sess.id} — start fresh`);
     const [runner, stages] = wf === 'code-review' ? ([runCodeReview, CR_STAGES] as const) : ([runIdeaRefinement, IDEA_STAGES] as const);
-    startRun(wf, input, wf === 'code-review' ? sess.cwd : null, runner, stages, replay);
+    const meta = await readJsonArtifact<RunMeta>(oldDir, 'meta.json');
+    startRun(wf, input, wf === 'code-review' ? sess.cwd : null, runner, stages, replay, meta?.mode);
   };
 
   const runCommand = async (p: ParsedCommand): Promise<void> => {
@@ -438,12 +456,27 @@ export function App(props: AppProps): React.JSX.Element {
       </Text>
 
       {phase === 'detecting' && (
-        <Text>
-          <Text color="yellow">
-            <Spinner type="dots" />
-          </Text>{' '}
-          detecting providers…
-        </Text>
+        <Box flexDirection="column" marginTop={1}>
+          <Text dimColor>preflight — checking provider CLIs, auth & quota (smoke cached ≤6h)</Text>
+          {PROVIDER_IDS.map((id) => {
+            const line = checks[id];
+            return (
+              <Text key={id}>
+                {line
+                  ? line.ok ? <Text color="green">✔</Text> : <Text color="red">✖</Text>
+                  : <Text color="yellow"><Spinner type="dots" /></Text>}
+                {' '}{line ? line.label : `${DISPLAY_NAME[id]} — checking…`}
+                {line?.fix ? <Text dimColor>  →  {line.fix}</Text> : null}
+              </Text>
+            );
+          })}
+          {preflightFail && (
+            <Box flexDirection="column" marginTop={1}>
+              <Text color="red" bold>preflight failed — {preflightFail.ready}/3 providers ready (aiki needs 2)</Text>
+              <Text dimColor>apply the fix shown next to each ✖, then run `aiki` again · `aiki doctor --fresh` re-checks live · q quits</Text>
+            </Box>
+          )}
+        </Box>
       )}
 
       {(phase === 'input' || phase === 'running' || phase === 'grill' || phase === 'clarify' || phase === 'finished') && handles.length > 0 && (
@@ -463,6 +496,11 @@ export function App(props: AppProps): React.JSX.Element {
             ))}
             <Text dimColor> — council ready</Text>
           </Text>
+          {degraded.length > 0 && (
+            <Text color="yellow">
+              ⚠ {degraded.map((line) => `${line.label}${line.fix ? ` (${line.fix})` : ''}`).join(' · ')} — continuing with {Math.max(handles.length - degraded.length, 0)}/3 providers
+            </Text>
+          )}
         </Box>
       )}
 
@@ -498,7 +536,7 @@ export function App(props: AppProps): React.JSX.Element {
             <Box flexDirection="column" borderStyle="round" paddingX={1}>
               <Text>Run the idea council on:</Text>
               <Text color="cyan">  “{pendingIdea.length > 100 ? `${pendingIdea.slice(0, 97)}…` : pendingIdea}”</Text>
-              <Text dimColor>  12-stage pipeline · up to {budgetOverride ?? DEFAULT_BUDGET} model calls · Ctrl+C aborts mid-run</Text>
+              <Text dimColor>  10-stage pipeline · up to {budgetOverride ?? defaultBudgetFor('idea-refinement', 'council')} model calls · Ctrl+C aborts mid-run</Text>
               <Text>
                 <Text color="green">enter</Text> run  ·  <Text color="yellow">esc</Text> cancel
               </Text>

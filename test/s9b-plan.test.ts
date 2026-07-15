@@ -5,10 +5,13 @@ import { join } from 'node:path';
 
 import { RunCtx, makeRunId, type ProviderHandle } from '../src/orchestration/context.js';
 import { s9bPlan } from '../src/orchestration/stages/s9b-plan.js';
+import { extractJson } from '../src/providers/adapter-core.js';
 import { RunWriter } from '../src/storage/runs.js';
 import type { Adapter, RunResultAdapter } from '../src/providers/types.js';
 import type { DisagreementMap, IntentContract, JudgeReport } from '../src/schemas/index.js';
 import type { SeatOutput } from '../src/orchestration/stages/s4-analyze.js';
+import { renderReport } from '../src/orchestration/stages/s10-render.js';
+import { adaptLegacyDecisionGraph } from '../src/orchestration/legacy-idea-adapter.js';
 
 const contract: IntentContract = {
   task: 'stress-test a local AI orchestration CLI',
@@ -24,9 +27,10 @@ const seats: SeatOutput[] = [{
     workflow: 'idea-refinement',
     task_echo: 'stress-test a local AI orchestration CLI',
     strongest_version: 'A local council for high-stakes judgment calls.',
-    assumptions: [],
-    attacks: [],
-    open_questions: ['Which target user has this pain?'],
+    positions: [],
+    evidence: [],
+    coverage: [],
+    decision_questions: [{ id: 'Q1', question: 'Which target user has this pain?', claim_ids: [] }],
   },
 }];
 
@@ -36,6 +40,7 @@ const map: DisagreementMap = {
   contradictions: [{ id: 'D1', claim_ids: ['C1'], attacks: [{ provider: 'codex', argument: 'payment willingness is unproven', severity: 'HIGH' }] }],
   blind_spots: ['business model / monetization'],
 };
+const graph = adaptLegacyDecisionGraph(map);
 
 const judge: JudgeReport = {
   adjudications: [{ id: 'D1', ruling: 'UPHOLD', reasoning: 'No evidence supports willingness to pay.', evidence_cited: 'D1' }],
@@ -96,9 +101,45 @@ const goodPlan = {
 };
 
 describe('s9bPlan', () => {
+  it('salvages the captured nurse plan without a repair call', async () => {
+    const fixtures = join(process.cwd(), 'bench', 'sets', 'idea-refinement', 'build', '02-nurse-marketplace', 'regression');
+    const raw = await readFile(join(fixtures, '09b-first.out'), 'utf8');
+    const json = extractJson(raw);
+    expect(json).toBeDefined();
+    const nurseMap = JSON.parse(await readFile(join(fixtures, '07-disagreement-map.json'), 'utf8')) as DisagreementMap;
+    const nurseGraph = adaptLegacyDecisionGraph(nurseMap);
+    const nurseJudge = JSON.parse(await readFile(join(fixtures, '09-judge-report.json'), 'utf8')) as JudgeReport;
+    const ctx = makeCtx(() => ({ ok: true, text: raw, json, durationMs: 1 }));
+
+    const plan = await s9bPlan(ctx, { ...contract, task: 'evaluate a nurse shift marketplace' }, [], nurseGraph, nurseJudge);
+
+    expect(ctx.calls).toHaveLength(1);
+    expect(ctx.calls[0]?.stage).toBe('S9b-plan');
+    expect(ctx.flags.has('plan_fallback')).toBe(false);
+    expect(plan.actions).toHaveLength(7);
+    expect(plan.actions.map((a) => a.order)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(plan.actions[0]?.action).toContain('per-worked-hour P&L spreadsheet');
+    expect(plan.actions[6]?.validates).toBe('blind:kill criteria');
+  });
+
+  it('normalizes captured planner timeboxes into S, M, and L effort', async () => {
+    const fixtures = join(process.cwd(), 'bench', 'sets', 'idea-refinement', 'build', '02-nurse-marketplace', 'regression');
+    const raw = await readFile(join(fixtures, '09b-repair.out'), 'utf8');
+    const json = extractJson(raw);
+    const nurseMap = JSON.parse(await readFile(join(fixtures, '07-disagreement-map.json'), 'utf8')) as DisagreementMap;
+    const nurseGraph = adaptLegacyDecisionGraph(nurseMap);
+    const nurseJudge = JSON.parse(await readFile(join(fixtures, '09-judge-report.json'), 'utf8')) as JudgeReport;
+    const ctx = makeCtx(() => ({ ok: true, text: raw, json, durationMs: 1 }));
+
+    const plan = await s9bPlan(ctx, { ...contract, task: 'evaluate a nurse shift marketplace' }, [], nurseGraph, nurseJudge);
+
+    expect(ctx.calls).toHaveLength(1);
+    expect(plan.actions.map((a) => a.effort)).toEqual(['S', 'M', 'M', 'M', 'L', 'S', 'S']);
+  });
+
   it('writes a valid anchored planner result', async () => {
     const ctx = makeCtx(() => ok(goodPlan));
-    const plan = await s9bPlan(ctx, contract, seats, map, judge);
+    const plan = await s9bPlan(ctx, contract, seats, graph, judge);
     expect(plan.actions[0]).toMatchObject({ validates: 'D1' });
     expect(ctx.calls).toHaveLength(1);
     await expect(readFile(join(ctx.writer.dir, '09b-action-plan.json'), 'utf8')).resolves.toContain('pricing smoke test');
@@ -111,25 +152,67 @@ describe('s9bPlan', () => {
       if (prompt.includes('previous plan had no actions with valid anchors')) return ok(goodPlan);
       return ok({ ...goodPlan, actions: [{ ...goodPlan.actions[0], validates: 'D9' }] });
     });
-    const plan = await s9bPlan(ctx, contract, seats, map, judge);
+    const plan = await s9bPlan(ctx, contract, seats, graph, judge);
     expect(plan.actions[0]!.validates).toBe('D1');
     expect(ctx.calls).toHaveLength(2);
-    expect(prompts[1]).toContain('Valid dispute ids: D1');
+    expect(prompts[1]).toContain('Valid graph claim ids: D1');
   });
 
-  it('skips the planner when fewer than two calls remain', async () => {
+  it('uses the one reserved planner call without requiring repair headroom', async () => {
     const ctx = makeCtx(() => ok(goodPlan), 1);
-    const plan = await s9bPlan(ctx, contract, seats, map, judge);
-    expect(ctx.calls).toHaveLength(0);
-    expect(ctx.flags.has('plan_skipped')).toBe(true);
-    expect(plan.actions[0]!.validates).toBe('D1');
+    const plan = await s9bPlan(ctx, contract, seats, graph, judge);
+    expect(ctx.calls).toHaveLength(1);
+    expect(ctx.flags.has('plan_skipped')).toBe(false);
+    expect(plan).toEqual(goodPlan);
   });
 
-  it('falls back when the planner call crashes', async () => {
+  it('records explicit unavailability when the planner call crashes', async () => {
     const ctx = makeCtx(() => ({ ok: false, error: 'CRASH', stderrTail: 'boom', durationMs: 1 }));
-    const plan = await s9bPlan(ctx, contract, seats, map, judge);
+    const plan = await s9bPlan(ctx, contract, seats, graph, judge);
     expect(ctx.calls).toHaveLength(1);
     expect(ctx.flags.has('plan_fallback')).toBe(true);
-    expect(plan.actions[0]!.validates).toBe('D1');
+    expect(plan).toEqual({
+      kind: 'PlannerUnavailable',
+      reason: 'planner_failed',
+      unresolved_questions: ['Which target user has this pain?'],
+    });
+  });
+
+  it('renders planner unavailability and its flag inside the validation section', () => {
+    const ctx = makeCtx(() => ok(goodPlan));
+    ctx.addFlag('plan_fallback');
+    const report = renderReport(ctx, {
+      contract,
+      seats,
+      graph,
+      verifications: { verifications: [] },
+      judgeReport: judge,
+      actionPlan: {
+        kind: 'PlannerUnavailable',
+        reason: 'planner_failed',
+        unresolved_questions: ['Which target user has this pain?'],
+      },
+    });
+    const section = report.slice(report.indexOf('## 2. Action plan'), report.indexOf('## 3.'));
+
+    expect(section).toContain('plan_fallback');
+    expect(section).toContain('Planner unavailable: planner_failed');
+    expect(section).toContain('Which target user has this pain?');
+  });
+
+  it('renders synthesis_suspect beside the chairman reasoning', () => {
+    const ctx = makeCtx(() => ok(goodPlan));
+    ctx.addFlag('synthesis_suspect');
+    const report = renderReport(ctx, {
+      contract,
+      seats,
+      graph,
+      verifications: { verifications: [] },
+      judgeReport: { ...judge, key_points: ['Demand is the decisive uncertainty.'] },
+      actionPlan: goodPlan,
+    });
+    const section = report.slice(report.indexOf('## 1. Decision'), report.indexOf('## 2.'));
+
+    expect(section).toContain('synthesis_suspect');
   });
 });

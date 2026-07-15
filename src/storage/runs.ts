@@ -14,7 +14,7 @@
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { z } from 'zod';
-import { ActionPlan, DisagreementMap, IntentContract, JudgeReport, ReviewMap, RoleOutput, RunBrief, RunMeta, VerificationSet } from '../schemas/index.js';
+import { ActionPlanArtifact, DecisionContractArtifact, DecisionGraph, DisagreementMap, IdeaRoleOutput, JudgeReport, PreflightArtifact, RebuttalEventSet, ReviewMap, RoleOutput, RunBrief, RunMeta, VerificationArtifact } from '../schemas/index.js';
 
 export class OutOfOrderWriteError extends Error {
   constructor(slot: string, ord: number, maxOrd: number) {
@@ -41,17 +41,24 @@ interface SlotDef {
  *  are written as-is; their schemas land with S2/S5/S6 (T5–T6). */
 const JSON_SLOTS = {
   'run-brief': { ord: 0.5, path: '00b-run-brief.json', schema: RunBrief },
-  'intent-contract': { ord: 1, path: '01-intent-contract.json', schema: IntentContract },
+  'intent-contract': { ord: 1, path: '01-intent-contract.json', schema: DecisionContractArtifact },
+  'preflight-readings': { ord: 2, path: '02-preflight-readings.json', schema: PreflightArtifact },
   'misunderstanding-guard': { ord: 2, path: '02-misunderstanding-guard.json', schema: null },
   'drift-report': { ord: 5, path: '05-drift-report.json', schema: null },
+  positions: { ord: 6, path: '06-positions.json', schema: null },
+  'coverage-fill': { ord: 6.5, path: '06b-coverage-fill.json', schema: IdeaRoleOutput },
   claims: { ord: 6, path: '06-claims.json', schema: null },
+  'decision-graph': { ord: 7, path: '07-decision-graph.json', schema: DecisionGraph },
   'disagreement-map': { ord: 7, path: '07-disagreement-map.json', schema: DisagreementMap },
   // code-review's stage-7 artifact (ord 7, distinct path). A run writes one of {disagreement-map,
   // review-map} depending on its workflow, so the shared ord never collides within a run.
   'review-map': { ord: 7, path: '07-review-map.json', schema: ReviewMap },
-  verifications: { ord: 8, path: '08-verifications.json', schema: VerificationSet },
+  verifications: { ord: 8, path: '08-verifications.json', schema: VerificationArtifact },
+  rebuttals: { ord: 8.5, path: '08b-rebuttals.json', schema: RebuttalEventSet },
   'judge-report': { ord: 9, path: '09-judge-report.json', schema: JudgeReport },
-  'action-plan': { ord: 9.5, path: '09b-action-plan.json', schema: ActionPlan },
+  'action-plan': { ord: 9.5, path: '09b-action-plan.json', schema: ActionPlanArtifact },
+  // machine-readable final report (three-level report v4); schema-less: derived output, never re-read by stages
+  'decision-report': { ord: 10, path: '10-decision-report.json', schema: null },
 } satisfies Record<string, SlotDef>;
 
 /** Text (markdown) stage slots (§15). */

@@ -1,0 +1,74 @@
+{
+  "adjudications": [
+    {
+      "id": "D1",
+      "ruling": "UPHOLD",
+      "reasoning": "Employer FICA alone is 7.65%, and PEO admin fees commonly run 3-15% of payroll. A 15% commission on nurse wages cannot cover these statutory costs plus malpractice, credentialing, support, sales, and no-show absorption. The model requires either a much higher take rate or charging 15% on top of a fully loaded cost, which is a fundamentally different pricing structure than presented.",
+      "evidence_cited": "Wikipedia PEO article citing 3-15% admin fees; FICA employer share at 7.65% is statutory and undisputed; verifier confirmed the argument."
+    },
+    {
+      "id": "D2",
+      "ruling": "REJECT",
+      "reasoning": "While hospitals do have existing alternatives (float pools, overtime, agencies, VMS/MSP), the verifier refuted the argument that these solve the problem well enough. The claim survives because existing solutions are notoriously slow, expensive, and operationally painful for truly last-minute gaps — the friction is real even if alternatives exist.",
+      "evidence_cited": "Verifier verdict REFUTE indicates the argument did not defeat the claim; VMS Wikipedia article describes structured but slow vendor workflows unsuited to same-day urgency."
+    },
+    {
+      "id": "D3",
+      "ruling": "UPHOLD",
+      "reasoning": "W-2 onboarding friction, combined with competitive gig platforms already offering attractive rates and 1099 flexibility, makes it unlikely that enough experienced nurses will accept intermittent W-2 shifts at rates leaving room for a 15% commission that is itself structurally unviable per D1. The cold-start problem on the supply side compounds the margin problem.",
+      "evidence_cited": "Business Insider 2025 report on nurses preferring existing gig apps for pay and flexibility; verifier confirmed the argument."
+    },
+    {
+      "id": "D4",
+      "ruling": "UPHOLD",
+      "reasoning": "Hospital credentialing requires facility-specific orientations, EMR access, unit competencies, and Joint Commission audit trails that no generic API can satisfy for same-day placement. A document verification API checks credentials exist but does not make a nurse operationally ready for an unfamiliar ICU at 7 p.m. This is a patient safety blocker, not just a process bottleneck.",
+      "evidence_cited": "Joint Commission accreditation standards requiring facility-specific competency validation; verifier confirmed both arguments against the claim."
+    },
+    {
+      "id": "D5",
+      "ruling": "REJECT",
+      "reasoning": "The verifier refuted the differentiation argument. While CareRev, ShiftKey, Clipboard Health, and ShiftMed exist, the claim of localized ultra-fast coverage as a wedge survives — incumbents are broad, not hyper-local, and local founder relationships provide a real if narrow initial advantage. However, this is a wedge, not a moat.",
+      "evidence_cited": "Verifier verdict REFUTE; CT Insider article naming active competitors demonstrates crowded market but does not prove local-first wedge is valueless."
+    },
+    {
+      "id": "D6",
+      "ruling": "UPHOLD",
+      "reasoning": "Clinical liability in healthcare staffing is catastrophic-tail risk. Hospitals will contractually push indemnity onto the staffing vendor, insurers will price or carve out high-acuity placements, and a single serious adverse event can exceed the entire $500k capitalization. The Business Insider report specifically flags patient safety concerns with gig nursing models.",
+      "evidence_cited": "Business Insider 2025 article on patient safety concerns in gig nursing; verifier confirmed the argument; standard hospital vendor indemnification practices."
+    },
+    {
+      "id": "D7",
+      "ruling": "UNRESOLVED",
+      "reasoning": "Founder connections genuinely accelerate procurement, but hospital legal review, IT security audits, and compliance approvals have institutional timelines that personal relationships cannot fully compress. Whether $500k lasts long enough depends on burn rate assumptions not specified. The verifier was uncertain, and the evidence supports both sides.",
+      "evidence_cited": "Verifier verdict UNCERTAIN; no specific data on hospital procurement cycle compression from founder relationships vs. institutional minimums."
+    },
+    {
+      "id": "D8",
+      "ruling": "UPHOLD",
+      "reasoning": "Large hospitals route temporary staffing through VMS/MSP platforms for compliance, audit, and spend control. Operating outside the VMS creates adoption friction with charge nurses and procurement; integrating into it subjects the platform to VMS fees that further erode the already unviable 15% margin. Either path undermines the business model.",
+      "evidence_cited": "Verifier verdict REFUTE (argument failed to defeat claim) is contradicted by the strength of VMS integration logic; Wikipedia VMS article on structured vendor management in healthcare."
+    },
+    {
+      "id": "D9",
+      "ruling": "UPHOLD",
+      "reasoning": "Guaranteeing ultra-fast fill rates requires maintaining a large enough idle W-2 nurse pool in one metro. W-2 status via PEO incurs ongoing costs for inactive workers and creates variable-hour compliance risk. This is a structural tension: the value proposition requires over-supply, but the cost model cannot sustain it.",
+      "evidence_cited": "Verifier verdict UNCERTAIN but the structural argument is sound: W-2 overhead on idle workers is a known cost problem in staffing; ACA variable-hour tracking requirements for large employers."
+    }
+  ],
+  "verdict": "This venture should not proceed in its current form. The 15% commission model is structurally unviable — statutory employer costs alone consume most of the margin before any operational expenses. Combined with credentialing barriers that block same-day placement, VMS integration challenges that further erode margins, and catastrophic clinical liability exposure on $500k capital, the load-bearing assumptions fail simultaneously rather than independently.",
+  "recommendation": "PIVOT",
+  "key_points": [
+    "The 15% commission is the fatal flaw: employer FICA (7.65%) plus PEO fees (3-15%), malpractice, and operational costs exceed the take rate. Unless '15%' means markup on fully loaded cost rather than commission on wages, gross margin is negative. Both analysts agreed, the verifier confirmed, and no credible counter was offered.",
+    "Credentialing is not a software problem — it is a facility-specific operational problem. Joint Commission standards require unit orientations, EMR access, and competency validations that no API can satisfy for same-day placement. This directly undermines the 'ultra-fast' value proposition.",
+    "The analysts disagreed on whether existing alternatives (float pools, agencies, VMS) adequately solve last-minute gaps. I sided with the claim that real friction exists — hospitals do struggle with urgent coverage — but this pain point alone cannot sustain a business whose unit economics are negative.",
+    "VMS integration creates a lose-lose: operating outside it blocks hospital adoption; integrating into it adds fees that destroy already-negative margins. The analyst who raised D8 identified a genuine structural trap that the founders must address.",
+    "W-2 model for intermittent gig shifts creates a cold-start and retention problem against 1099 competitors offering more flexibility and often higher take-home pay. The supply side is harder than assumed.",
+    "A pivot toward a marketplace model with 1099 contractors (accepting the legal and compliance tradeoffs), or a higher take rate (25-35%) positioned as markup on loaded cost rather than commission, could preserve the core insight — local, fast nurse placement — while fixing the economics.",
+    "Clinical liability is catastrophic-tail risk that $500k cannot absorb. One adverse event during an understaffed, under-oriented gig shift could exceed total capitalization and trigger regulatory scrutiny.",
+    "The founders' hospital backgrounds are a genuine but time-limited asset. The single strongest thing that would change this verdict is a restructured pricing model proving positive unit economics after all statutory and operational costs."
+  ],
+  "dissent": [
+    "The pain point is real and large: hospitals spend billions annually on temporary nursing staff and hate every minute of it. A founder team with direct hospital relationships in one metro could achieve enough traction to raise additional capital and fix the pricing model before cash runs out. Killing the idea entirely risks discarding a genuine market insight because the first financial model was wrong — pricing can be restructured, but domain expertise and relationships cannot be manufactured."
+  ],
+  "confidence_notes": "HIGH confidence on D1 (commission unviability) — the math is arithmetic, not speculative. HIGH confidence on D4 (credentialing barriers) — Joint Commission standards are well-documented and non-negotiable. MEDIUM confidence on D8 (VMS trap) — some smaller hospitals may operate outside formal VMS, creating a potential entry point. MEDIUM confidence on D7 (capital sufficiency) — highly dependent on burn rate and founder salary assumptions not provided. LOW confidence on D5 (differentiation) — the competitive landscape is evolving rapidly and local-first strategies have succeeded in other verticals despite crowded markets."
+}

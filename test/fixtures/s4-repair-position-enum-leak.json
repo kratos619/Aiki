@@ -1,0 +1,309 @@
+{
+  "task_echo": "Evaluate a proposal to deploy an AI algebra tutor to 600 ninth graders, addressing learning impact, equity, privacy, accessibility, teacher capacity, cost, and stop rules.",
+  "strongest_version": "Deploying a generative AI tutor at $96/student provides 600 struggling ninth graders with immediate, 24/7 personalized algebraic guidance for a fraction of the cost of human tutoring. This could drastically reduce the 28% failure rate by unblocking students exactly when they get stuck, while freeing teachers from repetitive basic instruction to focus on relationship-building and complex escalations.",
+  "positions": [
+    {
+      "local_id": "P1",
+      "proposition": "The $65,000 budget is sufficient for the software licenses but ignores hidden total cost of ownership.",
+      "dimension_id": "R5",
+      "stance": "MIXED",
+      "basis": "EVIDENCE",
+      "load_bearing": false,
+      "if_false": "MINOR",
+      "reasoning": "At $96 per student, 600 licenses cost $57,600, which fits the $65,000 budget. However, this excludes teacher training and support time, which will be necessary to handle escalations.",
+      "evidence_ids": [
+        "E1"
+      ],
+      "depends_on": []
+    },
+    {
+      "local_id": "P2",
+      "proposition": "The escalation model will exceed current teacher capacity and fail to scale.",
+      "dimension_id": "D2",
+      "stance": "OPPOSE",
+      "basis": "INFERENCE",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "reasoning": "Current staff can only tutor 120 students. Introducing 600 students to an AI tutor that escalates uncertainties to teachers will likely generate an unmanageable volume of escalations, surpassing existing staff capacity.",
+      "evidence_ids": [
+        "E2",
+        "E7"
+      ],
+      "depends_on": []
+    },
+    {
+      "local_id": "P3",
+      "proposition": "Targeting 600 students without confirmed broadband and device equity introduces severe selection bias.",
+      "dimension_id": "D4",
+      "stance": "OPPOSE",
+      "basis": "ASSUMPTION",
+      "load_bearing": true,
+      "if_false": "PIVOT",
+      "reasoning": "If the selected 600 students do not represent the 28% failing population accurately, or if failing students lack at-home broadband, the intervention will fail to address the core equity issue and may widen the achievement gap.",
+      "evidence_ids": [
+        "E3",
+        "E8"
+      ],
+      "depends_on": []
+    },
+    {
+      "local_id": "P4",
+      "proposition": "The vendor's 2-year data retention policy creates unacceptable privacy and compliance risks.",
+      "dimension_id": "R6",
+      "stance": "UNKNOWN",
+      "basis": "EVIDENCE",
+      "load_bearing": true,
+      "if_false": "CONDITION",
+      "reasoning": "Retaining de-identified student conversations for AI model training risks PII leakage. Without knowing if the district can opt out or if this complies with COPPA/FERPA, the legal exposure is critical.",
+      "evidence_ids": [
+        "E4"
+      ],
+      "depends_on": []
+    },
+    {
+      "local_id": "P5",
+      "proposition": "Lack of independent outcome data makes full-scale deployment a highly risky technical gamble.",
+      "dimension_id": "R4",
+      "stance": "MIXED",
+      "basis": "MODEL_KNOWLEDGE",
+      "load_bearing": true,
+      "if_false": "PIVOT",
+      "reasoning": "Generative AI is known to hallucinate complex multi-step algebra. Without a local pilot or independent efficacy data, technical feasibility for accurate tutoring is merely hypothetical.",
+      "evidence_ids": [
+        "E5"
+      ],
+      "depends_on": []
+    },
+    {
+      "local_id": "P6",
+      "proposition": "A small-scale pilot is mandatory to establish empirical kill criteria and escalation rates.",
+      "dimension_id": "R7",
+      "stance": "SUPPORT",
+      "basis": "INFERENCE",
+      "load_bearing": true,
+      "if_false": "PIVOT",
+      "reasoning": "Because escalation volume and hallucination rates are unknown, the district must run a limited pilot to define objective success/failure metrics before committing to 600 students.",
+      "evidence_ids": [
+        "E6"
+      ],
+      "depends_on": [
+        "P2",
+        "P5"
+      ]
+    },
+    {
+      "local_id": "P7",
+      "proposition": "The business model is straightforward but hides the true cost of human-in-the-loop dependencies.",
+      "dimension_id": "R8",
+      "stance": "MIXED",
+      "basis": "EVIDENCE",
+      "load_bearing": false,
+      "if_false": "MINOR",
+      "reasoning": "While the $96 per-seat SaaS model is clear, the reliance on free teacher labor for escalations obscures the true operating cost and scalability limits.",
+      "evidence_ids": [
+        "E1"
+      ],
+      "depends_on": [
+        "P1",
+        "P2"
+      ]
+    },
+    {
+      "local_id": "P8",
+      "proposition": "The deployment relies on fundamentally unvalidated assumptions about teacher union support.",
+      "dimension_id": "R12",
+      "stance": "OPPOSE",
+      "basis": "EVIDENCE",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "reasoning": "If teachers do not have contracted time or union approval to monitor AI escalations, the entire safety net of the deployment collapses.",
+      "evidence_ids": [
+        "E8"
+      ],
+      "depends_on": []
+    },
+    {
+      "local_id": "P9",
+      "proposition": "The intervention cannot scale because it inextricably links AI usage to manual teacher intervention.",
+      "dimension_id": "R11",
+      "stance": "OPPOSE",
+      "basis": "INFERENCE",
+      "load_bearing": true,
+      "if_false": "CONDITION",
+      "reasoning": "A product that requires a human to step in whenever it fails does not achieve true scale. As the 600 students use the tool more, teacher workload increases linearly, breaking the model.",
+      "evidence_ids": [
+        "E2",
+        "E7"
+      ],
+      "depends_on": [
+        "P2"
+      ]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "E1",
+      "claim_supported": "Budget and pricing",
+      "support": "SUPPORT",
+      "source_kind": "USER",
+      "freshness": "Current",
+      "content": "Project budget is $65,000, excluding teacher training and support time; vendor price is $96 per student per year."
+    },
+    {
+      "id": "E2",
+      "claim_supported": "Teacher capacity constraints",
+      "support": "SUPPORT",
+      "source_kind": "USER",
+      "freshness": "Current",
+      "content": "Current staff tutoring capacity is limited to 120 students."
+    },
+    {
+      "id": "E3",
+      "claim_supported": "Scale and failure rate context",
+      "support": "SUPPORT",
+      "source_kind": "USER",
+      "freshness": "Current",
+      "content": "600 students will be selected from the 1,200 total ninth graders in a district with a 28% failure rate."
+    },
+    {
+      "id": "E4",
+      "claim_supported": "Data retention policy",
+      "support": "SUPPORT",
+      "source_kind": "USER",
+      "freshness": "Current",
+      "content": "Vendor retains de-identified student conversations for two years to improve models."
+    },
+    {
+      "id": "E5",
+      "claim_supported": "Lack of efficacy data",
+      "support": "SUPPORT",
+      "source_kind": "USER",
+      "freshness": "Current",
+      "content": "No independent outcome data or local pilot."
+    },
+    {
+      "id": "E6",
+      "claim_supported": "Undefined kill criteria",
+      "support": "SUPPORT",
+      "source_kind": "USER",
+      "freshness": "Current",
+      "content": "Unknown objective metrics the district will use to define success or failure during the pilot to trigger stop rules."
+    },
+    {
+      "id": "E7",
+      "claim_supported": "Escalation expectations",
+      "support": "SUPPORT",
+      "source_kind": "USER",
+      "freshness": "Current",
+      "content": "Teachers are expected to handle escalations when the tutor is uncertain or a student reports an unsafe/incorrect response."
+    },
+    {
+      "id": "E8",
+      "claim_supported": "Unvalidated operational dependencies",
+      "support": "SUPPORT",
+      "source_kind": "USER",
+      "freshness": "Current",
+      "content": "Unknowns include teacher contracted time/union approval to monitor AI, and device/broadband access equity."
+    }
+  ],
+  "coverage": [
+    {
+      "dimension_id": "R4",
+      "status": "COVERED",
+      "position_ids": [
+        "P5"
+      ],
+      "rationale": "Evaluated the technical feasibility and hallucination risks of generative AI in algebra."
+    },
+    {
+      "dimension_id": "R5",
+      "status": "COVERED",
+      "position_ids": [
+        "P1"
+      ],
+      "rationale": "Addressed the $65k budget, $96 unit cost, and the excluded training/support costs."
+    },
+    {
+      "dimension_id": "R6",
+      "status": "COVERED",
+      "position_ids": [
+        "P4"
+      ],
+      "rationale": "Covered the compliance, privacy, and policy risks of the vendor's 2-year data retention."
+    },
+    {
+      "dimension_id": "R7",
+      "status": "COVERED",
+      "position_ids": [
+        "P6"
+      ],
+      "rationale": "Highlighted the necessity of objective stop rules and recommended a small pilot."
+    },
+    {
+      "dimension_id": "R8",
+      "status": "COVERED",
+      "position_ids": [
+        "P7"
+      ],
+      "rationale": "Analyzed the SaaS business model and its hidden dependencies on human labor."
+    },
+    {
+      "dimension_id": "R11",
+      "status": "COVERED",
+      "position_ids": [
+        "P9"
+      ],
+      "rationale": "Assessed scalability limits driven by the need for teacher-handled escalations."
+    },
+    {
+      "dimension_id": "R12",
+      "status": "COVERED",
+      "position_ids": [
+        "P8"
+      ],
+      "rationale": "Identified the core unvalidated assumption regarding teacher union approval and time."
+    },
+    {
+      "dimension_id": "D2",
+      "status": "COVERED",
+      "position_ids": [
+        "P2"
+      ],
+      "rationale": "Addressed the cognitive load and system breaking point of teacher-led escalations."
+    },
+    {
+      "dimension_id": "D4",
+      "status": "COVERED",
+      "position_ids": [
+        "P3"
+      ],
+      "rationale": "Analyzed selection equity and broadband access for targeting half the cohort."
+    }
+  ],
+  "decision_questions": [
+    {
+      "id": "Q1",
+      "question": "Has the teachers' union explicitly approved the requirement to monitor and resolve AI escalations within existing contracted hours?",
+      "claim_ids": [
+        "P2",
+        "P8",
+        "P9"
+      ]
+    },
+    {
+      "id": "Q2",
+      "question": "Can the district legally opt out of the 2-year conversational data retention for model training while retaining the $96 price?",
+      "claim_ids": [
+        "P4"
+      ]
+    },
+    {
+      "id": "Q3",
+      "question": "Are we able to run a 50-student, 4-week pilot to establish a baseline AI hallucination rate and escalation volume before committing the full $57,600?",
+      "claim_ids": [
+        "P5",
+        "P6"
+      ]
+    }
+  ]
+}

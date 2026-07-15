@@ -1,0 +1,230 @@
+{
+  "consensus": [
+    {
+      "id": "C3",
+      "statement": "A 15% commission can cover employer taxes, workers comp, PEO/EOR fees, malpractice coverage, credentialing, support, recruiting, sales, and refunds/no-shows while leaving positive gross margin.",
+      "type": "VERIFIABLE",
+      "providers": [
+        "codex",
+        "agy"
+      ]
+    },
+    {
+      "id": "C4",
+      "statement": "The third-party credentialing API can produce hospital-accepted, audit-ready compliance records fast enough for last-minute staffing.",
+      "type": "VERIFIABLE",
+      "providers": [
+        "codex",
+        "agy"
+      ]
+    },
+    {
+      "id": "C5",
+      "statement": "The founders' hospital administration backgrounds are enough to shorten procurement, vendor approval, and pilot conversion before the $500k is consumed.",
+      "type": "JUDGMENT",
+      "providers": [
+        "codex",
+        "agy"
+      ]
+    }
+  ],
+  "contradictions": [
+    {
+      "id": "D1",
+      "claim_ids": [
+        "C3"
+      ],
+      "attacks": [
+        {
+          "provider": "codex",
+          "argument": "The 15% model is likely underpriced for W-2 clinical labor. Employer FICA alone is 7.65%, before unemployment, workers comp, PEO fees, malpractice, credentialing, support, sales, and bad shifts; PEO admin fees are commonly cited around 3%-15% of payroll: https://en.wikipedia.org/wiki/Professional_employer_organization. Unless 15% is charged on top of a fully loaded labor cost, not on nurse wages, margin may be negative at scale.",
+          "severity": "HIGH"
+        },
+        {
+          "provider": "agy",
+          "argument": "The 15% commission is structurally unviable. Employer payroll taxes (FICA, FUTA, SUTA) combined with PEO administrative fees typically consume 10-15% of gross payroll alone, leaving zero or negative margin to cover marketing, API fees, and platform operations.",
+          "severity": "HIGH"
+        }
+      ]
+    },
+    {
+      "id": "D2",
+      "claim_ids": [
+        "C1"
+      ],
+      "attacks": [
+        {
+          "provider": "codex",
+          "argument": "Hospitals already have ugly but approved alternatives: internal float/per diem pools, overtime, travel/local agencies, and MSP/VMS programs. VMS workflows exist specifically to control temporary staffing, billing, vendor approval, and spend: https://en.wikipedia.org/wiki/Vendor_management_system. A new vendor is least useful exactly when the need is urgent, because procurement and compliance approval happen before the emergency.",
+          "severity": "HIGH"
+        }
+      ]
+    },
+    {
+      "id": "D3",
+      "claim_ids": [
+        "C2"
+      ],
+      "attacks": [
+        {
+          "provider": "codex",
+          "argument": "The nurse cold start is brutal. Last-minute supply needs high pay, low friction, trust, and enough shift density; W-2 onboarding adds paperwork and may reduce the take-home/flexibility nurses get from existing gig apps or agencies. Current gig platforms already pay attractive rates in some markets and have nurse awareness: https://www.businessinsider.com/nurses-gig-work-apps-jobs-hospitals-pay-uber-2025-1.",
+          "severity": "HIGH"
+        }
+      ]
+    },
+    {
+      "id": "D4",
+      "claim_ids": [
+        "C4"
+      ],
+      "attacks": [
+        {
+          "provider": "codex",
+          "argument": "Credentialing API integration is not the same as hospital acceptance. Hospitals may require facility-specific competencies, immunizations, background checks, drug screens, EMR access, unit orientation, specialty validation, and audit trails. Joint Commission-accredited environments are compliance-heavy: https://www.jointcommission.org. A fast document check does not make an ICU or ED nurse safe to drop into an unfamiliar unit at 7 p.m.",
+          "severity": "HIGH"
+        },
+        {
+          "provider": "agy",
+          "argument": "Hospital credentialing is highly bespoke; facilities require specific orientations, local background checks, and proprietary modules. A generic API cannot clear a nurse for a specific hospital floor instantly, exposing the platform to severe liability and blocking immediate placements.",
+          "severity": "HIGH"
+        }
+      ]
+    },
+    {
+      "id": "D5",
+      "claim_ids": [
+        "C7"
+      ],
+      "attacks": [
+        {
+          "provider": "codex",
+          "argument": "Differentiation is thin. On-demand healthcare staffing platforms already exist, and hospitals can also build internal gig/per diem programs. Recent coverage names CareRev, ShiftKey, Clipboard Health, and ShiftMed as active players: https://www.ctinsider.com/business/article/waterbury-hospital-gig-nursing-healthcare-ct-21221499.php. Local relationships are a wedge, not a moat; if it works, incumbents can copy the local playbook with more capital.",
+          "severity": "MED"
+        }
+      ]
+    },
+    {
+      "id": "D6",
+      "claim_ids": [
+        "C8"
+      ],
+      "attacks": [
+        {
+          "provider": "codex",
+          "argument": "One serious patient safety event can exceed startup tolerance. Reports on gig nursing repeatedly flag inadequate orientation, stressful facilities, and patient-safety concerns: https://www.businessinsider.com/nurses-gig-work-apps-jobs-hospitals-pay-uber-2025-1. Hospitals will push indemnity onto the staffing vendor, insurers may carve out high-acuity units or price coverage heavily, and $500k is not a real buffer for clinical liability plus legal defense.",
+          "severity": "HIGH"
+        }
+      ]
+    },
+    {
+      "id": "D7",
+      "claim_ids": [
+        "C5"
+      ],
+      "attacks": [
+        {
+          "provider": "agy",
+          "argument": "$500k is insufficient capital for a two-sided healthcare marketplace. Even with founder connections, hospital procurement, legal review, and IT security audits take months, meaning the startup will likely run out of cash before securing enough demand-side liquidity.",
+          "severity": "HIGH"
+        }
+      ]
+    },
+    {
+      "id": "D8",
+      "claim_ids": [
+        "C13"
+      ],
+      "attacks": [
+        {
+          "provider": "agy",
+          "argument": "Hospitals route all staffing through integrated VMS/MSP platforms. If this marketplace operates outside the VMS, charge nurses won't use it due to friction. If it integrates, the VMS provider will extract a fee, further destroying the 15% commission model.",
+          "severity": "MED"
+        }
+      ]
+    },
+    {
+      "id": "D9",
+      "claim_ids": [
+        "C14"
+      ],
+      "attacks": [
+        {
+          "provider": "agy",
+          "argument": "To ensure ultra-fast fulfillment, the platform must over-supply the market with nurses. However, keeping inactive nurses on a W-2 via a PEO incurs fixed minimum costs or risks running afoul of variable hour compliance laws, crushing scalability.",
+          "severity": "HIGH"
+        }
+      ]
+    }
+  ],
+  "unique": [
+    {
+      "id": "C1",
+      "statement": "Hospitals in the launch metro have frequent last-minute RN gaps that internal float pools, overtime, existing agencies, MSP/VMS channels, and doing nothing cannot solve well enough.",
+      "type": "VERIFIABLE",
+      "providers": [
+        "codex"
+      ]
+    },
+    {
+      "id": "C2",
+      "statement": "Enough experienced local nurses will accept intermittent W-2 shifts at rates that still leave room for the platform's 15% commission economics.",
+      "type": "VERIFIABLE",
+      "providers": [
+        "codex"
+      ]
+    },
+    {
+      "id": "C6",
+      "statement": "W-2 via EOR/PEO is a net differentiator because it reduces regulatory and labor risk more than it increases cost and operational drag.",
+      "type": "JUDGMENT",
+      "providers": [
+        "codex"
+      ]
+    },
+    {
+      "id": "C7",
+      "statement": "Localized ultra-fast coverage is meaningfully differentiated from staffing agencies, internal per diem pools, CareRev/ShiftMed/Clipboard-style platforms, and hospital-created internal marketplaces.",
+      "type": "JUDGMENT",
+      "providers": [
+        "codex"
+      ]
+    },
+    {
+      "id": "C8",
+      "statement": "Clinical liability, malpractice exposure, workers comp claims, no-shows, and patient safety incidents can be insured and contractually allocated without destroying the business.",
+      "type": "VERIFIABLE",
+      "providers": [
+        "codex"
+      ]
+    },
+    {
+      "id": "C12",
+      "statement": "Nurses prefer the W-2 employment model via a PEO for sporadic, last-minute gig work over 1099 independent contractor status or internal float pools.",
+      "type": "JUDGMENT",
+      "providers": [
+        "agy"
+      ]
+    },
+    {
+      "id": "C13",
+      "statement": "Hospitals will adopt a standalone app for urgent staffing rather than relying exclusively on their existing Vendor Management Systems (VMS) and incumbent Managed Service Providers (MSP).",
+      "type": "VERIFIABLE",
+      "providers": [
+        "agy"
+      ]
+    },
+    {
+      "id": "C14",
+      "statement": "The platform can maintain sufficient W-2 nurse liquidity in a single metro area to guarantee ultra-fast fill rates for last-minute hospital call-outs.",
+      "type": "VERIFIABLE",
+      "providers": [
+        "agy"
+      ]
+    }
+  ],
+  "blind_spots": [
+    "kill criteria / failure conditions",
+    "timing / market readiness"
+  ]
+}

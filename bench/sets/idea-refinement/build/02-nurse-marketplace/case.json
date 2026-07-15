@@ -1,0 +1,111 @@
+{
+  "id": "nurse-marketplace",
+  "title": "Local nurse shift-coverage marketplace",
+  "set": "build",
+  "provenance": "INSPECTED_BUILD",
+  "tags": ["contestable", "evidence-poor", "regulated", "marketplace", "commercial"],
+  "input_file": "input.md",
+  "critical_claims": [
+    {
+      "id": "N1",
+      "proposition": "A 15% commission covers fully loaded W-2 employment, compliance, insurance, and operating costs with a viable gross margin.",
+      "acceptable_stances": ["OPPOSE", "UNRESOLVED"],
+      "evidence_required": true
+    },
+    {
+      "id": "N2",
+      "proposition": "A third-party credentialing API is sufficient to make a nurse ready for same-day work at a hospital facility.",
+      "acceptable_stances": ["OPPOSE", "QUALIFY"],
+      "evidence_required": true
+    },
+    {
+      "id": "N3",
+      "proposition": "Target hospitals will buy urgent shift coverage through a new standalone marketplace outside or alongside their existing procurement systems.",
+      "acceptable_stances": ["QUALIFY", "UNRESOLVED"],
+      "evidence_required": true
+    },
+    {
+      "id": "N4",
+      "proposition": "The launch metro can supply enough qualified nurses at compatible rates to fill urgent shifts reliably.",
+      "acceptable_stances": ["UNRESOLVED"],
+      "evidence_required": true
+    },
+    {
+      "id": "N5",
+      "proposition": "PEO and insurance arrangements can contain clinical liability at a cost the model can bear.",
+      "acceptable_stances": ["UNRESOLVED", "QUALIFY"],
+      "evidence_required": true
+    },
+    {
+      "id": "N6",
+      "proposition": "$500k provides enough runway to clear procurement, compliance, supply, and liquidity risks before launch.",
+      "acceptable_stances": ["UNRESOLVED", "QUALIFY"],
+      "evidence_required": true
+    },
+    {
+      "id": "N7",
+      "proposition": "The venture should proceed unchanged before unit economics, facility readiness, procurement, supply, and liability are tested.",
+      "acceptable_stances": ["OPPOSE", "QUALIFY"],
+      "evidence_required": false
+    }
+  ],
+  "common_false_claims": [
+    {
+      "id": "NF1",
+      "claim": "The 15% commission is proven to produce negative gross margin.",
+      "reason": "The fee base, local bill rates, employment costs, insurance quotes, and operating costs are not supplied."
+    },
+    {
+      "id": "NF2",
+      "claim": "All hospitals route every temporary shift exclusively through a VMS or MSP.",
+      "reason": "The prompt contains no target-hospital procurement evidence."
+    },
+    {
+      "id": "NF3",
+      "claim": "Credential verification alone guarantees facility-specific readiness for clinical work.",
+      "reason": "Credential verification and facility acceptance are distinct claims that require evidence."
+    },
+    {
+      "id": "NF4",
+      "claim": "Switching nurses to independent contractors is a simple, compliant fix.",
+      "reason": "Worker classification in a regulated staffing context requires jurisdiction-specific evidence and legal review."
+    }
+  ],
+  "required_dimensions": [
+    "target user",
+    "existing alternatives",
+    "differentiation",
+    "feasibility",
+    "cost and resources",
+    "policy legal compliance and privacy",
+    "kill criteria",
+    "business model",
+    "distribution and go-to-market",
+    "timing",
+    "scalability",
+    "key risks and assumptions"
+  ],
+  "source_pack": [],
+  "acceptable_unresolved_outcomes": [
+    {
+      "claim_id": "N1",
+      "reason": "The fee base and current cost inputs are absent."
+    },
+    {
+      "claim_id": "N3",
+      "reason": "No target-hospital procurement interviews or agreements are supplied."
+    },
+    {
+      "claim_id": "N4",
+      "reason": "No local nurse willingness, rate, or shift-density evidence is supplied."
+    },
+    {
+      "claim_id": "N5",
+      "reason": "No PEO, insurance, or indemnity terms are supplied."
+    },
+    {
+      "claim_id": "N6",
+      "reason": "No burn model, sales-cycle evidence, or committed pilot is supplied."
+    }
+  ]
+}

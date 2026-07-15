@@ -1,0 +1,364 @@
+{
+  "task_echo": "Evaluate whether the clinic should switch to a self-hosted open-source EMR, retain its cloud vendor, or negotiate, analyzing costs, compliance, and operational feasibility.",
+  "strongest_version": "Self-hosting Bahmni gives the clinic complete data sovereignty and escapes perpetual cloud price hikes. While initial transition costs are high, the steady-state operating expense will be significantly lower than the new cloud pricing, making it a viable long-term investment.",
+  "positions": [
+    {
+      "local_id": "P1",
+      "proposition": "Self-hosting Year 1 total cost significantly exceeds the renewed cloud EMR cost, undermining the primary financial motivation for switching.",
+      "dimension_id": "D2",
+      "stance": "OPPOSE",
+      "basis": "EVIDENCE",
+      "load_bearing": true,
+      "if_false": "PIVOT",
+      "reasoning": "Year 1 self-hosting requires ₹7.46L (excluding the existing contractor retainer), which is nearly double the ₹3.86L cloud renewal cost.",
+      "evidence_ids": [
+        "E1",
+        "E2",
+        "E3"
+      ],
+      "depends_on": []
+    },
+    {
+      "local_id": "P2",
+      "proposition": "A self-hosted migration will cause an unacceptable gap in ABDM and DPDP Act compliance.",
+      "dimension_id": "R6",
+      "stance": "OPPOSE",
+      "basis": "EVIDENCE",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "reasoning": "The clinic requires uninterrupted ABHA-linked workflows. Self-hosted certification takes months, guaranteeing a gap during the transition.",
+      "evidence_ids": [
+        "E3"
+      ],
+      "depends_on": []
+    },
+    {
+      "local_id": "P3",
+      "proposition": "The 2-hour downtime constraint cannot be reliably met with the proposed self-hosted IT setup.",
+      "dimension_id": "D4",
+      "stance": "OPPOSE",
+      "basis": "EVIDENCE",
+      "load_bearing": true,
+      "if_false": "CONDITION",
+      "reasoning": "The part-time contractor is on-site only 2 half-days per week, and the app support SLA is 4 hours, which violates the strict 2-hour recovery limit.",
+      "evidence_ids": [
+        "E1",
+        "E2"
+      ],
+      "depends_on": []
+    },
+    {
+      "local_id": "P4",
+      "proposition": "The inability to secure ABDM certification prior to cutting over from the cloud EMR constitutes a kill condition.",
+      "dimension_id": "R7",
+      "stance": "SUPPORT",
+      "basis": "INFERENCE",
+      "load_bearing": true,
+      "if_false": "MINOR",
+      "reasoning": "Any compliance lapse breaches a hard constraint. If certification cannot be run in parallel on a sandbox, the project must be killed.",
+      "evidence_ids": [
+        "E3"
+      ],
+      "depends_on": [
+        "P2"
+      ]
+    },
+    {
+      "local_id": "P5",
+      "proposition": "The proposed technical solution (Bahmni) is viable for this clinic size.",
+      "dimension_id": "R4",
+      "stance": "SUPPORT",
+      "basis": "EVIDENCE",
+      "load_bearing": false,
+      "if_false": "MINOR",
+      "reasoning": "Bahmni handles 500+ facilities and standard OPD/IPD mixes, matching the clinic's profile perfectly.",
+      "evidence_ids": [
+        "E2"
+      ],
+      "depends_on": []
+    },
+    {
+      "local_id": "P6",
+      "proposition": "Data export from the current vendor via CSV will likely be lossy or difficult to map, posing a major migration risk.",
+      "dimension_id": "R12",
+      "stance": "MIXED",
+      "basis": "INFERENCE",
+      "load_bearing": true,
+      "if_false": "CONDITION",
+      "reasoning": "Historical migration took 4+ months and tripled errors. A CSV-only export from the current vendor requires rigorous validation.",
+      "evidence_ids": [
+        "E4"
+      ],
+      "depends_on": []
+    }
+  ],
+  "evidence": [
+    {
+      "id": "E1",
+      "claim_supported": "Cloud EMR costs and IT retainer",
+      "source_kind": "USER",
+      "support": "SUPPORT",
+      "freshness": "CURRENT"
+    },
+    {
+      "id": "E2",
+      "claim_supported": "Self-hosting quote and SLAs",
+      "source_kind": "USER",
+      "support": "SUPPORT",
+      "freshness": "CURRENT"
+    },
+    {
+      "id": "E3",
+      "claim_supported": "Compliance gap and audit cost",
+      "source_kind": "USER",
+      "support": "SUPPORT",
+      "freshness": "CURRENT"
+    },
+    {
+      "id": "E4",
+      "claim_supported": "Past migration difficulties",
+      "source_kind": "USER",
+      "support": "SUPPORT",
+      "freshness": "DATED"
+    }
+  ],
+  "calculations": [
+    {
+      "id": "C1",
+      "claim_id": "P1",
+      "inputs": [
+        {
+          "id": "I1",
+          "name": "Current Cloud Monthly",
+          "value": 28000,
+          "unit": "INR",
+          "evidence_ids": [
+            "E1"
+          ]
+        },
+        {
+          "id": "I2",
+          "name": "Price Increase Multiplier",
+          "value": 1.15,
+          "unit": "multiplier",
+          "evidence_ids": [
+            "E1"
+          ]
+        },
+        {
+          "id": "I3",
+          "name": "Months in Year",
+          "value": 12,
+          "unit": "months",
+          "evidence_ids": [
+            "E1"
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "id": "S1",
+          "operation": "MULTIPLY",
+          "left": "I1",
+          "right": "I2",
+          "result": 32200,
+          "unit": "INR/month"
+        },
+        {
+          "id": "S2",
+          "operation": "MULTIPLY",
+          "left": "S1",
+          "right": "I3",
+          "result": 386400,
+          "unit": "INR/year"
+        }
+      ],
+      "result_step": "S2"
+    },
+    {
+      "id": "C2",
+      "claim_id": "P1",
+      "inputs": [
+        {
+          "id": "I4",
+          "name": "Hardware Capex",
+          "value": 180000,
+          "unit": "INR",
+          "evidence_ids": [
+            "E2"
+          ]
+        },
+        {
+          "id": "I5",
+          "name": "Implementation",
+          "value": 250000,
+          "unit": "INR",
+          "evidence_ids": [
+            "E2"
+          ]
+        },
+        {
+          "id": "I6",
+          "name": "AMC",
+          "value": 40000,
+          "unit": "INR",
+          "evidence_ids": [
+            "E2"
+          ]
+        },
+        {
+          "id": "I7",
+          "name": "App Support Monthly",
+          "value": 8000,
+          "unit": "INR",
+          "evidence_ids": [
+            "E2"
+          ]
+        },
+        {
+          "id": "I8",
+          "name": "Compliance Audit First Year",
+          "value": 180000,
+          "unit": "INR",
+          "evidence_ids": [
+            "E3"
+          ]
+        },
+        {
+          "id": "I9",
+          "name": "Months",
+          "value": 12,
+          "unit": "months",
+          "evidence_ids": [
+            "E2"
+          ]
+        }
+      ],
+      "steps": [
+        {
+          "id": "S3",
+          "operation": "MULTIPLY",
+          "left": "I7",
+          "right": "I9",
+          "result": 96000,
+          "unit": "INR/year"
+        },
+        {
+          "id": "S4",
+          "operation": "ADD",
+          "left": "I4",
+          "right": "I5",
+          "result": 430000,
+          "unit": "INR"
+        },
+        {
+          "id": "S5",
+          "operation": "ADD",
+          "left": "I6",
+          "right": "S3",
+          "result": 136000,
+          "unit": "INR/year"
+        },
+        {
+          "id": "S6",
+          "operation": "ADD",
+          "left": "S5",
+          "right": "I8",
+          "result": 316000,
+          "unit": "INR"
+        },
+        {
+          "id": "S7",
+          "operation": "ADD",
+          "left": "S4",
+          "right": "S6",
+          "result": 746000,
+          "unit": "INR"
+        }
+      ],
+      "result_step": "S7"
+    }
+  ],
+  "coverage": [
+    {
+      "dimension_id": "R4",
+      "status": "COVERED",
+      "position_ids": [
+        "P5"
+      ]
+    },
+    {
+      "dimension_id": "R5",
+      "status": "COVERED",
+      "position_ids": [
+        "P1"
+      ]
+    },
+    {
+      "dimension_id": "R6",
+      "status": "COVERED",
+      "position_ids": [
+        "P2"
+      ]
+    },
+    {
+      "dimension_id": "R7",
+      "status": "COVERED",
+      "position_ids": [
+        "P4"
+      ]
+    },
+    {
+      "dimension_id": "R8",
+      "status": "NOT_APPLICABLE",
+      "rationale": "The EMR is an internal operational tool. The clinic's business model is unaffected by the choice of EMR infrastructure."
+    },
+    {
+      "dimension_id": "R11",
+      "status": "NOT_APPLICABLE",
+      "rationale": "The clinic has a fixed 20-bed size; the Bahmni setup naturally scales to 500+ facilities, making scale constraints irrelevant here."
+    },
+    {
+      "dimension_id": "R12",
+      "status": "COVERED",
+      "position_ids": [
+        "P6"
+      ]
+    },
+    {
+      "dimension_id": "D2",
+      "status": "COVERED",
+      "position_ids": [
+        "P1"
+      ]
+    },
+    {
+      "dimension_id": "D4",
+      "status": "COVERED",
+      "position_ids": [
+        "P3"
+      ]
+    }
+  ],
+  "decision_questions": [
+    {
+      "claim_ids": [
+        "P2",
+        "P4"
+      ],
+      "question": "Can the clinic complete the self-hosted ABDM certification using a sandbox environment before canceling the existing cloud EMR contract?"
+    },
+    {
+      "claim_ids": [
+        "P1"
+      ],
+      "question": "Will the existing vendor negotiate their 15% price increase down to 5% or less on a multi-year contract?"
+    },
+    {
+      "claim_ids": [
+        "P6"
+      ],
+      "question": "Can the implementation partner successfully import a sample of the vendor's CSV export and prove full clinical data integrity within 2 weeks?"
+    }
+  ]
+}
