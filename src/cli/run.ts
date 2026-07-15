@@ -13,7 +13,7 @@ import { resolveRunsRoot } from '../storage/paths.js';
 import { openCouncilHtml } from '../council/open.js';
 import { buildEvidencePack, type EvidencePack } from '../orchestration/evidence-pack.js';
 import { IdeaModeSchema, type IdeaMode } from '../schemas/index.js';
-import { defaultBudgetFor, IDEA_MODE_PLANS } from '../orchestration/modes.js';
+import { defaultBudgetFor, defaultDeadlineFor, IDEA_MODE_PLANS } from '../orchestration/modes.js';
 
 const WORKFLOWS: WorkflowId[] = ['idea-refinement', 'code-review'];
 
@@ -194,7 +194,7 @@ export async function runCommand(workflow: string, input: string | undefined, op
   const outcome = await runEngine(workflow as WorkflowId, text, {
     mode,
     budget: resolvedBudget,
-    deadlineMs: cfg.deadlineMs,
+    deadlineMs: cfg.deadlineMs ?? defaultDeadlineFor(workflow as WorkflowId, mode),
     roleOverrides,
     cwd, // code-review: repo root; idea-refinement: undefined → run dir
     runsRoot: await resolveRunsRoot(), // hybrid: repo .aiki when in a repo, else ~/.aiki

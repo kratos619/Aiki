@@ -8,6 +8,7 @@ import {
   IDEA_MODE_PLANS,
   callCategory,
   defaultBudgetFor,
+  defaultDeadlineFor,
 } from '../src/orchestration/modes.js';
 import {
   mergePreflightReadings,
@@ -78,6 +79,16 @@ describe('R6 mode call plans', () => {
     expect(defaultBudgetFor('idea-refinement', 'quick')).toBe(4);
     expect(defaultBudgetFor('idea-refinement', 'council')).toBe(10);
     expect(defaultBudgetFor('idea-refinement', 'research')).toBe(12);
+  });
+
+  // Research legitimately does 2-3× the work (repairs + coverage-fill + verify + rebuttal + chair +
+  // planner); a flat 20-min wall clock killed run 20260715-1404 at S9 after valid work through S8.
+  it('gives research mode a longer wall-clock than quick/council; code-review keeps the legacy cap', () => {
+    expect(defaultDeadlineFor('idea-refinement', 'quick')).toBe(20 * 60 * 1000);
+    expect(defaultDeadlineFor('idea-refinement', 'council')).toBe(20 * 60 * 1000);
+    expect(defaultDeadlineFor('idea-refinement', 'research')).toBe(45 * 60 * 1000);
+    expect(defaultDeadlineFor('code-review')).toBe(20 * 60 * 1000);
+    expect(defaultDeadlineFor('idea-refinement', 'research')).toBeGreaterThan(defaultDeadlineFor('idea-refinement', 'council'));
   });
 
   it('classifies the receipt into discovery, verification, repair, and planning', () => {
