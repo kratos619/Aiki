@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-07-15 — evidence-grounded decision council
+
+This release turns idea refinement into a bounded, evidence-linked decision workflow with explicit modes,
+selective rebuttal, a reader-first dossier, and stronger recovery from malformed provider output. The frozen
+code-review result remains unchanged: 100% vs 77% seeded-bug recall at equal precision on the pre-registered
+10-case holdout. The idea-v3 evaluation harness ships here, but its paid benchmark is still pending and no
+idea-quality lift is claimed yet.
 
 ### Added
 - **Explicit idea modes and adaptive budgets (R6)** — `aiki run idea-refinement --mode
@@ -36,8 +42,6 @@
   scorer and fills that pair's null recall/precision in the campaign file. Unknown pairs fail loud;
   re-scoring an already-scored pair is refused (blind adjudication is one pass); when every pair is scored
   it prints the lane default selection.
-- **Contextual intent questions** — the merged idea preflight generates 3-4 context-specific questions, the
-  TUI asks them before the main work, and answers persist in `00b-run-brief.json`.
 - **Idea report v3** — idea-refinement reports now emit an explicit BLUF recommendation
   (`PROCEED`, `PROCEED_WITH_CONDITIONS`, `PIVOT`, `STOP`), conditions when needed, a best-effort
   12-dimension scorecard, assumption audit table in HTML, deterministic debate narrative, anchored
@@ -47,33 +51,64 @@
   evidence source/date/freshness/verification table, genuine disagreement and append-only position-change
   events, coverage and sensitivity ledgers, executable experiments, strongest counter-case, strictly
   verified unique-provider contributions, categorized receipt, and technical graph fold. Final Markdown,
-  HTML, and Copy-Markdown render from that same dossier; R6-era and older runs retain their legacy HTML. The
-  full report is reader-first: decision/confidence/warning and the first action lead, followed by action plan,
-  reasoning, decision sensitivity, evidence, risks/gaps, dissent, council value, run details, and technical audit.
+  HTML, and Copy-Markdown render from that same dossier; R6-era and older runs retain their legacy HTML. It
+  provides the canonical report foundation refined by the reader-first snapshot below.
+- **Reader-first decision snapshot (report v3.1)** — terminal, Markdown, and HTML lead with the council
+  recommendation, independently verified evidence coverage, decisive facts, first action, strongest
+  counter-case, and three critical unknowns. Financial and threshold-heavy chairs can emit strict
+  graph-anchored decisive numbers, explicit payback, option commitments marked `KNOWN`, `TARGET_CAP`, or
+  `UNKNOWN`, and one go/no-go tripwire. Invalid claim anchors remove the snapshot instead of presenting
+  unsupported numbers.
+- **Idea-v3 benchmark harness** — the frozen B/C/D2/R protocol now has an eight-case build set, a
+  12-case/tag/provenance holdout contract that remains closed until freeze, checkpoint/resume for successes
+  and failures, isolated baseline-provider campaigns, three independently shuffled blind-rating packets,
+  one-pass scoring, and hash-locked freeze and holdout guards. Build tuning, blind ratings, and the paid
+  holdout evaluation remain pending.
 
 ### Changed
 - **Three-level decision report** — idea-refinement's final report is restructured: (1) a one-screen
-  terminal summary (verdict, status, structural confidence, consensus counts, primary reason, dissent,
-  verification checks, next action) printed after `aiki run`; (2) a 10-section reader-first graph-backed
+  terminal summary (recommendation, decision state, verified evidence coverage, decisive result, dissent,
+  next action, and optional tripwire) printed after `aiki run`; (2) a 10-section reader-first graph-backed
   Decision Report markdown (`final-report.md`) ordered as decision, action plan, reasoning, what could change
   the decision, evidence, risks/gaps, dissent, council value, run details, and technical audit; (3)
   machine-readable `10-decision-report.json` that Markdown and HTML render from, so the
   surfaces cannot disagree. Statuses are ACCEPTED / ACCEPTED_WITH_CONDITIONS / INCONCLUSIVE / REJECTED
-  (mapped from the judge's recommendation). Confidence is structural — 40% verification coverage + 25%
+  (mapped from the judge's recommendation). The structural score is moved behind technical detail and never
+  presented as decision accuracy: 40% verification coverage + 25%
   independent convergence + 20% evidence quality + 15% stability − critical-risk penalty; model
   self-confidence never enters it and consensus alone can never reach the High band. Labeled a heuristic in
   the report until benchmark-calibrated.
 - Idea-refinement estimates are mode-aware: quick ≈3 calls / 1 Claude-Opus; council 6–8 / ~2 Opus; research
   8–10 / ~2 Opus. Chair and planner calls are reserved before optional graph work.
+- **Mode-aware time limits** — quick and council retain a 20-minute run deadline; research uses 45 minutes.
+  The per-provider-call ceiling is 15 minutes, so legitimate deep scout work can finish while the overall
+  deadline still bounds the run.
 
 ### Fixed
-- Idea analyst outputs now canonicalize the observed Gemini evidence enum aliases before strict validation:
-  any casing of the exact enum word (`SUPPORT`, `current`, `Current`) maps to the canonical value, while
-  prose or unknown values still fail the schema boundary.
-- A failed S4 repair no longer kills the run when the damage is limited to evidence cards: a deterministic
-  salvage drops the still-invalid cards and scrubs their references (positions are never altered — a broken
-  claim set stays fatal). Applies both when the repair output fails validation and when the repair call
-  itself dies (e.g. quota), and costs no extra provider call.
+- Idea analyst outputs now canonicalize observed Gemini evidence-enum variants before strict validation:
+  freshness accepts case-insensitive canonical words, while evidence support accepts a leading known token
+  (`SUPPORT`, `OPPOSE`, or `OPPOSES`) and maps it to the canonical enum. Arbitrary prose and unknown values
+  still fail the schema boundary.
+- A failed S4 repair no longer kills the run for recoverable shape damage: deterministic salvage strips
+  unknown keys, drops invalid evidence/calculation/coverage/question entries, removes only individually
+  invalid positions, and scrubs their references. It never invents content and an empty claim set remains
+  fatal. The same fallback applies when the repair call itself dies (for example, quota).
+- All schema-validated model stages now attempt lossless coercion before a paid repair (for example, wrapping
+  a lone array item) and bounded lossy coercion only after repair failure (for example, truncating beyond a
+  declared maximum). The full zod schema still decides whether data may cross the stage boundary.
+- Provider timeouts now resolve immediately after killing the process group and unref a surviving detached
+  child, preventing one escaped subprocess from blocking the CLI long after the configured timeout.
+- Idea prose containing ordinary words such as `class`, `export`, or `import` no longer misroutes to code
+  review; routing now requires actual code structure such as a diff, fence, code file path, declaration, or
+  import/export syntax.
+- Decisive warnings no longer echo an unresolved affirmative claim as reassurance, and the calculation
+  checker now canonicalizes ordinary plurals, dimensionless ratios, and currency-margin units without
+  weakening arithmetic validation.
+- Benchmark safeguards now redact receipt costs and degradation tokens from blind packets, refuse accidental
+  same-day campaign overwrites, and honor the frozen baseline provider when a holdout run does not pass an
+  explicit override.
+- Release builds now clean `dist/` before compiling, so removed stages cannot survive as stale JavaScript in
+  the npm tarball.
 - Codex provider smoke no longer crashes in non-git folders; Aiki now passes Codex's verified
   `--skip-git-repo-check` flag while keeping `-s read-only`.
 - `aiki --version` now reads from `package.json`, preventing CLI/package version drift.

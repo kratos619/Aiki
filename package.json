@@ -1,6 +1,6 @@
 {
   "name": "aiki-cli",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Local-first AI model council for code review and idea stress-testing using Claude Code, Codex, and Gemini/Antigravity CLIs. No API keys.",
   "type": "module",
   "license": "MIT",
@@ -45,7 +45,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && node -e \"require('fs').copyFileSync('src/providers/profiles.json','dist/providers/profiles.json')\" && node -e \"require('fs').cpSync('src/skills','dist/skills',{recursive:true})\"",
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json && node -e \"require('fs').copyFileSync('src/providers/profiles.json','dist/providers/profiles.json')\" && node -e \"require('fs').cpSync('src/skills','dist/skills',{recursive:true})\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
