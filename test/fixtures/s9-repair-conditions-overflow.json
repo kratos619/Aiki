@@ -1,0 +1,153 @@
+{
+  "adjudications": [
+    {
+      "claim_id": "G1",
+      "ruling": "FAILS",
+      "reasoning": "The evidence shows a five-year lock-in with material early-exit cost, dated/contradicted footfall input, and urgency sourced from the leasing agent rather than proven economics. No evidence establishes positive unit economics or execution readiness to justify signing now.",
+      "evidence_ids": [
+        "E1",
+        "E2",
+        "E3",
+        "E4",
+        "E5"
+      ],
+      "effect_on_decision": "Removes the case for signing within the deadline; anchors a test-first recommendation."
+    },
+    {
+      "claim_id": "G2",
+      "ruling": "UNRESOLVED",
+      "reasoning": "Evidence supports using a reversible test instead of an immediate five-year commitment, but does not establish that a two-weekend staffed pop-up is the smallest decision-useful test or that POS/QR attribution is sufficient. The direction is sound; the specific design is unproven.",
+      "evidence_ids": [
+        "E6",
+        "E2",
+        "E7",
+        "E8",
+        "E3",
+        "E9"
+      ],
+      "effect_on_decision": "Supports validating before committing, but the exact test format/sample size remains to be specified.",
+      "what_would_change_it": "Confirmed same-mall pop-up availability and cost, a defensible sample-size justification for two weekends, and a concrete POS/QR attribution design."
+    },
+    {
+      "claim_id": "G6",
+      "ruling": "FAILS",
+      "reasoning": "The 6% conversion and ₹2,400 AOV are consultant assumptions borrowed from established brands, contradicted for a first-store operator with no measured in-store conversion. The brand's own online AOV is lower at ₹1,850.",
+      "evidence_ids": [
+        "E10",
+        "E6",
+        "E8",
+        "E9"
+      ],
+      "effect_on_decision": "Undermines the revenue assumptions the base case depends on."
+    },
+    {
+      "claim_id": "G7",
+      "ruling": "FAILS",
+      "reasoning": "Using the supplied inputs, base-case revenue is ₹69.12L and gross profit at 58% is ₹40.09L, while rent, CAM, staff, other running costs, and 8% revenue share total ₹44.53L — a ~₹4.44L year-1 four-wall loss before depreciation, tax, and launch marketing. Payback on the ₹18L fit-out within one year is not reached; the calculation check passed.",
+      "evidence_ids": [
+        "E10",
+        "E11",
+        "E7",
+        "E12",
+        "E8"
+      ],
+      "effect_on_decision": "Directly refutes the profitability/one-year-payback premise; central to rejecting an immediate signing."
+    },
+    {
+      "claim_id": "G9",
+      "ruling": "FAILS",
+      "reasoning": "Evidence confirms no physical-retail, POS, or store-operations playbook and no measured in-store conversion. Staffing cost estimates do not establish rostering, compliance, shrinkage, merchandising, or attribution capability.",
+      "evidence_ids": [
+        "E6",
+        "E12"
+      ],
+      "effect_on_decision": "Adds execution risk that argues against a five-year commitment without a test."
+    },
+    {
+      "claim_id": "G10",
+      "ruling": "HOLDS",
+      "reasoning": "Evidence supports requiring validation before committing because current economics and key assumptions are weak; the abandon-unless gate correctly conditions any commitment on measured, decision-useful results. The specific numeric thresholds are business judgment layered on supported facts and should be recomputed with measured store margin.",
+      "evidence_ids": [
+        "E13",
+        "E10",
+        "E6",
+        "E11",
+        "E7",
+        "E8",
+        "E3",
+        "E9",
+        "E14"
+      ],
+      "effect_on_decision": "Provides the checkable gate structure for a conditional proceed."
+    },
+    {
+      "claim_id": "G11",
+      "ruling": "FAILS",
+      "reasoning": "The supplied cards price rent, CAM, deposit, escalation, fit-out, inventory, and staffing but omit taxes, insurance, launch marketing, shrinkage, repairs, mall covenants, permitted-use, revenue-share definitions, audit rights, and legal review. The exposure is not fully priceable as supplied.",
+      "evidence_ids": [
+        "E11",
+        "E7",
+        "E12"
+      ],
+      "effect_on_decision": "Confirms material unpriced exposure that must be resolved before any lease decision."
+    },
+    {
+      "claim_id": "G17",
+      "ruling": "HOLDS",
+      "reasoning": "Evidence verifies the complete absence of prior physical-retail experience, which supports validating through a cheaper reversible format before committing five-year capital. The specific format choice is a decision detail, but the need for pre-commitment validation is established.",
+      "evidence_ids": [
+        "E15"
+      ],
+      "effect_on_decision": "Reinforces test-first over immediate capital commitment."
+    }
+  ],
+  "verdict": "Do not sign the five-year kiosk lease within the deadline. The supplied base case produces a ~₹4.44L year-1 four-wall loss with no one-year payback (G7), its revenue rests on unproven borrowed conversion/AOV assumptions (G6), the operator has no retail capability (G9), and material legal/tax/operating exposure is unpriced (G11), while the urgency is agent-driven (G1). Instead, run a cheap, reversible same-mall test and only commit if it clears explicit economic and runway gates (G10, G17, G2).",
+  "recommendation": "PROCEED_WITH_CONDITIONS",
+  "conditions": [
+    "Run a reversible same-mall (or closest comparable premium mall) staffed pop-up/shop-in-shop using portable fixtures and existing inventory before any lease signing — no fit-out, deposit, or lock-in.",
+    "Independently verify actual qualified footfall rather than relying on the dated/contradicted 4,000/month input.",
+    "Measure in-store conversion and AOV for this brand; the test must support ~₹9.50L monthly-equivalent revenue (≈9.9% conversion at 4,000 visits and ₹2,400 AOV) recomputed at the MEASURED store gross margin, not the 58% proxy.",
+    "Measure online cannibalization (matched control) to confirm net-new incremental demand, not shifted online orders.",
+    "Confirm the kiosk investment does not reduce protected online growth runway.",
+    "Resolve all unpriced exposure (taxes, insurance, marketing, shrinkage, covenants, permitted-use, revenue-share definitions, audit rights, early-exit penalty) via legal review before signing.",
+    "Walk away if the test fails on revenue, margin, conversion, incrementality, runway, or legal exposure."
+  ],
+  "recommendation_claim_ids": [
+    "G1",
+    "G7",
+    "G6",
+    "G9",
+    "G11",
+    "G10",
+    "G17",
+    "G2"
+  ],
+  "condition_claim_ids": [
+    "G10",
+    "G2",
+    "G17"
+  ],
+  "strongest_counter_case": {
+    "claim_ids": [
+      "G4",
+      "G16"
+    ],
+    "reasoning": "G4 (SUPPORTED) holds that the kiosk offers differentiated incremental value via higher awareness, lower acquisition cost, and net-new sales — a strategic upside a purely economic test may undervalue. If that brand-building value is real, a two-weekend pop-up (G16 also flags footfall/conversion unreliability that cuts both ways) may under-measure long-run awareness benefits and could wrongly kill a viable channel on short-window transactional metrics."
+  },
+  "key_points": [
+    "Base-case four-wall economics are negative (~₹4.44L year-1 loss) and miss one-year payback using the consultant's own inputs (G7).",
+    "Revenue assumptions (6% conversion, ₹2,400 AOV) are unproven for a first-store operator whose online AOV is only ₹1,850 (G6).",
+    "The three-week urgency originates from the leasing agent, not verified economics, against a five-year lock-in with early-exit cost (G1).",
+    "The team has no physical-retail, POS, or store-operations capability (G9).",
+    "Term sheet omits taxes, insurance, marketing, shrinkage, covenants, permitted-use, revenue-share definitions, and audit rights — exposure is not fully priceable (G11).",
+    "A reversible same-mall test avoids construction/deposit/lock-in while measuring the real funnel and cannibalization (G2, G17).",
+    "Any commitment should clear an explicit gate: measured store margin, verified traffic, measured incrementality, and protected online runway (G10).",
+    "Footfall and conversion assumptions are flagged as unreliable/overstated (G16), making independent verification mandatory."
+  ],
+  "dissent": [
+    "G4 (SUPPORTED) argues the kiosk delivers differentiated incremental value — brand awareness and lower CAC — that a short pop-up measuring transactions may under-count, risking a false-negative that kills a strategically valuable channel.",
+    "A two-weekend pop-up is an unvalidated sample size (G2 PARTIAL); if it under-samples, the test itself could produce a misleading gate result and the delay may forfeit this specific mall location entirely.",
+    "The abandon-unless numeric thresholds in G10 are business judgment, not directly evidenced, so a stricter or looser gate could reasonably change the accept/reject outcome."
+  ],
+  "confidence_notes": "High confidence on the negative recommendation to sign now: G7 and G6 are CONTRADICTED with a passing calculation check, and G1/G9/G11 corroborate on lock-in, capability, and unpriced exposure. Confidence is moderate on the exact conditional gate because G2 and G10 are PARTIAL — the reversible-test direction is well supported but the specific pop-up design, sample size, and numeric thresholds rest on judgment and must be recomputed with measured store margin. Several load-bearing context claims (G5 traffic, G8/G12 liquidity, G15 cannibalization) remain UNVERIFIED, which is precisely why the recommendation is conditional rather than an outright STOP."
+}
