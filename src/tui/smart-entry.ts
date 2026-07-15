@@ -5,7 +5,24 @@ export const PRODUCT_LINE =
   'aiki stress-tests ideas and reviews code; for general questions use a single model — a council adds cost, not accuracy, when there is one right answer.';
 
 const QUESTION_START = /^(what|why|how|who|when|where|is|are|can|could|should|would|do|does|did|will)\b/i;
-const CODE_MARKER = /(diff --git|^@@|\+\+\+ b\/|--- a\/|```|[A-Za-z0-9_-]+\/[A-Za-z0-9_./-]+\.(ts|tsx|js|jsx|py|go|rs|java|rb|php|css|html|md)\b|\b(function|const|let|class|import|export)\b|[{};])/m;
+
+// Detect PASTED code / a diff, NOT prose that merely contains a code-ish word. Bare keywords
+// (`class`, `export`, `import`) and a lone `;`/`{`/`}` collide with ordinary English — "a class
+// scheduling app; export our data" is an idea, not a diff — so every alternative below requires code
+// *structure*: a diff/fence marker, a file path with a code extension, arrow/`){`, or a keyword in
+// real syntax (`class Foo {`, `const x =`, `import { … }` / `import x from '…'`, `export default/const…`).
+const CODE_MARKER = new RegExp([
+  'diff --git', '^@@', '^\\+\\+\\+ b/', '^--- a/',           // unified-diff headers
+  '```',                                                      // markdown code fence
+  '[A-Za-z0-9_-]+/[A-Za-z0-9_./-]+\\.(?:ts|tsx|js|jsx|py|go|rs|java|rb|php|css|html|md)\\b', // path/to/file.ext
+  '=>',                                                       // arrow function
+  '\\)\\s*\\{',                                               // ) { — block open
+  '\\bfunction\\s+[A-Za-z_$][\\w$]*\\s*\\(|\\bfunction\\s*\\(', // function foo( / function(
+  '\\bclass\\s+[A-Za-z_$][\\w$]*\\s*(?:\\{|extends\\b)',      // class Foo { / class Foo extends
+  '\\b(?:const|let|var)\\s+[A-Za-z_$][\\w$]*\\s*=',           // const x =
+  "\\bimport\\s+(?:\\{|[\\w$]+\\s+from\\s+['\"]|['\"])",      // import { … } / import x from '…' / import '…'
+  '\\bexport\\s+(?:default|const|let|var|function|class|async|\\{)', // export default / export const / …
+].join('|'), 'm');
 
 // ── Scope redirect (V10.2) — catch "explore my whole codebase / brainstorm features for me" asks and
 // point them at the right door, instead of silently stress-testing the request sentence as an "idea".
