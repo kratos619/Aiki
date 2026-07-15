@@ -15,6 +15,7 @@ import {
   type IdeaV3Observation,
 } from '../src/bench/idea-v3-bench.js';
 import {
+  blindIdeaV3Report,
   evaluateIdeaV3Gates,
   exportIdeaV3BlindBundle,
   importIdeaV3Ratings,
@@ -164,10 +165,66 @@ describe('R8 idea-v3 protocol benchmark', () => {
     expect(resumed.campaign.observations).toHaveLength(16);
   });
 
+  it('refuses to clobber a same-day campaign without --resume, protecting recorded paid observations', async () => {
+    const root = await fixtureRoot();
+    const reran: string[] = [];
+    await runIdeaV3Bench({ root, arms: ['B'], handles, execute: async ({ arm, case: item }) => observation(item.id, arm) });
+
+    // Second same-day invocation WITHOUT --resume would overwrite the paid file — must fail loud.
+    await expect(runIdeaV3Bench({
+      root,
+      arms: ['B'],
+      handles,
+      execute: async ({ arm, case: item }) => { reran.push(`${item.id}:${arm}`); return observation(item.id, arm); },
+    })).rejects.toThrow(/already exists.*--resume/s);
+    expect(reran).toEqual([]); // never re-ran a paid arm
+
+    // --resume is the sanctioned continuation and must still work.
+    const resumed = await runIdeaV3Bench({ root, arms: ['B'], handles, resume: true, execute: async ({ arm, case: item }) => observation(item.id, arm) });
+    expect(resumed.campaign.observations).toHaveLength(8);
+  });
+
   it('fails before any paid arm when D2 import data from the R0 runner is missing', async () => {
     const root = await fixtureRoot();
     await expect(runIdeaV3Bench({ root, arms: ['D2'], handles }))
       .rejects.toThrow(/archived R0 runner.*missing import observations/);
+  });
+
+  it('redacts cost, mode, and degradation-flag tells the frozen §4 forbids raters from seeing', () => {
+    const dossier = [
+      '## 1. Decision',
+      '',
+      '> ⚠ DEGRADED: synthesis_suspect',
+      '',
+      '**ACCEPTED_WITH_CONDITIONS** — negotiate the renewal.',
+      '> ⚠ DEGRADED: recommendation has no stored graph anchor.', // prose note, not a tell — must survive
+      '',
+      '## 9. Run details',
+      '',
+      '- Report ID: `20260714-2321-idea-refinement-8d5e`',
+      '- Generated: 2026-07-14T23:21:00.000Z',
+      '- Mode: research',
+      '- Provider calls: 12/14',
+      '- Categories: discovery 2 · verification 3 · repair 1 · planning 1',
+      '- By provider: Model Alpha 6, Model Beta 4, Model Gamma 2',
+      '- Recorded model time: 812.4s',
+      '- Degradation flags: headless_intent, synthesis_suspect',
+      '',
+    ].join('\n');
+
+    const blinded = blindIdeaV3Report(dossier, '20260714-2321-idea-refinement-8d5e');
+
+    // The cost / mode / operational block reveals the arm and its price — all forbidden.
+    expect(blinded).not.toMatch(/Mode: research/);
+    expect(blinded).not.toMatch(/Provider calls: 12\/14/);
+    expect(blinded).not.toMatch(/discovery 2 · verification 3/);
+    expect(blinded).not.toMatch(/Model Alpha 6/); // per-provider call counts are a cost tell
+    expect(blinded).not.toMatch(/812\.4s/);
+    expect(blinded).not.toMatch(/headless_intent/); // flag names are mode/arm tells
+    expect(blinded).not.toMatch(/DEGRADED: synthesis_suspect/); // inline flag list is a tell
+    // The DEGRADED marker and prose notes stay — raters still see quality self-assessments.
+    expect(blinded).toMatch(/⚠ DEGRADED/);
+    expect(blinded).toMatch(/recommendation has no stored graph anchor/);
   });
 
   it('exports three independently ordered blinded packets plus a private arm mapping', async () => {

@@ -143,7 +143,11 @@ function blindId(seed: string): string {
   return createHash('sha256').update(seed).digest('hex').slice(0, 12).toUpperCase();
 }
 
-/** Remove the explicit identifiers forbidden by BENCHMARK-IDEA-V3.md §4 before human rating. */
+/** Remove the explicit identifiers forbidden by BENCHMARK-IDEA-V3.md §4 before human rating. §4 bars
+ *  provider/model names, run ids, arm labels, AND costs — so the R7 dossier's §9 "Run details" cost
+ *  block (mode, call counts, categories, per-provider calls, model time, degradation flags) and the
+ *  inline `> ⚠ DEGRADED: <flag tokens>` callouts are redacted too; the DEGRADED marker and any prose
+ *  note stay, since those are quality self-assessments raters legitimately read. */
 export function blindIdeaV3Report(report: string, runId: string, caseDir?: string): string {
   const withoutCasePath = caseDir ? report.replaceAll(caseDir, '[case-source]') : report;
   return withoutCasePath
@@ -153,7 +157,9 @@ export function blindIdeaV3Report(report: string, runId: string, caseDir?: strin
     .replace(/\bGemini\b|\bagy\b/g, 'Model Gamma')
     .replace(/^(- Report ID:).*$/gm, '$1 [redacted]')
     .replace(/^(- Generated:).*$/gm, '$1 [redacted]')
-    .replace(/^(- Models and roles:).*$/gm, '$1 [redacted]');
+    .replace(/^(- Models and roles:).*$/gm, '$1 [redacted]')
+    .replace(/^(- (?:Mode|Provider calls|Categories|By provider|Recorded model time|Degradation flags):).*$/gm, '$1 [redacted]')
+    .replace(/^(> ⚠ DEGRADED): [a-z0-9_]+(?:, [a-z0-9_]+)*\.?$/gm, '$1 [redacted]');
 }
 
 async function renderCasePacket(item: IdeaV3BenchCase): Promise<string> {

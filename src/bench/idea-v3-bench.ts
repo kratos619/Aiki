@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { z } from 'zod';
 
@@ -411,7 +411,14 @@ export async function findLatestIdeaV3Campaign(root = process.cwd(), set?: 'buil
 async function resolveCampaign(root: string, set: 'build' | 'holdout', provider: ProviderId, resume: boolean): Promise<{ path: string; prior?: IdeaV3Campaign }> {
   const dir = join(root, 'bench', 'results');
   const dated = join(dir, `idea-v3-${set}-${provider}-${new Date().toISOString().slice(0, 10)}.json`);
-  if (!resume) return { path: dated };
+  if (!resume) {
+    // Paid-data safety: a fresh run reuses today's dated filename, so a second same-day invocation
+    // without --resume would silently overwrite already-recorded (paid) observations. Fail loud.
+    if (await access(dated).then(() => true, () => false)) {
+      throw new Error(`idea-v3 campaign already exists at ${dated}; re-run with --resume to continue it, or archive/rename that file to start a fresh campaign. Refusing to overwrite recorded observations.`);
+    }
+    return { path: dated };
+  }
   let names: string[] = [];
   try {
     names = (await readdir(dir)).filter((name) => CAMPAIGN_NAME.test(name) && name.startsWith(`idea-v3-${set}-${provider}-`)).sort().reverse();
@@ -485,7 +492,9 @@ export async function runIdeaV3Bench(opts: {
   const set = opts.set ?? 'build';
   const arms = parseArms(opts.arms ?? (set === 'build' ? ['B', 'C', 'D2', 'R'] : ['B', 'C', 'R']), set);
   const protocol = set === 'holdout' ? await loadFrozenIdeaV3Protocol(root) : undefined;
-  const baselineProvider = opts.baselineProvider ?? 'claude';
+  // Mirror planIdeaV3Bench: on holdout the frozen protocol pins the provider, so a bare run adopts it
+  // instead of throwing. An explicit mismatch still fails below.
+  const baselineProvider = opts.baselineProvider ?? protocol?.baseline_provider ?? 'claude';
   if (protocol && baselineProvider !== protocol.baseline_provider) {
     throw new Error(`holdout baseline provider is frozen to ${protocol.baseline_provider}, got ${baselineProvider}`);
   }
