@@ -4,9 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { RunCtx, resolveRoles, type ProviderHandle, type RunEvents } from '../src/orchestration/context.js';
-import { preflight } from '../src/orchestration/preflight.js';
+import { preflight, requestedOutputsFor } from '../src/orchestration/preflight.js';
 import { RunWriter } from '../src/storage/runs.js';
 import type { Adapter, ProviderId, RunResultAdapter } from '../src/providers/types.js';
+import type { UrlSourceSet } from '../src/schemas/index.js';
 
 const INPUT = 'Decide whether to build a local model council.';
 const RUBRIC = ['target user', 'competition', 'feasibility'];
@@ -62,7 +63,7 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-async function run(events?: RunEvents) {
+async function run(events?: RunEvents, sources?: UrlSourceSet) {
   const calls: string[] = [];
   const ids: ProviderId[] = ['agy', 'codex', 'claude'];
   const handles = ids.map((id) => handle(id, calls));
@@ -77,10 +78,19 @@ async function run(events?: RunEvents) {
     cwd: writer.dir,
     events,
   });
-  return { ctx, calls, result: await preflight(ctx, INPUT, RUBRIC) };
+  return { ctx, calls, result: await preflight(ctx, INPUT, RUBRIC, sources) };
 }
 
 describe('R6 two-view preflight', () => {
+  it('records explicitly requested feature and implementation deliverables without model inference', () => {
+    expect(requestedOutputsFor('Plan this and create a prioritized feature list for the hackathon.')).toEqual([
+      'DECISION',
+      'FEATURE_BACKLOG',
+      'IMPLEMENTATION_PLAN',
+    ]);
+    expect(requestedOutputsFor('Stress-test this product idea.')).toEqual(['DECISION']);
+  });
+
   it('runs two readings in parallel and persists one user-confirmed contract', async () => {
     const { calls, result, ctx } = await run({
       grill: async (draft) => draft.questions.map((question) => ({ question_id: question.id, answer: `answer ${question.id}`, source: 'user' })),
@@ -98,5 +108,28 @@ describe('R6 two-view preflight', () => {
     const { result, ctx } = await run();
     expect(result.contract).toMatchObject({ user_confirmed: false, confirmation: 'headless-defaulted' });
     expect(ctx.flags.has('headless_intent')).toBe(true);
+  });
+
+  it('puts fetched link content in both readings and forbids questions already answered by it', async () => {
+    const sources: UrlSourceSet = {
+      sources: [{
+        id: 'U1',
+        url: 'https://example.com/hackathon',
+        final_url: 'https://example.com/hackathon',
+        status: 'FETCHED',
+        title: 'Hackathon rules',
+        content_type: 'text/html',
+        accessed_at: '2026-07-15T12:00:00.000Z',
+        sha256: 'a'.repeat(64),
+        content: 'Judging uses six equally weighted lenses. A live URL is required. Deadline: 19 July.',
+      }],
+    };
+    const { calls } = await run(undefined, sources);
+
+    expect(calls).toHaveLength(2);
+    for (const prompt of calls) {
+      expect(prompt).toContain('Judging uses six equally weighted lenses.');
+      expect(prompt).toContain('Do not ask a question whose answer is present');
+    }
   });
 });

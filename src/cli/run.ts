@@ -13,7 +13,7 @@ import { resolveRunsRoot } from '../storage/paths.js';
 import { openCouncilHtml } from '../council/open.js';
 import { buildEvidencePack, type EvidencePack } from '../orchestration/evidence-pack.js';
 import { IdeaModeSchema, type IdeaMode } from '../schemas/index.js';
-import { defaultBudgetFor, defaultDeadlineFor, IDEA_MODE_PLANS } from '../orchestration/modes.js';
+import { defaultBudgetFor, defaultDeadlineFor, IDEA_MODE_PLANS, inferIdeaMode } from '../orchestration/modes.js';
 
 const WORKFLOWS: WorkflowId[] = ['idea-refinement', 'code-review'];
 
@@ -114,12 +114,14 @@ export async function runCommand(workflow: string, input: string | undefined, op
 
   let mode: IdeaMode | undefined;
   if (workflow === 'idea-refinement') {
-    const parsed = IdeaModeSchema.safeParse(opts.mode ?? 'council');
-    if (!parsed.success) {
-      process.stderr.write(`unknown idea mode "${opts.mode}". Available: quick, council, research\n`);
-      return 1;
+    if (opts.mode !== undefined) {
+      const parsed = IdeaModeSchema.safeParse(opts.mode);
+      if (!parsed.success) {
+        process.stderr.write(`unknown idea mode "${opts.mode}". Available: quick, council, research\n`);
+        return 1;
+      }
+      mode = parsed.data;
     }
-    mode = parsed.data;
   } else if (opts.mode) {
     process.stderr.write('--mode only applies to idea-refinement.\n');
     return 1;
@@ -139,6 +141,7 @@ export async function runCommand(workflow: string, input: string | undefined, op
       return 1;
     }
     text = resolved;
+    mode ??= inferIdeaMode(text);
   }
 
   if (opts.evidence) {

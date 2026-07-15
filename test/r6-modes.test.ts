@@ -9,6 +9,7 @@ import {
   callCategory,
   defaultBudgetFor,
   defaultDeadlineFor,
+  inferIdeaMode,
 } from '../src/orchestration/modes.js';
 import {
   mergePreflightReadings,
@@ -98,6 +99,13 @@ describe('R6 mode call plans', () => {
     expect(callCategory('S9')).toBe('verification');
     expect(callCategory('S4-codex-repair')).toBe('repair');
     expect(callCategory('S9b-plan')).toBe('planning');
+  });
+
+  it('selects research only for an explicit research request; an explicit flag can still override it', () => {
+    expect(inferIdeaMode('Do some research and check the links before planning this.')).toBe('research');
+    expect(inferIdeaMode('Look up the current hackathon rules.')).toBe('research');
+    expect(inferIdeaMode('Here is our package: https://npmjs.com/package/aiki-cli')).toBe('council');
+    expect(inferIdeaMode('Stress-test this product idea.')).toBe('council');
   });
 
   it('reserves chair + planner before any optional council call', async () => {

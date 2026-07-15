@@ -50,9 +50,9 @@ stop copy-pasting between them by hand.
 - **Evidence-grounded decisions.** Supply local sources with `--evidence`; Aiki records their paths and
   hashes, checks freshness and citations, independently verifies selected load-bearing claims, and shows the
   remaining coverage gaps before the chair.
-- **Three explicit modes.** Use `quick` for one structured analyst, `council` for bounded multi-model
-  deliberation, or `research` for current-fact work with Codex search. Aiki never hides this choice behind a
-  learned router.
+- **Three bounded modes.** Use `quick` for one structured analyst, `council` for bounded multi-model
+  deliberation, or `research` for current-fact work. Explicit research wording selects `research`
+  deterministically; `--mode` always overrides it.
 - **A decision dossier, not an essay.** Reports lead with the recommendation, verified evidence coverage,
   decisive facts, first action, strongest counter-case, and critical unknowns. Financial and threshold-heavy
   decisions can include graph-anchored numbers, payback, option commitments, and a go/no-go tripwire.
@@ -249,6 +249,12 @@ An idea run **auto-opens** its report in your browser when it finishes.
 SHA-256 hashes in the run, gives those paths to the read-only scouts, and never copies the source files or
 reads provider credential directories.
 
+Public `http(s)` links in an idea are snapshotted once before model calls and stored in
+`00a-url-sources.json`; every preflight reader and analyst sees that same text. npm package links use the
+registry metadata API. A snapshot records `FETCHED`, `BLOCKED`, or `FAILED` honestly. In research mode,
+an unreadable supplied link stops before paid calls and asks for pasted text or a public export instead of
+letting the council guess or grill you for facts that should have come from the link.
+
 ## The two workflows
 
 <p align="center">
@@ -263,8 +269,10 @@ only the disputes → report.
 complementary analyst lanes → deterministic claim/evidence graph audit → only decision-critical verification
 or rebuttal → evidence-linked chair → validation planner. The report is a graph-backed **decision dossier**,
 not an essay.
-Choose `--mode quick` for one structured analyst, `--mode council` (default) for the full decision council,
-or `--mode research` for source-grounded current-fact work. Aiki never chooses a mode with a learned router:
+Choose `--mode quick` for one structured analyst, `--mode council` for the full decision council, or
+`--mode research` for source-grounded current-fact work. Without a flag, the default is council unless the
+request explicitly asks to research, browse, look up, or check current sources; that conservative rule is
+deterministic, and an explicit flag wins:
 
 - a **reader-first decision card** — recommendation, verified evidence coverage, decisive facts, first action,
   strongest counter-case, and critical unknowns before audit detail
@@ -274,6 +282,8 @@ or `--mode research` for source-grounded current-fact work. Aiki never chooses a
 - an **evidence and coverage ledger** — source, date, freshness, verification, `NOT_APPLICABLE`, and missing evidence
 - **genuine disagreements and position changes** — explicit `CONCEDE` / `COUNTER` / `NARROW` events
 - **decision sensitivity and an executable experiment plan** — anchored tests with effort and kill signals
+- **requested product deliverables** — when the prompt asks for them, the same planner call must produce a
+  prioritized `MUST / SHOULD / LATER / NOT IN SCOPE` feature list and timeboxed implementation milestones
 - a **verified contribution ledger** — unique provider claims count only after independent verification
 - an **orchestration receipt and technical fold** — calls, degradation, submissions, edges, and graph events
 

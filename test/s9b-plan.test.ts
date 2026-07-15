@@ -145,6 +145,36 @@ describe('s9bPlan', () => {
     await expect(readFile(join(ctx.writer.dir, '09b-action-plan.json'), 'utf8')).resolves.toContain('pricing smoke test');
   });
 
+  it('requests and preserves a feature backlog and implementation plan when the user asked for them', async () => {
+    const prompts: string[] = [];
+    const deliverables = {
+      feature_backlog: {
+        must: [{ feature: 'Golden-path run', user_value: 'Produces a judge-ready result.', rationale: 'It proves the core workflow.', effort: 'S' }],
+        should: [],
+        later: [],
+        wont: [{ feature: 'General chat', reason: 'It dilutes the decision workflow.' }],
+      },
+      implementation_plan: {
+        milestones: [{ order: 1, timebox: 'Day 1', outcome: 'Golden path works.', tasks: ['Wire the existing engine.'], acceptance_test: 'Complete five clean runs.' }],
+      },
+    };
+    const ctx = makeCtx((prompt) => {
+      prompts.push(prompt);
+      return ok({ ...goodPlan, ...deliverables });
+    });
+    const requestedContract = {
+      ...contract,
+      requested_outputs: ['DECISION', 'FEATURE_BACKLOG', 'IMPLEMENTATION_PLAN'] as const,
+    };
+
+    const plan = await s9bPlan(ctx, requestedContract, seats, graph, judge);
+
+    expect(prompts[0]).toContain('FEATURE_BACKLOG');
+    expect(prompts[0]).toContain('IMPLEMENTATION_PLAN');
+    expect(plan).toMatchObject(deliverables);
+    expect(ctx.calls).toHaveLength(1);
+  });
+
   it('drops unanchored actions and repairs once', async () => {
     const prompts: string[] = [];
     const ctx = makeCtx((prompt) => {
