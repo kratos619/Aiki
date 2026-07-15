@@ -109,10 +109,20 @@ describe('smart entry router (V2)', () => {
     expect(routeInput('diff --git a/src/a.ts b/src/a.ts')).toBe('code-review');
     expect(routeInput('src/payments/charge.ts has an auth check')).toBe('code-review');
     expect(routeInput('const x = user.id;')).toBe('code-review');
+    expect(routeInput('function handler() { return user.id; }')).toBe('code-review');
+    expect(routeInput("import { z } from 'zod'")).toBe('code-review');
   });
 
   it('keeps product ideas on the idea flow', () => {
     expect(routeInput('Build a local tool that compares model critiques for code review')).toBe('idea');
+  });
+
+  // Regression: bare English words (class/export/import) and a prose semicolon are NOT code.
+  it('keeps idea prose containing code-ish words on the idea flow', () => {
+    expect(routeInput('A class scheduling app for yoga studios')).toBe('idea');
+    expect(routeInput('We should export our data to CSV and import it into Sheets')).toBe('idea');
+    expect(routeInput('First we onboard users; then we scale to other cities')).toBe('idea');
+    expect(routeInput('An import-export marketplace connecting local farmers to buyers')).toBe('idea');
   });
 
   it('maps quick actions and blocks repo actions outside git', () => {
