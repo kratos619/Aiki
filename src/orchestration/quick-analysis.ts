@@ -33,8 +33,12 @@ Output ONLY JSON:
   "confidence_notes": "<calibrated limits; explicitly single-analyst>",
   "action_plan": {"actions":[{"order":1,"action":"<test>","why":"<reason>",
     "validates":"<a local position id such as P1, or Q:<question prefix>>","effort":"S|M|L",
-    "kill_signal":"<result that stops or reshapes the idea>"}],"sequencing_note":"<why this order>"}
+    "kill_signal":"<result that stops or reshapes the idea>"}],"sequencing_note":"<why this order>",
+    "feature_backlog":{"must":[{"feature":"<name>","user_value":"<value>","rationale":"<why now>","effort":"S|M|L"}],"should":[],"later":[],"wont":[{"feature":"<name>","reason":"<why excluded>"}]},
+    "implementation_plan":{"milestones":[{"order":1,"timebox":"<Day 1>","outcome":"<working outcome>","tasks":["<task>"],"acceptance_test":"<observable pass condition>"}]}}
 }
+Honor DECISION CONTRACT.requested_outputs. Include feature_backlog and implementation_plan whenever
+those exact outputs are requested; keep them concrete and scoped to the smallest useful golden path.
 Use only supplied evidence or clearly labeled MODEL_KNOWLEDGE. Never invent URLs. JSON only.`;
 
 export function buildQuickPrompt(
@@ -91,6 +95,7 @@ export function quickActionPlan(
   provider: ProviderId,
   decision: QuickDecisionModelT,
   graph: DecisionGraph,
+  contract: DecisionContract,
 ): ActionPlanArtifact {
   const claimByPosition = new Map(graph.claims.flatMap((claim) => claim.position_ids.map((id) => [id, claim.id] as const)));
   const claimIds = new Set(graph.claims.map((claim) => claim.id));
@@ -100,7 +105,15 @@ export function quickActionPlan(
     const valid = claimIds.has(validates) || /^(?:Q|blind):/i.test(validates);
     return valid ? [{ ...action, validates }] : [];
   }).map((action, index) => ({ ...action, order: index + 1 }));
-  if (actions.length > 0) return ActionPlan.parse({ actions, sequencing_note: decision.action_plan.sequencing_note });
+  const requestedOutputs = contract.requested_outputs ?? ['DECISION'];
+  if (actions.length > 0) return ActionPlan.parse({
+    actions,
+    sequencing_note: decision.action_plan.sequencing_note,
+    ...(requestedOutputs.includes('FEATURE_BACKLOG') && decision.action_plan.feature_backlog
+      ? { feature_backlog: decision.action_plan.feature_backlog } : {}),
+    ...(requestedOutputs.includes('IMPLEMENTATION_PLAN') && decision.action_plan.implementation_plan
+      ? { implementation_plan: decision.action_plan.implementation_plan } : {}),
+  });
   ctx.addFlag('plan_fallback');
   return {
     kind: 'PlannerUnavailable',

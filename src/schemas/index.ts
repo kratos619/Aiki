@@ -26,6 +26,38 @@ export const WorkflowIdSchema = z.enum(['idea-refinement', 'code-review']);
 /** Explicit user-selected idea protocol. There is deliberately no learned mode router. */
 export const IdeaModeSchema = z.enum(['quick', 'council', 'research']);
 
+export const RequestedOutputSchema = z.enum([
+  'DECISION',
+  'FEATURE_BACKLOG',
+  'IMPLEMENTATION_PLAN',
+]);
+
+export const UrlSourceStatusSchema = z.enum(['FETCHED', 'BLOCKED', 'FAILED']);
+
+export const UrlSourceSnapshot = z.object({
+  id: z.string().regex(/^U[1-5]$/),
+  url: z.string().url(),
+  final_url: z.string().url().optional(),
+  status: UrlSourceStatusSchema,
+  title: z.string().min(1).optional(),
+  content_type: z.string().min(1).optional(),
+  accessed_at: z.string().datetime(),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  content: z.string().min(1).optional(),
+  error: z.string().min(1).optional(),
+}).strict().superRefine((source, ctx) => {
+  if (source.status === 'FETCHED' && (!source.content || !source.sha256)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'FETCHED source requires content and sha256' });
+  }
+  if (source.status !== 'FETCHED' && !source.error) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: `${source.status} source requires an error` });
+  }
+});
+
+export const UrlSourceSet = z.object({
+  sources: z.array(UrlSourceSnapshot).max(5),
+}).strict();
+
 export const DomainDimension = z
   .object({
     id: z.string().regex(/^D[1-5]$/),
@@ -56,6 +88,7 @@ export const DecisionContract = IntentContract.extend({
   core_rubric: z.array(z.string().min(1)).min(1),
   user_confirmed: z.boolean(),
   confirmation: z.enum(['user-confirmed', 'headless-defaulted']),
+  requested_outputs: z.array(RequestedOutputSchema).min(1).max(4).optional(),
 }).strict();
 
 /** Code review and old idea runs keep the smaller v1 contract. */
@@ -105,7 +138,7 @@ const RunBriefDraftBase = z
     evidence_supplied: z.array(z.string().min(1)).max(8),
     missing_axes: z.array(z.string().min(1)).max(8),
     domain_dimensions: z.array(DomainDimension).min(3).max(5),
-    questions: z.array(RunBriefQuestion).min(3).max(4),
+    questions: z.array(RunBriefQuestion).max(4),
   })
   .strict();
 
@@ -143,7 +176,7 @@ export const GrillAnswer = z
   .strict();
 
 export const RunBrief = RunBriefDraftBase.extend({
-  answers: z.array(GrillAnswer).min(3).max(4),
+  answers: z.array(GrillAnswer).max(4),
 }).superRefine((brief, ctx) => {
   checkQuestionIds(brief.questions, ctx);
   checkDomainDimensionIds(brief.domain_dimensions, ctx);
@@ -179,7 +212,7 @@ export const PreflightReading = z.object({
   evidence_supplied: z.array(z.string().min(1)).max(8),
   missing_evidence: z.array(z.string().min(1)).max(8),
   domain_dimensions: z.array(DomainDimension).min(3).max(5),
-  questions: z.array(RunBriefQuestion).min(3).max(4),
+  questions: z.array(RunBriefQuestion).max(4),
 }).strict().superRefine((reading, ctx) => {
   checkQuestionIds(reading.questions, ctx);
   checkDomainDimensionIds(reading.domain_dimensions, ctx);
@@ -930,6 +963,41 @@ export const IdeaChairReportModel = JudgeReportModel.omit({ adjudications: true 
 
 // ── S9b: ActionPlan (idea-refinement report v3) ─────────────────────────────
 
+export const FeatureBacklog = z.object({
+  must: z.array(z.object({
+    feature: z.string().min(1),
+    user_value: z.string().min(1),
+    rationale: z.string().min(1),
+    effort: z.enum(['S', 'M', 'L']),
+  }).strict()).min(1).max(6),
+  should: z.array(z.object({
+    feature: z.string().min(1),
+    user_value: z.string().min(1),
+    rationale: z.string().min(1),
+    effort: z.enum(['S', 'M', 'L']),
+  }).strict()).max(6),
+  later: z.array(z.object({
+    feature: z.string().min(1),
+    user_value: z.string().min(1),
+    rationale: z.string().min(1),
+    effort: z.enum(['S', 'M', 'L']),
+  }).strict()).max(6),
+  wont: z.array(z.object({
+    feature: z.string().min(1),
+    reason: z.string().min(1),
+  }).strict()).max(6),
+}).strict();
+
+export const ImplementationPlan = z.object({
+  milestones: z.array(z.object({
+    order: z.number().int().min(1),
+    timebox: z.string().min(1),
+    outcome: z.string().min(1),
+    tasks: z.array(z.string().min(1)).min(1).max(6),
+    acceptance_test: z.string().min(1),
+  }).strict()).min(1).max(7),
+}).strict();
+
 export const ActionPlan = z
   .object({
     actions: z
@@ -948,6 +1016,8 @@ export const ActionPlan = z
       .min(1)
       .max(7),
     sequencing_note: z.string().min(1),
+    feature_backlog: FeatureBacklog.optional(),
+    implementation_plan: ImplementationPlan.optional(),
   })
   .strict();
 
@@ -1039,6 +1109,10 @@ export const RunMeta = z.object({
 
 export type IntentContract = z.infer<typeof IntentContract>;
 export type DecisionContract = z.infer<typeof DecisionContract>;
+export type RequestedOutput = z.infer<typeof RequestedOutputSchema>;
+export type UrlSourceStatus = z.infer<typeof UrlSourceStatusSchema>;
+export type UrlSourceSnapshot = z.infer<typeof UrlSourceSnapshot>;
+export type UrlSourceSet = z.infer<typeof UrlSourceSet>;
 export type DomainDimension = z.infer<typeof DomainDimension>;
 export type IdeaMode = z.infer<typeof IdeaModeSchema>;
 export type Interpretation = z.infer<typeof Interpretation>;
@@ -1089,6 +1163,8 @@ export type JudgeReportModel = z.infer<typeof JudgeReportModel>;
 export type IdeaChairRuling = z.infer<typeof IdeaChairRuling>;
 export type IdeaChairReportModel = z.infer<typeof IdeaChairReportModel>;
 export type ActionPlan = z.infer<typeof ActionPlan>;
+export type FeatureBacklog = z.infer<typeof FeatureBacklog>;
+export type ImplementationPlan = z.infer<typeof ImplementationPlan>;
 export type PlannerUnavailable = z.infer<typeof PlannerUnavailable>;
 export type ActionPlanArtifact = z.infer<typeof ActionPlanArtifact>;
 export type QuickDecisionModel = z.infer<typeof QuickDecisionModel>;

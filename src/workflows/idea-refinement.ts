@@ -18,6 +18,7 @@ import { buildLanePrompts } from '../orchestration/idea-lanes.js';
 import type { DecisionContract, DomainDimension, IdeaMode } from '../schemas/index.js';
 import { preflight, renderDecisionInput } from '../orchestration/preflight.js';
 import { buildQuickPrompt, quickActionPlan, quickJudgeReport, s4QuickAnalyze } from '../orchestration/quick-analysis.js';
+import { snapshotUrlSources } from '../orchestration/url-sources.js';
 
 /** Idea-vetting core rubric: 13 mandatory coverage items. S0 adds 3-5 domain dimensions per run.
  *  Inlined here (like the S4 template) while the skill/`rubric.json` loader (§11)
@@ -126,9 +127,20 @@ export const IDEA_STAGES: StageInfo[] = [
  *  `runStage` so the TUI timeline (T8) gets start/end events; headless, that's a no-op. */
 export async function runIdeaRefinement(ctx: RunCtx, input: string): Promise<void> {
   if (ctx.evidencePack) await ctx.writer.writeInput('evidence-pack.json', JSON.stringify(ctx.evidencePack, null, 2));
+  const urlSources = await snapshotUrlSources(input);
+  await ctx.writer.writeJson('url-sources', urlSources);
+  const unreadableSources = urlSources.sources.filter((source) => source.status !== 'FETCHED');
+  if (ctx.mode === 'research' && unreadableSources.length > 0) {
+    const details = unreadableSources.map((source) => `${source.url} (${source.status}: ${source.error})`).join('; ');
+    throw new StageError(
+      'S0',
+      'SOURCE_UNREADABLE',
+      `research stopped before model calls because a supplied source could not be read: ${details}. Paste the relevant text or provide a public export, then rerun.`,
+    );
+  }
   const { contract, brief } = await runStage(ctx, 'S0', () =>
-    preflight(ctx, input, IDEA_RUBRIC.map((item) => item.label)));
-  const grilledInput = renderDecisionInput(input, brief);
+    preflight(ctx, input, IDEA_RUBRIC.map((item) => item.label), urlSources));
+  const grilledInput = renderDecisionInput(input, brief, urlSources);
 
   // Persist the input as a file so S4's "read the file at {{INPUT_PATH}}" resolves (not a stage).
   await ctx.writer.writeInput('idea.md', input);
@@ -162,7 +174,7 @@ export async function runIdeaRefinement(ctx: RunCtx, input: string): Promise<voi
       return report;
     });
     const actionPlan = await runStage(ctx, 'S9b', async () => {
-      const plan = quickActionPlan(ctx, quick.seat.provider, quick.decision, graph);
+      const plan = quickActionPlan(ctx, quick.seat.provider, quick.decision, graph, contract);
       await ctx.writer.writeJson('action-plan', plan);
       return plan;
     });

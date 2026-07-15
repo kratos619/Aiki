@@ -4,7 +4,7 @@
 // A truly missing required field is a template bug (fail loudly); degraded-but-valid
 // states (S8 skipped, items UNVERIFIED, empty consensus) render normally. User-facing → DISPLAY_NAME.
 
-import type { ActionPlanArtifact, ClaimVerificationSet, IdeaMode, IntentContract, JudgeReport, RebuttalEventSet, VerificationSet } from '../../schemas/index.js';
+import type { ActionPlanArtifact, ClaimVerificationSet, FeatureBacklog, IdeaMode, ImplementationPlan, IntentContract, JudgeReport, RebuttalEventSet, RequestedOutput, VerificationSet } from '../../schemas/index.js';
 import type { ProviderId } from '../../providers/types.js';
 import { DISPLAY_NAME } from '../../providers/types.js';
 import type { RunCtx } from '../context.js';
@@ -183,6 +183,9 @@ export interface DecisionDossier {
     note: string;
     actions: Array<{ order: number; action: string; why: string; validates: string; effort: string; killSignal: string }>;
   };
+  featureBacklog?: FeatureBacklog;
+  implementationPlan?: ImplementationPlan;
+  missingRequestedOutputs: Array<'FEATURE_BACKLOG' | 'IMPLEMENTATION_PLAN'>;
   counterCase: { available: boolean; reasoning: string; claimIds: string[] };
   contributions: Array<{ provider: ProviderId; name: string; verifiedUniqueClaimIds: string[] }>;
   technical: {
@@ -278,6 +281,7 @@ function buildDossier(args: {
   actionPlan?: ActionPlanArtifact;
   rebuttals?: RebuttalEventSet;
   rubric: RubricItem[];
+  requestedOutputs: RequestedOutput[];
 }): DecisionDossier {
   const { graph, judgeReport, actionPlan, rebuttals, seats } = args;
   const claimById = new Map(graph.claims.map((claim) => [claim.id, claim]));
@@ -429,6 +433,12 @@ function buildDossier(args: {
           : 'No planner artifact was recorded.',
         actions: [],
       };
+  const featureBacklog = actionPlan && !('kind' in actionPlan) ? actionPlan.feature_backlog : undefined;
+  const implementationPlan = actionPlan && !('kind' in actionPlan) ? actionPlan.implementation_plan : undefined;
+  const missingRequestedOutputs: DecisionDossier['missingRequestedOutputs'] = [
+    ...(args.requestedOutputs.includes('FEATURE_BACKLOG') && !featureBacklog ? ['FEATURE_BACKLOG' as const] : []),
+    ...(args.requestedOutputs.includes('IMPLEMENTATION_PLAN') && !implementationPlan ? ['IMPLEMENTATION_PLAN' as const] : []),
+  ];
 
   const counter = judgeReport.strongest_counter_case;
   const contributions = args.models.map((model) => ({
@@ -469,6 +479,9 @@ function buildDossier(args: {
     coverage,
     sensitivity,
     experiments,
+    ...(featureBacklog ? { featureBacklog } : {}),
+    ...(implementationPlan ? { implementationPlan } : {}),
+    missingRequestedOutputs,
     counterCase: counter
       ? { available: true, reasoning: counter.reasoning, claimIds: counter.claim_ids.filter((id) => claimById.has(id)) }
       : { available: false, reasoning: 'No graph-anchored counter-case was recorded.', claimIds: [] },
@@ -498,6 +511,8 @@ export function buildDecisionReport(ctx: RunCtx, args: S10Args): DecisionReportJ
   const positionById = new Map(graph.positions.map((position) => [position.id, position]));
   const claimById = new Map(graph.claims.map((claim) => [claim.id, claim]));
   const openQuestions = mergeOpenQuestions(seats);
+  const requestedOutputs: RequestedOutput[] = (contract as IntentContract & { requested_outputs?: RequestedOutput[] }).requested_outputs
+    ?? ['DECISION'];
 
   const claims = graph.claims.map((claim) => {
     const stances: Partial<Record<ProviderId, MapStance>> = {};
@@ -626,6 +641,7 @@ export function buildDecisionReport(ctx: RunCtx, args: S10Args): DecisionReportJ
     actionPlan,
     rebuttals: args.rebuttals,
     rubric: args.rubric ?? [],
+    requestedOutputs,
   });
   const decisionSnapshot = judgeReport.decision_snapshot ? {
     decisiveNumbers: judgeReport.decision_snapshot.decisive_numbers.map((item) => ({

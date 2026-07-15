@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- Public URL snapshots for idea prompts, including an npm registry adapter, private-network rejection,
+  auditable `FETCHED` / `BLOCKED` / `FAILED` status, and a research-mode gate that stops before model calls
+  when a supplied source cannot be read.
+- Requested-output planning: prompts that ask for a feature list or implementation plan now carry that
+  requirement through the decision contract, the existing planner call, machine JSON, Markdown, and HTML.
+
+### Changed
+- Explicit research wording selects research mode deterministically when `--mode` is absent; an explicit
+  mode remains authoritative. Preflight asks zero to four questions and may not repeat facts already present
+  in the user prompt or a fetched source.
+- Reader-facing report sections use human claim text instead of internal graph ids such as `G1`; raw ids
+  remain in machine artifacts and the Markdown technical audit.
+
 ## 0.3.0 — 2026-07-15 — evidence-grounded decision council
 
 This release turns idea refinement into a bounded, evidence-linked decision workflow with explicit modes,

@@ -25,6 +25,13 @@ export const IDEA_MODE_PLANS: Record<IdeaMode, IdeaModePlan> = {
 export const LEGACY_DEFAULT_BUDGET = 18;
 export const LEGACY_DEADLINE_MS = 20 * MINUTE;
 
+/** Conservative intent hint. A URL alone never changes protocol; explicit --mode remains authoritative. */
+export function inferIdeaMode(input: string): IdeaMode {
+  return /\b(?:research|look\s+up|browse\s+(?:the\s+)?(?:web|internet)|search\s+(?:the\s+)?(?:web|internet)|check\s+(?:the\s+)?(?:links?|sources?|current|latest)|verify\s+(?:the\s+)?(?:links?|sources?|current|latest))\b/i.test(input)
+    ? 'research'
+    : 'council';
+}
+
 export function defaultBudgetFor(
   workflow: 'idea-refinement' | 'code-review',
   mode: IdeaMode = 'council',

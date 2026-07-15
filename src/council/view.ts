@@ -4,7 +4,7 @@ import { DISPLAY_NAME, type ProviderId } from '../providers/types.js';
 import type { WorkflowId } from '../orchestration/context.js';
 import { RoleOutput as RoleOutputSchema, type ActionPlanArtifact, type AnnotatedFinding, type DecisionGraph, type DisagreementMap, type IdeaMode, type JudgeReport, type Recommendation, type ReviewMap, type RoleOutput, type RunMeta } from '../schemas/index.js';
 import { deriveAudit, deriveScorecard, mergeOpenQuestions, type AuditRow, type DecisionReportJson, type ScorecardRow } from '../orchestration/stages/s10-render.js';
-import { renderDecisionDossierMarkdown } from '../orchestration/decision-dossier.js';
+import { readerClaimLabel, readerClaimRefs, renderDecisionDossierMarkdown, stripReaderClaimIds } from '../orchestration/decision-dossier.js';
 import type { SeatOutput } from '../orchestration/stages/s4-analyze.js';
 import { IDEA_RUBRIC } from '../workflows/idea-refinement.js';
 import { listArtifacts, readJsonArtifact } from '../storage/runs-read.js';
@@ -449,30 +449,33 @@ function renderDossierIdeaBody(report: DecisionReportJson): string {
   const tone: Tone = dossier.recommendation.status === 'ACCEPTED' ? 'good'
     : dossier.recommendation.status === 'REJECTED' ? 'risk' : 'caution';
   const conditions = dossier.recommendation.conditions.length
-    ? `<details class="decision-details"><summary>Conditions and decision state</summary><div><p><strong>Internal state:</strong> ${escapeHtml(dossier.recommendation.status)}</p><ul>${dossier.recommendation.conditions.map((condition) => `<li>${escapeHtml(condition.text)} <code>${escapeHtml(dossierRefs(condition.claimIds))}</code></li>`).join('')}</ul></div></details>`
+    ? `<details class="decision-details"><summary>Conditions and decision state</summary><div><p><strong>Internal state:</strong> ${escapeHtml(dossier.recommendation.status)}</p><ul>${dossier.recommendation.conditions.map((condition) => `<li>${escapeHtml(condition.text)}</li>`).join('')}</ul></div></details>`
     : '';
   const startHere = dossier.experiments.actions[0]?.action ?? 'No executable next step was produced.';
+  const recommendationLead = stripReaderClaimIds(dossier.recommendation.reason);
+  const recommendationDetail = stripReaderClaimIds(dossier.recommendation.summary);
   const factLabels = ['Decisive result', 'Consequence', 'Supporting signal'];
   const facts = keyFindings.slice(0, 3).map((finding, index) => `<article class="decision-fact"><span>${factLabels[index]}</span><p>${escapeHtml(finding)}</p></article>`).join('');
   const snapshot = report.decisionSnapshot;
   const decisiveNumbers = snapshot ? `<div class="decision-numbers">
       <span class="section-eyebrow">Decisive numbers</span>
-      <div class="table-wrap"><table class="snapshot-table"><thead><tr><th>Metric</th><th>Value</th><th>What it means</th></tr></thead><tbody>${snapshot.decisiveNumbers.map((item) => `<tr><td>${escapeHtml(item.label)}</td><td class="number-value">${escapeHtml(item.value)}</td><td>${escapeHtml(item.meaning)} <code>${escapeHtml(dossierRefs(item.claimIds))}</code></td></tr>`).join('')}</tbody></table></div>
-      ${snapshot.payback ? `<div class="payback-result"><span>Payback · ${escapeHtml(snapshot.payback.status.replaceAll('_', ' '))}</span><strong>${escapeHtml(snapshot.payback.result)}</strong><p>${escapeHtml(snapshot.payback.basis)} <code>${escapeHtml(dossierRefs(snapshot.payback.claimIds))}</code></p></div>` : ''}
+      <div class="table-wrap"><table class="snapshot-table decisive-table"><thead><tr><th>Metric</th><th>Value</th><th>What it means</th></tr></thead><tbody>${snapshot.decisiveNumbers.map((item) => `<tr><td>${escapeHtml(item.label)}</td><td class="number-value">${escapeHtml(item.value)}</td><td>${escapeHtml(item.meaning)}</td></tr>`).join('')}</tbody></table></div>
+      ${snapshot.payback ? `<div class="payback-result"><span>Payback · ${escapeHtml(snapshot.payback.status.replaceAll('_', ' '))}</span><strong>${escapeHtml(snapshot.payback.result)}</strong><p>${escapeHtml(snapshot.payback.basis)}</p></div>` : ''}
     </div>` : '';
   const optionComparison = snapshot ? `<div class="option-comparison">
       <span class="section-eyebrow">Options at a glance</span>
-      <div class="table-wrap"><table class="snapshot-table"><thead><tr><th>Path</th><th>Commitment</th><th>Basis</th><th>Trade-off</th></tr></thead><tbody>${snapshot.options.map((option) => `<tr><td>${escapeHtml(option.label)}</td><td class="number-value">${escapeHtml(option.commitment)}</td><td><span class="basis-chip ${option.commitmentKind.toLowerCase()}">${escapeHtml(option.commitmentKind.replace('_', ' '))}</span></td><td>${escapeHtml(option.tradeoff)}${option.claimIds.length ? ` <code>${escapeHtml(dossierRefs(option.claimIds))}</code>` : ''}</td></tr>`).join('')}</tbody></table></div>
+      <div class="table-wrap"><table class="snapshot-table options-table"><thead><tr><th>Path</th><th>Commitment</th><th>Basis</th><th>Trade-off</th></tr></thead><tbody>${snapshot.options.map((option) => `<tr><td>${escapeHtml(option.label)}</td><td class="number-value">${escapeHtml(option.commitment)}</td><td><span class="basis-chip ${option.commitmentKind.toLowerCase()}">${escapeHtml(option.commitmentKind.replace('_', ' '))}</span></td><td>${escapeHtml(option.tradeoff)}</td></tr>`).join('')}</tbody></table></div>
     </div>` : '';
-  const tripwire = snapshot?.tripwire ? `<div class="tripwire"><span class="tag">Go/no-go tripwire</span><strong>${escapeHtml(snapshot.tripwire.metric)} · ${escapeHtml(snapshot.tripwire.threshold)}</strong><p>${escapeHtml(snapshot.tripwire.decisionRule)} <code>${escapeHtml(dossierRefs(snapshot.tripwire.claimIds))}</code></p></div>` : '';
+  const tripwire = snapshot?.tripwire ? `<div class="tripwire"><span class="tag">Go/no-go tripwire</span><strong>${escapeHtml(snapshot.tripwire.metric)} · ${escapeHtml(snapshot.tripwire.threshold)}</strong><p>${escapeHtml(snapshot.tripwire.decisionRule)}</p></div>` : '';
   const topCounterCase = dossier.counterCase.reasoning;
   const unknowns = criticalUnknowns.length
     ? `<ul class="critical-unknowns">${criticalUnknowns.map((unknown) => `<li>${escapeHtml(unknown)}</li>`).join('')}</ul>`
     : '<p class="muted">No verdict-flipping unknown was recorded.</p>';
   const recommendation = `<div class="verdict tone-${tone}">
-    <span class="pill">Council recommendation</span>
+    <div class="decision-status"><span class="pill">Council recommendation</span><span>${escapeHtml(dossier.recommendation.status.replaceAll('_', ' '))}</span></div>
     ${decisiveNumbers}
-    <p class="verdict-text">${escapeHtml(dossier.recommendation.summary)}</p>
+    <p class="verdict-text">${escapeHtml(recommendationLead)}</p>
+    <p class="verdict-detail">${escapeHtml(recommendationDetail)}</p>
     <div class="evidence-coverage ${coverageLabel.toLowerCase()}">
       <div><span class="fk">Evidence coverage</span><strong>${coverageLabel} · ${dossierPct(confidence.verificationCoverage)}</strong></div>
       <div class="coverage-track"><span style="width:${Math.round(confidence.verificationCoverage * 100)}%"></span></div>
@@ -489,27 +492,27 @@ function renderDossierIdeaBody(report: DecisionReportJson): string {
     ${report.verdict.criticalWarning ? `<div class="critical-warning"><span class="tag">Critical warning</span><p>${escapeHtml(report.verdict.criticalWarning)}</p></div>` : ''}
     <p class="council-read"><strong>Council read:</strong> ${escapeHtml(dossierCouncilRead(report))}</p>
     ${conditions}
-    <div class="evidence-anchors"><span>Evidence anchors</span><code>${escapeHtml(dossierRefs(dossier.recommendation.claimIds))}</code></div>
+    ${dossier.recommendation.claimIds.length ? `<details class="decision-evidence"><summary>Evidence behind this recommendation (${dossier.recommendation.claimIds.length})</summary><ul>${dossier.recommendation.claimIds.map((id) => `<li>${escapeHtml(readerClaimLabel(report, id))}</li>`).join('')}</ul></details>` : ''}
     ${dossierWarning(report, ['synthesis_suspect'])}
     ${dossier.recommendation.claimIds.length ? '' : '<div class="warns"><span class="warn">⚑ DEGRADED: recommendation has no stored graph anchor</span></div>'}
   </div>`;
 
   const claimChain = dossierTable(
-    ['Claim ID', 'Claim', 'Ruling', 'Evidence status', 'Depends on'],
-    dossier.claimChain.map((claim) => [claim.claimId, claim.text, claim.ruling, claim.evidenceStatus, dossierRefs(claim.dependsOn)]),
+    ['Claim', 'Ruling', 'Evidence status', 'Depends on'],
+    dossier.claimChain.map((claim) => [claim.text, claim.ruling, claim.evidenceStatus, readerClaimRefs(report, claim.dependsOn)]),
   );
   const evidence = `${dossierWarning(report, ['verification_skipped', 'research_ungrounded'])}${dossierTable(
     ['Evidence ID', 'Source', 'Date', 'Freshness', 'Verification', 'Linked claims'],
-    dossier.evidence.map((item) => [item.id, `${item.source} (${item.sourceKind})`, item.date, item.freshness, item.verificationStatus, dossierRefs(item.claimIds)]),
+    dossier.evidence.map((item) => [item.id, `${item.source} (${item.sourceKind})`, item.date, item.freshness, item.verificationStatus, readerClaimRefs(report, item.claimIds)]),
   )}`;
 
   const disagreementCards = report.disagreements.length
-    ? report.disagreements.map((item) => `<article class="card debate-card"><h3><code>${escapeHtml(item.id)}</code> ${escapeHtml(item.topic)}</h3>${item.sides.map((side) => `<div class="field"><span class="fk">${escapeHtml(side.stance)} · ${escapeHtml(side.providers.map(providerName).join(', '))}</span><p>${escapeHtml(side.reasoning.join(' '))}</p></div>`).join('')}<div class="field"><span class="fk">Ruling</span><p>${escapeHtml(item.status)} · ${escapeHtml(item.ruling)}</p></div>${item.reasoning ? `<div class="field"><span class="fk">Why</span><p>${escapeHtml(item.reasoning)}</p></div>` : ''}</article>`).join('')
+    ? report.disagreements.map((item) => `<article class="card debate-card"><h3>${escapeHtml(item.topic)}</h3>${item.sides.map((side) => `<div class="field"><span class="fk">${escapeHtml(side.stance)} · ${escapeHtml(side.providers.map(providerName).join(', '))}</span><p>${escapeHtml(side.reasoning.join(' '))}</p></div>`).join('')}<div class="field"><span class="fk">Ruling</span><p>${escapeHtml(item.status)} · ${escapeHtml(item.ruling)}</p></div>${item.reasoning ? `<div class="field"><span class="fk">Why</span><p>${escapeHtml(item.reasoning)}</p></div>` : ''}</article>`).join('')
     : `<p class="muted">${report.mode === 'quick' ? 'No cross-model disagreement analysis runs in quick mode.' : 'No genuine disagreements were stored.'}</p>`;
   const changes = dossier.positionChanges.length
     ? dossierTable(
         ['Event', 'Claim', 'Responder', 'Change', 'Evidence', 'Detail'],
-        dossier.positionChanges.map((event) => [event.eventId, event.claimId, providerName(event.responder), event.response, dossierRefs(event.evidenceIds), event.narrowedProposition ?? event.reasoning]),
+        dossier.positionChanges.map((event) => [event.eventId, readerClaimLabel(report, event.claimId), providerName(event.responder), event.response, dossierRefs(event.evidenceIds), event.narrowedProposition ?? event.reasoning]),
       )
     : '<p class="muted">No CONCEDE, COUNTER, or NARROW event was recorded.</p>';
   const minority = `<h3>Minority report</h3>${report.minority.dissent.length
@@ -520,30 +523,38 @@ function renderDossierIdeaBody(report: DecisionReportJson): string {
   const disagreement = `${dossierWarning(report, ['single_model', 'low_diversity'])}${disagreementCards}<h3>Position changes</h3>${changes}${minority}`;
 
   const shared = dossier.sharedConcerns.length
-    ? `<h3>Shared concerns</h3><ul class="agree">${dossier.sharedConcerns.map((item) => `<li><p><code>${escapeHtml(item.claimId)}</code> ${escapeHtml(item.text)}</p><span class="who-names">${escapeHtml(item.providerIds.map(providerName).join(', '))} · ${escapeHtml(item.evidenceStatus)}</span></li>`).join('')}</ul>`
+    ? `<h3>Shared concerns</h3><ul class="agree">${dossier.sharedConcerns.map((item) => `<li><p>${escapeHtml(item.text)}</p><span class="who-names">${escapeHtml(item.providerIds.map(providerName).join(', '))} · ${escapeHtml(item.evidenceStatus)}</span></li>`).join('')}</ul>`
     : '<h3>Shared concerns</h3><p class="muted">None recorded.</p>';
   const unique = dossier.uniqueSupportedInsights.length
-    ? `<h3>Unique supported insights</h3><ul class="agree">${dossier.uniqueSupportedInsights.map((item) => `<li><p><code>${escapeHtml(item.claimId)}</code> ${escapeHtml(item.text)}</p><span class="who-names">${escapeHtml(providerName(item.providerId))} · ${escapeHtml(item.verificationStatus)}</span></li>`).join('')}</ul>`
+    ? `<h3>Unique supported insights</h3><ul class="agree">${dossier.uniqueSupportedInsights.map((item) => `<li><p>${escapeHtml(item.text)}</p><span class="who-names">${escapeHtml(providerName(item.providerId))} · ${escapeHtml(item.verificationStatus)}</span></li>`).join('')}</ul>`
     : '<h3>Unique supported insights</h3><p class="muted">None recorded.</p>';
 
   const coverage = dossierTable(
-    ['Dimension', 'Status', 'Claim IDs'],
-    dossier.coverage.map((item) => [item.label, item.status, dossierRefs(item.claimIds)]),
+    ['Dimension', 'Status', 'Related claims'],
+    dossier.coverage.map((item) => [item.label, item.status, readerClaimRefs(report, item.claimIds)]),
   );
   const sensitivity = dossierTable(
-    ['Claim ID', 'Fact', 'Sensitivity', 'If false', 'What would change it', 'Linked claims'],
-    dossier.sensitivity.map((item) => [item.claimId, item.fact, item.sensitivity, item.impactIfFalse, item.whatWouldChangeIt, dossierRefs(item.linkedClaimIds)]),
+    ['Fact', 'Sensitivity', 'If false', 'What would change it', 'Linked claims'],
+    dossier.sensitivity.map((item) => [item.fact, item.sensitivity, item.impactIfFalse, item.whatWouldChangeIt, readerClaimRefs(report, item.linkedClaimIds)]),
   );
-  const experiments = `${dossierWarning(report, ['plan_fallback', 'plan_skipped'])}${dossier.experiments.status === 'DEGRADED' ? `<div class="warns"><span class="warn">⚑ DEGRADED: ${escapeHtml(dossier.experiments.note)}</span></div>` : ''}${dossierTable(
-    ['#', 'Experiment', 'Why', 'Validates', 'Effort', 'Kill signal'],
-    dossier.experiments.actions.map((action) => [String(action.order), action.action, action.why, action.validates, action.effort, action.killSignal]),
-  )}${dossier.experiments.actions.length ? `<p class="lede">${escapeHtml(dossier.experiments.note)}</p>` : ''}`;
+  const experiments = `${dossierWarning(report, ['plan_fallback', 'plan_skipped'])}${dossier.experiments.status === 'DEGRADED' ? `<div class="warns"><span class="warn">⚑ DEGRADED: ${escapeHtml(dossier.experiments.note)}</span></div>` : ''}${dossier.experiments.actions.length ? `<div class="experiment-list">${dossier.experiments.actions.map((action) => `<article class="experiment-card"><div class="experiment-head"><span>${String(action.order).padStart(2, '0')}</span><h4>${escapeHtml(action.action)}</h4><strong>${escapeHtml(action.effort)}</strong></div><p>${escapeHtml(action.why)}</p><dl><div><dt>Validates</dt><dd>${escapeHtml(readerClaimLabel(report, action.validates))}</dd></div><div><dt>Stop if</dt><dd>${escapeHtml(action.killSignal)}</dd></div></dl></article>`).join('')}</div><p class="lede">${escapeHtml(dossier.experiments.note)}</p>` : '<p class="muted">No executable experiment was produced.</p>'}`;
+  const missingDeliverables = (dossier.missingRequestedOutputs ?? []).length
+    ? `<div class="warns"><span class="warn">⚑ DEGRADED: requested output missing: ${escapeHtml(dossier.missingRequestedOutputs.join(', '))}</span></div>`
+    : '';
+  const backlog = dossier.featureBacklog;
+  const featurePriorities = backlog ? `<h3>Feature priorities</h3><div class="feature-groups">${([
+    ['MUST', 'Build for the first usable release', backlog.must],
+    ['SHOULD', 'Add after the core path is stable', backlog.should],
+    ['LATER', 'Keep out of the current build', backlog.later],
+  ] as const).filter(([, , items]) => items.length).map(([priority, description, items]) => `<section class="feature-group priority-${priority.toLowerCase()}"><header><div><span>${priority}</span><h4>${escapeHtml(description)}</h4></div><strong>${items.length}</strong></header><ul>${items.map((item) => `<li><div class="feature-title"><strong>${escapeHtml(item.feature)}</strong><span>${escapeHtml(item.effort)}</span></div><p>${escapeHtml(item.user_value)}</p><small>${escapeHtml(item.rationale)}</small></li>`).join('')}</ul></section>`).join('')}</div>${backlog.wont.length ? `<details class="inline-fold"><summary>Not in this scope (${backlog.wont.length})</summary><ul>${backlog.wont.map((item) => `<li><strong>${escapeHtml(item.feature)}</strong> — ${escapeHtml(item.reason)}</li>`).join('')}</ul></details>` : ''}` : '';
+  const implementationPlan = dossier.implementationPlan ? `<h3>Implementation plan</h3><ol class="milestone-list">${dossier.implementationPlan.milestones.map((milestone) => `<li><div class="milestone-marker"><span>${String(milestone.order).padStart(2, '0')}</span><small>${escapeHtml(milestone.timebox)}</small></div><article><h4>${escapeHtml(milestone.outcome)}</h4><ul>${milestone.tasks.map((task) => `<li>${escapeHtml(task)}</li>`).join('')}</ul><div class="acceptance"><span>Done when</span><p>${escapeHtml(milestone.acceptance_test)}</p></div></article></li>`).join('')}</ol>` : '';
+  const actionPlan = `${missingDeliverables}${featurePriorities}${implementationPlan}<h3>Validation plan</h3>${experiments}`;
   const counterCase = dossier.counterCase.available
-    ? `<article class="card risk-card"><p>${escapeHtml(dossier.counterCase.reasoning)}</p><div class="field"><span class="fk">Evidence anchors</span><p><code>${escapeHtml(dossierRefs(dossier.counterCase.claimIds))}</code></p></div></article>`
+    ? `<article class="card risk-card"><p>${escapeHtml(dossier.counterCase.reasoning)}</p><div class="field"><span class="fk">Evidence behind this counter-case</span><p>${escapeHtml(readerClaimRefs(report, dossier.counterCase.claimIds))}</p></div></article>`
     : `<div class="warns"><span class="warn">⚑ DEGRADED: ${escapeHtml(dossier.counterCase.reasoning)}</span></div>`;
   const contributions = `${dossierWarning(report, ['verification_skipped', 'single_model', 'low_diversity'])}<p class="lede">Only unique claims that survived independent verification receive credit.</p>${dossierTable(
-    ['Provider', 'Verified unique claim IDs', 'Count'],
-    dossier.contributions.map((item) => [item.name, dossierRefs(item.verifiedUniqueClaimIds), String(item.verifiedUniqueClaimIds.length)]),
+    ['Provider', 'Verified unique contributions', 'Count'],
+    dossier.contributions.map((item) => [item.name, readerClaimRefs(report, item.verifiedUniqueClaimIds), String(item.verifiedUniqueClaimIds.length)]),
   )}`;
   const receipt = `<div class="receipt">
     <span>mode ${escapeHtml(report.mode)}</span><span>${report.receipt.calls}/${report.receipt.budget} provider calls</span>
@@ -561,7 +572,7 @@ function renderDossierIdeaBody(report: DecisionReportJson): string {
     : '<p class="muted">No verdict-flipping open question was recorded.</p>';
   const runDetails = `<article class="card">
     <div class="field"><span class="fk">Report</span><p><code>${escapeHtml(report.reportId)}</code> · ${escapeHtml(report.generatedAt)}</p></div>
-    <div class="field"><span class="fk">Original task</span><p>${escapeHtml(report.task.original)}</p></div>
+    <details class="inline-fold compact"><summary>View original request</summary><p>${escapeHtml(report.task.original)}</p></details>
     <div class="field"><span class="fk">Normalized question</span><p>${escapeHtml(report.task.normalized)}</p></div>
     <div class="field"><span class="fk">Constraints</span><p>${escapeHtml(report.task.constraints.join('; ') || 'none recorded')}</p></div>
     <div class="field"><span class="fk">Success criteria</span><p>${escapeHtml(report.task.successCriteria.join('; ') || 'none recorded')}</p></div>
@@ -575,18 +586,18 @@ function renderDossierIdeaBody(report: DecisionReportJson): string {
     <h4 class="fold-h">Position-change events</h4><ul>${dossier.technical.events.map((event) => `<li><code>${escapeHtml(event.eventId)}</code>: ${escapeHtml(providerName(event.responder))} ${escapeHtml(event.response)} <code>${escapeHtml(event.claimId)}</code> — ${escapeHtml(event.reasoning)}</li>`).join('') || '<li>none</li>'}</ul>
   </div></details>`;
 
-  return [
+  const readerBody = [
     section('01', 'Decision', recommendation, 60),
-    section('02', 'Action plan', experiments, 100, 'The smallest useful test, its effort, and the signal that should stop the idea.'),
+    section('02', 'Action plan', actionPlan, 100, 'Requested product priorities, implementation milestones, and the smallest decisive validation test.'),
     section('03', 'Why this decision', claimChain, 140, 'The load-bearing claim chain behind the recommendation.'),
     section('04', 'What could change the decision', `<h3>Decision-sensitive facts</h3>${sensitivity}<h3>Strongest counter-case</h3>${counterCase}`, 180),
     section('05', 'Evidence and verification', evidence, 220),
-    section('06', 'Risks, gaps, and open questions', `<h3>Risks</h3>${risks}<h3>Coverage</h3>${coverage}<h3>Open questions</h3>${questions}`, 260),
+    section('06', 'Risks, gaps, and open questions', `<h3>Risks</h3>${risks}<details class="inline-fold"><summary>View coverage ledger (${dossier.coverage.length})</summary>${coverage}</details><h3>Open questions</h3>${questions}`, 260),
     section('07', 'Disagreement and dissent', disagreement, 300),
     section('08', 'What the council added', `${shared}${unique}<h3>Verified unique contributions</h3>${contributions}`, 340),
     section('09', 'Run details', runDetails, 380),
-    section('10', 'Technical audit', technical, 420),
   ].join('');
+  return `${stripReaderClaimIds(readerBody)}${section('10', 'Technical audit', technical, 420)}`;
 }
 
 function renderLegacyIdeaBody(view: CouncilView): string {
@@ -1024,7 +1035,7 @@ export function renderCouncilHtml(view: CouncilView): string {
 *{box-sizing:border-box;}
 html{-webkit-text-size-adjust:100%;}
 body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.6;}
-main{max-width:880px;margin:0 auto;padding:34px 24px 90px;}
+main{max-width:940px;margin:0 auto;padding:34px 24px 90px;}
 a{color:var(--accent);}
 h1{font-family:var(--serif);font-weight:600;letter-spacing:-.025em;}
 h2,h3,h4{font-family:var(--sans);font-weight:650;letter-spacing:-.01em;}
@@ -1045,12 +1056,15 @@ p{margin:0 0 .6em;}
 .verdict::before{content:"";position:absolute;left:0;top:0;bottom:0;width:6px;}
 .tone-good::before{background:var(--good);} .tone-caution::before{background:var(--caution);} .tone-risk::before{background:var(--risk);}
 .pill{display:inline-block;font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:.02em;
-  padding:5px 13px;border-radius:100px;margin-bottom:14px;}
+  padding:5px 13px;border-radius:100px;}
 .tone-good .pill{background:var(--good-bg);color:var(--good);} .tone-caution .pill{background:var(--caution-bg);color:var(--caution);}
 .tone-risk .pill{background:var(--risk-bg);color:var(--risk);}
-.verdict-text{font-family:var(--serif);font-weight:600;font-size:clamp(22px,3vw,29px);line-height:1.32;color:var(--ink);margin:0;max-width:28ch;}
+.decision-status{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px;}
+.decision-status>span:last-child{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;color:var(--soft);text-transform:uppercase;}
+.verdict-text{font-family:var(--sans);font-weight:700;font-size:clamp(18px,2.3vw,21px);line-height:1.42;color:var(--ink);margin:0;max-width:68ch;letter-spacing:-.012em;}
+.verdict-detail{font-size:14.5px;line-height:1.62;color:var(--soft);margin:9px 0 0;max-width:76ch;}
 .section-eyebrow{display:block;font-family:var(--mono);font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--accent);margin-bottom:9px;}
-.decision-numbers{margin:4px 0 22px;}.snapshot-table{width:100%;border-collapse:collapse;font-size:13.5px;line-height:1.4;}
+.decision-numbers{margin:0 0 20px;}.snapshot-table{width:100%;border-collapse:collapse;font-size:13.5px;line-height:1.4;}
 .snapshot-table th{padding:8px 10px;text-align:left;font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);border-bottom:1px solid var(--line);}
 .snapshot-table td{padding:11px 10px;vertical-align:top;border-bottom:1px solid var(--line);}.snapshot-table tbody tr:last-child td{border-bottom:0;}
 .snapshot-table .number-value{font-family:var(--serif);font-size:17px;font-weight:700;color:var(--ink);white-space:nowrap;}
@@ -1086,8 +1100,9 @@ p{margin:0 0 .6em;}
 .decision-details{margin-top:14px;border-top:1px solid var(--line);padding-top:12px;}
 .decision-details summary{cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--soft);text-transform:uppercase;letter-spacing:.08em;}
 .decision-details>div{padding-top:10px;font-size:13.5px;}.decision-details ul{margin:8px 0;padding-left:18px;}
-.evidence-anchors{display:flex;gap:10px;align-items:center;margin-top:12px;font-family:var(--mono);font-size:10.5px;color:var(--faint);}
-.evidence-anchors span{text-transform:uppercase;letter-spacing:.1em;}
+.decision-evidence{margin-top:12px;border-top:1px solid var(--line);padding-top:12px;}
+.decision-evidence summary{cursor:pointer;font-family:var(--mono);font-size:10.5px;color:var(--faint);letter-spacing:.07em;text-transform:uppercase;}
+.decision-evidence ul{margin:10px 0 0;padding-left:20px;}.decision-evidence li{font-size:13px;color:var(--soft);margin-bottom:5px;}
 
 /* top action bar + copy */
 .bar{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:12px;
@@ -1097,6 +1112,7 @@ p{margin:0 0 .6em;}
   border:0;border-radius:8px;padding:8px 15px;transition:background .15s ease,transform .1s ease;}
 .copy-btn:hover{filter:brightness(1.05);} .copy-btn:active{transform:translateY(1px);}
 .copy-btn.ok{background:var(--good);}
+button:focus-visible,summary:focus-visible,a:focus-visible{outline:3px solid rgba(21,95,85,.28);outline-offset:3px;}
 
 /* chairman's reasoning */
 .reasons{margin:0;padding:0;list-style:none;}
@@ -1173,12 +1189,30 @@ p{margin:0 0 .6em;}
 .score span{font-size:13.5px;color:var(--ink);}
 .score strong{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;}
 .score.contested{border-left:4px solid var(--caution);} .score.examined{border-left:4px solid var(--good);} .score.unexamined{border-left:4px solid var(--risk);}
-.table-wrap{overflow-x:auto;}
+.table-wrap{overflow-x:auto;overscroll-behavior-inline:contain;scrollbar-width:thin;}
 .data-table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;font-size:13.5px;}
 .data-table th,.data-table td{text-align:left;vertical-align:top;border-bottom:1px solid var(--line);padding:9px 10px;}
 .data-table th{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--soft);background:var(--paper);}
 .data-table tr:last-child td{border-bottom:0;}
 .data-table code{font-family:var(--mono);font-size:12px;color:var(--accent);}
+.feature-groups{display:grid;gap:14px;margin-bottom:26px;}
+.feature-group{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;}
+.feature-group>header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 18px;border-bottom:1px solid var(--line);background:var(--paper);}
+.feature-group>header div>span{display:block;font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.13em;color:var(--accent);}
+.feature-group>header h4{font-size:14px;margin:2px 0 0;}.feature-group>header>strong{font-family:var(--serif);font-size:24px;color:var(--soft);}
+.feature-group ul{list-style:none;margin:0;padding:0 18px;}.feature-group li{padding:14px 0;border-bottom:1px solid var(--line);}.feature-group li:last-child{border-bottom:0;}
+.feature-title{display:flex;align-items:baseline;justify-content:space-between;gap:12px;}.feature-title>strong{font-size:15px;}.feature-title>span{font-family:var(--mono);font-size:10px;border:1px solid var(--line);border-radius:99px;padding:1px 7px;color:var(--soft);}
+.feature-group p{font-size:13.5px;margin:3px 0;color:var(--ink);}.feature-group small{display:block;font-size:12.5px;line-height:1.45;color:var(--soft);}
+.priority-must{border-left:4px solid var(--accent);}.priority-should{border-left:4px solid var(--caution);}.priority-later{border-left:4px solid var(--slate);}
+.milestone-list{list-style:none;margin:0 0 28px;padding:0;}.milestone-list>li{display:grid;grid-template-columns:90px 1fr;gap:18px;position:relative;padding-bottom:18px;}
+.milestone-list>li:not(:last-child)::before{content:"";position:absolute;left:23px;top:37px;bottom:0;border-left:1px solid var(--line);}
+.milestone-marker{position:relative;z-index:1;display:flex;flex-direction:column;align-items:flex-start;}.milestone-marker>span{display:grid;place-items:center;width:47px;height:35px;border-radius:9px;background:var(--ink);color:var(--paper);font-family:var(--mono);font-size:12px;}.milestone-marker small{font-size:11px;color:var(--soft);margin-top:5px;}
+.milestone-list article{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;}.milestone-list h4{font-size:16px;margin:0 0 8px;}.milestone-list article ul{margin:0;padding-left:18px;}.milestone-list article li{font-size:13.5px;margin-bottom:4px;}
+.acceptance{margin-top:12px;padding-top:10px;border-top:1px solid var(--line);}.acceptance span{font-family:var(--mono);font-size:9.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--good);}.acceptance p{font-size:13px;margin:2px 0 0;}
+.experiment-list{display:grid;gap:12px;margin-bottom:14px;}.experiment-card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 18px;}
+.experiment-head{display:grid;grid-template-columns:auto 1fr auto;align-items:start;gap:10px;}.experiment-head>span{font-family:var(--mono);font-size:11px;color:var(--accent);}.experiment-head h4{font-size:15px;margin:0;}.experiment-head>strong{font-family:var(--mono);font-size:10px;border:1px solid var(--line);border-radius:99px;padding:2px 7px;color:var(--soft);}
+.experiment-card>p{font-size:13.5px;color:var(--soft);margin:8px 0 12px 27px;}.experiment-card dl{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 0 27px;}.experiment-card dl>div{background:var(--paper);border-radius:8px;padding:9px 11px;}.experiment-card dt{font-family:var(--mono);font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);}.experiment-card dd{font-size:12.5px;line-height:1.45;margin:2px 0 0;}
+.inline-fold{margin:14px 0;border:1px solid var(--line);border-radius:10px;background:var(--panel);}.inline-fold>summary{cursor:pointer;padding:11px 14px;font-family:var(--mono);font-size:11px;letter-spacing:.05em;color:var(--soft);}.inline-fold>ul,.inline-fold>.table-wrap,.inline-fold>p{margin:0 14px 14px;}.inline-fold.compact{background:var(--paper);}.inline-fold.compact>p{font-size:13.5px;color:var(--soft);}
 .debate-card p{margin-bottom:8px;}
 .redteam{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
 .redteam>div{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;}
@@ -1212,7 +1246,14 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-fa
   main{padding:34px 16px 60px;}
   .verdict{padding:24px 20px 20px;}
   .glance,.bottomline,.checks,.redteam,.decision-safety{grid-template-columns:1fr;}
-  .snapshot-table{min-width:560px;}.payback-result{grid-template-columns:1fr;}.payback-result p{grid-column:1;}
+  .decision-status{align-items:flex-start;flex-direction:column;gap:8px;}.decision-status>span:last-child{text-align:left;}.pill{white-space:nowrap;}
+  .snapshot-table{min-width:0;}.snapshot-table thead{display:none;}.snapshot-table tbody,.snapshot-table tr,.snapshot-table td{display:block;width:100%;}
+  .snapshot-table tr{padding:12px 0;border-bottom:1px solid var(--line);}.snapshot-table td{padding:3px 8px;border:0;white-space:normal;}
+  .snapshot-table td::before{display:block;font-family:var(--mono);font-size:9px;line-height:1.4;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);}
+  .decisive-table td:nth-child(1)::before{content:"Metric";}.decisive-table td:nth-child(2)::before{content:"Value";}.decisive-table td:nth-child(3)::before{content:"What it means";}
+  .options-table td:nth-child(1)::before{content:"Path";}.options-table td:nth-child(2)::before{content:"Commitment";}.options-table td:nth-child(3)::before{content:"Basis";}.options-table td:nth-child(4)::before{content:"Trade-off";}
+  .payback-result{grid-template-columns:1fr;}.payback-result p{grid-column:1;}
+  .milestone-list>li{grid-template-columns:64px 1fr;gap:10px;}.experiment-card dl{grid-template-columns:1fr;}.experiment-card>p,.experiment-card dl{margin-left:0;}
 }
 @media (prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none;animation:none;}}
 @media print{.reveal{opacity:1;transform:none;animation:none;}.fold[open]{break-inside:avoid;}}
@@ -1221,7 +1262,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-fa
 <body>
 <div class="bar">
   <span class="bar-label">${escapeHtml(kicker)}</span>
-  <button class="copy-btn" onclick="copyReport(this)">Copy report (Markdown)</button>
+  <button id="copy-report" class="copy-btn">Copy report (Markdown)</button>
 </div>
 <main>
   <header class="mast">
@@ -1234,12 +1275,28 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-fa
 </main>
 <script>
 const REPORT_MD = ${md};
-function copyReport(btn){
-  navigator.clipboard.writeText(REPORT_MD).then(function(){
-    var o=btn.textContent; btn.textContent='✓ Copied'; btn.classList.add('ok');
-    setTimeout(function(){ btn.textContent=o; btn.classList.remove('ok'); }, 1600);
-  }).catch(function(){ btn.textContent='Copy failed — select the text manually'; });
+async function copyReport(btn){
+  var original=btn.textContent;
+  try {
+    var copied=false;
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      try{ await navigator.clipboard.writeText(REPORT_MD); copied=true; }catch(error){}
+    }
+    if(!copied){
+      var field=document.createElement('textarea');
+      field.value=REPORT_MD; field.setAttribute('readonly','');
+      field.style.position='fixed'; field.style.opacity='0';
+      document.body.appendChild(field); field.select();
+      copied=document.execCommand('copy'); field.remove();
+      if(!copied) throw new Error('copy unavailable');
+    }
+    btn.textContent='✓ Copied'; btn.classList.add('ok');
+  }catch(error){
+    btn.textContent='Copy failed — select the text manually';
+  }
+  setTimeout(function(){ btn.textContent=original; btn.classList.remove('ok'); }, 1800);
 }
+document.getElementById('copy-report').addEventListener('click',function(){ copyReport(this); });
 </script>
 </body>
 </html>`;

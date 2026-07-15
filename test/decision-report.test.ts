@@ -78,7 +78,11 @@ function fixtures(stanceB: Stance = 'SUPPORT') {
     roles: { analyst: 'agy', judge: 'claude', verifier: 'codex', s4: ['agy', 'codex'] },
   } as unknown as RunCtx;
   const args = {
-    contract: { task: 'Evaluate the subscription idea', task_type: 'idea-refinement' as const, constraints: ['budget under $10k'], unknowns: [], success_criteria: ['a go/no-go verdict'] },
+    contract: {
+      task: 'Evaluate the subscription idea', task_type: 'idea-refinement' as const,
+      constraints: ['budget under $10k'], unknowns: [], success_criteria: ['a go/no-go verdict', 'prioritized feature list', 'implementation plan'],
+      requested_outputs: ['DECISION' as const, 'FEATURE_BACKLOG' as const, 'IMPLEMENTATION_PLAN' as const],
+    },
     seats: [{ provider: 'agy' as ProviderId, output: { workflow: 'idea-refinement' as const, ...agy } }, { provider: 'codex' as ProviderId, output: { workflow: 'idea-refinement' as const, ...codex } }],
     graph,
     verifications: { verifications: [{ claim_id: 'G1', status: 'VERIFIED' as const, reasoning: 'Survey data supports it.', evidence_ids: ['agy/E-P1'], calculation_check: 'NOT_APPLICABLE' as const, missing_evidence: [] }] },
@@ -86,6 +90,15 @@ function fixtures(stanceB: Stance = 'SUPPORT') {
     actionPlan: {
       actions: [{ order: 1, action: 'Run a paid-demand test.', why: 'Test willingness to pay.', validates: 'G1', effort: 'S' as const, kill_signal: 'Fewer than 5% of qualified users pay.' }],
       sequencing_note: 'Test the decisive demand claim before building.',
+      feature_backlog: {
+        must: [{ feature: 'Provider readiness', user_value: 'Shows whether the workflow can run.', rationale: 'Required for the golden path.', effort: 'S' as const }],
+        should: [{ feature: 'Source viewer', user_value: 'Shows what evidence was read.', rationale: 'Improves trust.', effort: 'S' as const }],
+        later: [],
+        wont: [{ feature: 'General chat', reason: 'It dilutes the decision workflow.' }],
+      },
+      implementation_plan: {
+        milestones: [{ order: 1, timebox: 'Day 1', outcome: 'Golden path works.', tasks: ['Wire the existing engine.', 'Render the result.'], acceptance_test: 'Complete five clean runs.' }],
+      },
     },
     rebuttals: stanceB === 'OPPOSE' ? {
       round: 1 as const,
@@ -223,8 +236,14 @@ describe('R7 decision dossier', () => {
     expect(md).toContain('not a probability that the recommendation is correct');
     expect(md).toContain('### Do this first');
     expect(md).toContain('Run a paid-demand test.');
+    expect(md).toContain('### Feature priorities');
+    expect(md).toContain('Provider readiness');
+    expect(md).toContain('### Implementation plan');
+    expect(md).toContain('Day 1');
     expect(md).toContain('**Critical warning:**');
-    expect(md).toContain('G1');
+    const readerBody = md.slice(0, md.indexOf('## 10. Technical audit'));
+    expect(readerBody).not.toMatch(/\bG\d+\b/);
+    expect(md.slice(md.indexOf('## 10. Technical audit'))).toContain('G1');
     expect(md).toContain('agy/E-P1');
     expect(md).toContain('VERIFIED');
     expect(md).toContain('Run a paid-demand test.');
@@ -246,10 +265,12 @@ describe('R7 decision dossier', () => {
         decisionReport: report,
       } as CouncilView);
 
-      for (const token of ['G1', 'agy/E-P1', 'VERIFIED', 'Run a paid-demand test.', 'discovery']) {
+      for (const token of ['Users will pay for this.', 'agy/E-P1', 'VERIFIED', 'Run a paid-demand test.', 'Provider readiness', 'Day 1', 'discovery']) {
         expect(md, `Markdown missing ${token}`).toContain(token);
         expect(html, `HTML missing ${token}`).toContain(token);
       }
+      const htmlReaderBody = html.slice(html.indexOf('Council recommendation'), html.indexOf('<span class="idx">10</span>'));
+      expect(htmlReaderBody).not.toMatch(/\bG\d+\b/);
       const embedded = JSON.stringify(md).replace(/</g, '\\u003c');
       expect(html).toContain(`const REPORT_MD = ${embedded};`);
       expect(html.indexOf('Decision')).toBeLessThan(html.indexOf('Action plan'));
@@ -264,8 +285,17 @@ describe('R7 decision dossier', () => {
       expect(html).toContain('Do this first');
       expect(html).toContain('What could overturn this');
       expect(html).toContain('Critical unknowns');
-      const hero = html.slice(html.indexOf('<section class="verdict'), html.indexOf('</section>', html.indexOf('<section class="verdict')));
+      const heroStart = html.indexOf('<div class="verdict');
+      const hero = html.slice(heroStart, html.indexOf('</section>', heroStart));
       expect(hero).not.toContain(`${report.confidenceBreakdown.score}/100`);
+      expect(hero).toContain('class="verdict-detail"');
+      expect(hero.match(/Users will pay for this\./g) ?? []).toHaveLength(1);
+      expect(html).toContain('.verdict-text{font-family:var(--sans)');
+      expect(html).not.toContain('max-width:28ch');
+      expect(html).toContain('class="feature-groups"');
+      expect(html).toContain('class="milestone-list"');
+      expect(html).toContain('class="experiment-list"');
+      expect(html).toContain("document.execCommand('copy')");
     },
   );
 

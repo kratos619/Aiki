@@ -14,7 +14,7 @@
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { z } from 'zod';
-import { ActionPlanArtifact, DecisionContractArtifact, DecisionGraph, DisagreementMap, IdeaRoleOutput, JudgeReport, PreflightArtifact, RebuttalEventSet, ReviewMap, RoleOutput, RunBrief, RunMeta, VerificationArtifact } from '../schemas/index.js';
+import { ActionPlanArtifact, DecisionContractArtifact, DecisionGraph, DisagreementMap, IdeaRoleOutput, JudgeReport, PreflightArtifact, RebuttalEventSet, ReviewMap, RoleOutput, RunBrief, RunMeta, UrlSourceSet, VerificationArtifact } from '../schemas/index.js';
 
 export class OutOfOrderWriteError extends Error {
   constructor(slot: string, ord: number, maxOrd: number) {
@@ -40,6 +40,7 @@ interface SlotDef {
 /** JSON stage slots. Composites without a T4 core schema (misunderstanding-guard, drift, claims)
  *  are written as-is; their schemas land with S2/S5/S6 (T5–T6). */
 const JSON_SLOTS = {
+  'url-sources': { ord: 0.25, path: '00a-url-sources.json', schema: UrlSourceSet },
   'run-brief': { ord: 0.5, path: '00b-run-brief.json', schema: RunBrief },
   'intent-contract': { ord: 1, path: '01-intent-contract.json', schema: DecisionContractArtifact },
   'preflight-readings': { ord: 2, path: '02-preflight-readings.json', schema: PreflightArtifact },

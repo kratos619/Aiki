@@ -9,6 +9,36 @@ function refs(ids: string[]): string {
   return ids.length ? ids.map((id) => `\`${id}\``).join(', ') : 'none recorded';
 }
 
+function clipClaim(text: string, max = 96): string {
+  if (text.length <= max) return text;
+  const clipped = text.slice(0, max - 1);
+  const boundary = clipped.lastIndexOf(' ');
+  return `${clipped.slice(0, boundary > max * 0.65 ? boundary : max - 1).trimEnd()}…`;
+}
+
+/** Human-readable labels for reader-facing evidence links. Raw ids stay in the technical audit/JSON. */
+export function readerClaimLabel(report: DecisionReportJson, id: string): string {
+  const claim = report.claims.find((item) => item.id === id);
+  if (claim) return clipClaim(claim.text);
+  return /^G\d+$/.test(id) ? 'Supporting claim' : clipClaim(stripReaderClaimIds(id));
+}
+
+export function readerClaimRefs(report: DecisionReportJson, ids: string[]): string {
+  return ids.length ? ids.map((id) => readerClaimLabel(report, id)).join('; ') : 'none recorded';
+}
+
+/** Remove internal graph notation from prose without expanding a short id into a paragraph. */
+export function stripReaderClaimIds(text: string): string {
+  return text
+    .replace(/\s*\((?:\s*`?G\d+`?\s*,?)+\s*\)/g, '')
+    .replace(/\bG\d+\s+assumes\b/g, 'This assumes')
+    .replace(/\bG\d+\b/g, '')
+    .replace(/\(\s*\)/g, '')
+    .replace(/\s+([,.;:])/g, '$1')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+}
+
 function providerName(id: string): string {
   return id in DISPLAY_NAME ? DISPLAY_NAME[id as ProviderId] : id;
 }
@@ -48,12 +78,12 @@ export function renderDecisionDossierMarkdown(report: DecisionReportJson): strin
   if (report.decisionSnapshot) {
     L.push('### Decisive numbers', '', '| Metric | Value | What it means | Evidence |', '|---|---:|---|---|');
     for (const item of report.decisionSnapshot.decisiveNumbers) {
-      L.push(`| ${cell(item.label)} | ${cell(item.value)} | ${cell(item.meaning)} | ${refs(item.claimIds)} |`);
+      L.push(`| ${cell(item.label)} | ${cell(item.value)} | ${cell(item.meaning)} | ${cell(readerClaimRefs(report, item.claimIds))} |`);
     }
     if (report.decisionSnapshot.payback) {
       const payback = report.decisionSnapshot.payback;
       L.push('', `**Payback — ${payback.status.replaceAll('_', ' ')}:** ${payback.result}`);
-      L.push(`Basis: ${payback.basis} (${refs(payback.claimIds)})`, '');
+      L.push(`Basis: ${payback.basis}`, '');
     } else L.push('');
   }
   L.push(`**Recommendation:** ${dossier.recommendation.summary}`, '');
@@ -69,11 +99,11 @@ export function renderDecisionDossierMarkdown(report: DecisionReportJson): strin
   if (report.decisionSnapshot) {
     L.push('### Options at a glance', '', '| Path | Commitment | Basis | Trade-off | Evidence |', '|---|---:|---|---|---|');
     for (const option of report.decisionSnapshot.options) {
-      L.push(`| ${cell(option.label)} | ${cell(option.commitment)} | ${option.commitmentKind.replace('_', ' ')} | ${cell(option.tradeoff)} | ${refs(option.claimIds)} |`);
+      L.push(`| ${cell(option.label)} | ${cell(option.commitment)} | ${option.commitmentKind.replace('_', ' ')} | ${cell(option.tradeoff)} | ${cell(readerClaimRefs(report, option.claimIds))} |`);
     }
     if (report.decisionSnapshot.tripwire) {
       const tripwire = report.decisionSnapshot.tripwire;
-      L.push('', '### Go/no-go tripwire', '', `**${tripwire.metric}: ${tripwire.threshold}** — ${tripwire.decisionRule} (${refs(tripwire.claimIds)})`, '');
+      L.push('', '### Go/no-go tripwire', '', `**${tripwire.metric}: ${tripwire.threshold}** — ${tripwire.decisionRule}`, '');
     }
   }
   L.push('### What could overturn this', '', dossier.counterCase.available ? dossier.counterCase.reasoning : dossier.counterCase.reasoning, '');
@@ -82,7 +112,7 @@ export function renderDecisionDossierMarkdown(report: DecisionReportJson): strin
   else L.push('- None recorded.');
   L.push('', `**Critical warning:** ${report.verdict.criticalWarning ?? 'None recorded.'}`);
   L.push(`**Council read:** ${councilRead(report)}`);
-  L.push(`Evidence anchors: ${refs(dossier.recommendation.claimIds)}`, '');
+  L.push(`Evidence behind the recommendation: ${readerClaimRefs(report, dossier.recommendation.claimIds)}`, '');
   if (!dossier.recommendation.claimIds.length) L.push('> ⚠ DEGRADED: recommendation has no stored graph anchor.', '');
   L.push('<details>', '<summary>Decision conditions and technical confidence</summary>', '');
   L.push(`- Decision state: ${dossier.recommendation.status}`);
@@ -91,17 +121,43 @@ export function renderDecisionDossierMarkdown(report: DecisionReportJson): strin
   if (dossier.recommendation.conditions.length) {
     L.push('', 'Conditions:');
     for (const condition of dossier.recommendation.conditions) {
-      L.push(`- ${condition.text} (${refs(condition.claimIds)})`);
+      L.push(`- ${condition.text}`);
     }
   }
   L.push('', '</details>', '');
 
   L.push('## 2. Action plan', '', ...degradation(report, ['plan_fallback', 'plan_skipped']));
+  if ((dossier.missingRequestedOutputs ?? []).length) {
+    L.push(`> ⚠ DEGRADED: requested output missing: ${dossier.missingRequestedOutputs.join(', ')}`, '');
+  }
+  if (dossier.featureBacklog) {
+    L.push('### Feature priorities', '', '| Priority | Feature | User value | Why now | Effort |', '|---|---|---|---|---|');
+    for (const [priority, items] of [
+      ['MUST', dossier.featureBacklog.must],
+      ['SHOULD', dossier.featureBacklog.should],
+      ['LATER', dossier.featureBacklog.later],
+    ] as const) {
+      for (const item of items) L.push(`| ${priority} | ${cell(item.feature)} | ${cell(item.user_value)} | ${cell(item.rationale)} | ${item.effort} |`);
+    }
+    if (dossier.featureBacklog.wont.length) {
+      L.push('', '**Not in this scope**', '', '| Feature | Reason |', '|---|---|');
+      for (const item of dossier.featureBacklog.wont) L.push(`| ${cell(item.feature)} | ${cell(item.reason)} |`);
+    }
+    L.push('');
+  }
+  if (dossier.implementationPlan) {
+    L.push('### Implementation plan', '', '| # | Timebox | Outcome | Work | Acceptance test |', '|---|---|---|---|---|');
+    for (const milestone of dossier.implementationPlan.milestones) {
+      L.push(`| ${milestone.order} | ${cell(milestone.timebox)} | ${cell(milestone.outcome)} | ${cell(milestone.tasks.join('; '))} | ${cell(milestone.acceptance_test)} |`);
+    }
+    L.push('');
+  }
+  L.push('### Validation plan', '');
   if (dossier.experiments.status === 'DEGRADED') L.push(`> ⚠ DEGRADED: ${dossier.experiments.note}`, '');
   if (dossier.experiments.actions.length) {
     L.push('| # | Experiment | Why | Validates | Effort | Kill signal |', '|---|---|---|---|---|---|');
     for (const action of dossier.experiments.actions) {
-      L.push(`| ${action.order} | ${cell(action.action)} | ${cell(action.why)} | ${action.validates} | ${action.effort} | ${cell(action.killSignal)} |`);
+      L.push(`| ${action.order} | ${cell(action.action)} | ${cell(action.why)} | ${cell(readerClaimLabel(report, action.validates))} | ${action.effort} | ${cell(action.killSignal)} |`);
     }
     L.push('', dossier.experiments.note);
   } else L.push('No executable experiment was produced.');
@@ -109,23 +165,23 @@ export function renderDecisionDossierMarkdown(report: DecisionReportJson): strin
 
   L.push('## 3. Why this decision', '');
   if (dossier.claimChain.length) {
-    L.push('| Claim ID | Claim | Ruling | Evidence status | Depends on |', '|---|---|---|---|---|');
+    L.push('| Claim | Ruling | Evidence status | Depends on |', '|---|---|---|---|');
     for (const claim of dossier.claimChain) {
-      L.push(`| ${claim.claimId} | ${cell(claim.text)} | ${claim.ruling} | ${claim.evidenceStatus} | ${refs(claim.dependsOn)} |`);
+      L.push(`| ${cell(claim.text)} | ${claim.ruling} | ${claim.evidenceStatus} | ${cell(readerClaimRefs(report, claim.dependsOn))} |`);
     }
   } else L.push('No graph-anchored decision chain was recorded.');
   L.push('');
 
   L.push('## 4. What could change the decision', '', '### Decision-sensitive facts', '');
   if (dossier.sensitivity.length) {
-    L.push('| Claim ID | Fact | Sensitivity | If false | What would change it | Linked claims |', '|---|---|---|---|---|---|');
+    L.push('| Fact | Sensitivity | If false | What would change it | Linked claims |', '|---|---|---|---|---|');
     for (const item of dossier.sensitivity) {
-      L.push(`| ${item.claimId} | ${cell(item.fact)} | ${item.sensitivity} | ${item.impactIfFalse} | ${cell(item.whatWouldChangeIt)} | ${refs(item.linkedClaimIds)} |`);
+      L.push(`| ${cell(item.fact)} | ${item.sensitivity} | ${item.impactIfFalse} | ${cell(item.whatWouldChangeIt)} | ${cell(readerClaimRefs(report, item.linkedClaimIds))} |`);
     }
   } else L.push('No verdict-sensitive graph node was recorded.');
   L.push('', '### Strongest counter-case', '');
   if (dossier.counterCase.available) {
-    L.push(dossier.counterCase.reasoning, '', `Evidence anchors: ${refs(dossier.counterCase.claimIds)}`);
+    L.push(dossier.counterCase.reasoning, '', `Evidence behind this counter-case: ${readerClaimRefs(report, dossier.counterCase.claimIds)}`);
   } else L.push(`> ⚠ DEGRADED: ${dossier.counterCase.reasoning}`);
   L.push('');
 
@@ -133,7 +189,7 @@ export function renderDecisionDossierMarkdown(report: DecisionReportJson): strin
   if (dossier.evidence.length) {
     L.push('| Evidence ID | Source | Date | Freshness | Verification | Linked claims |', '|---|---|---|---|---|---|');
     for (const evidence of dossier.evidence) {
-      L.push(`| ${evidence.id} | ${cell(evidence.source)} (${evidence.sourceKind}) | ${evidence.date} | ${evidence.freshness} | ${evidence.verificationStatus} | ${refs(evidence.claimIds)} |`);
+      L.push(`| ${evidence.id} | ${cell(evidence.source)} (${evidence.sourceKind}) | ${evidence.date} | ${evidence.freshness} | ${evidence.verificationStatus} | ${cell(readerClaimRefs(report, evidence.claimIds))} |`);
     }
   } else L.push('No evidence cards were stored.');
   L.push('');
@@ -145,8 +201,8 @@ export function renderDecisionDossierMarkdown(report: DecisionReportJson): strin
   } else L.push('No material risk was recorded.');
   L.push('', '### Coverage', '');
   if (dossier.coverage.length) {
-    L.push('| Dimension | Status | Claim IDs |', '|---|---|---|');
-    for (const item of dossier.coverage) L.push(`| ${cell(item.label)} | ${item.status} | ${refs(item.claimIds)} |`);
+    L.push('| Dimension | Status | Related claims |', '|---|---|---|');
+    for (const item of dossier.coverage) L.push(`| ${cell(item.label)} | ${item.status} | ${cell(readerClaimRefs(report, item.claimIds))} |`);
   } else L.push('No rubric coverage ledger was recorded.');
   L.push('', '### Open questions', '');
   if (report.openQuestions.length) {
@@ -157,7 +213,7 @@ export function renderDecisionDossierMarkdown(report: DecisionReportJson): strin
   L.push('## 7. Disagreement and dissent', '', ...degradation(report, ['single_model', 'low_diversity']));
   if (report.disagreements.length) {
     for (const disagreement of report.disagreements) {
-      L.push(`- **${disagreement.id}: ${disagreement.topic}** — ${disagreement.status}; ${disagreement.ruling}.`);
+      L.push(`- **${disagreement.topic}** — ${disagreement.status}; ${disagreement.ruling}.`);
       for (const side of disagreement.sides) L.push(`  - ${side.stance} (${side.providers.map(providerName).join(', ')}): ${side.reasoning.join(' ')}`);
       if (disagreement.reasoning) L.push(`  - Why: ${disagreement.reasoning}`);
     }
@@ -166,7 +222,7 @@ export function renderDecisionDossierMarkdown(report: DecisionReportJson): strin
   if (dossier.positionChanges.length) {
     L.push('| Event | Claim | Responder | Change | Evidence | Detail |', '|---|---|---|---|---|---|');
     for (const event of dossier.positionChanges) {
-      L.push(`| ${event.eventId} | ${event.claimId} | ${providerName(event.responder)} | ${event.response} | ${refs(event.evidenceIds)} | ${cell(event.narrowedProposition ?? event.reasoning)} |`);
+      L.push(`| ${event.eventId} | ${cell(readerClaimLabel(report, event.claimId))} | ${providerName(event.responder)} | ${event.response} | ${refs(event.evidenceIds)} | ${cell(event.narrowedProposition ?? event.reasoning)} |`);
     }
   } else L.push('No `CONCEDE`, `COUNTER`, or `NARROW` event was recorded.');
   L.push('', '### Minority report', '');
@@ -179,18 +235,18 @@ export function renderDecisionDossierMarkdown(report: DecisionReportJson): strin
   L.push('## 8. What the council added', '');
   if (dossier.sharedConcerns.length) {
     L.push('Shared concerns:');
-    for (const item of dossier.sharedConcerns) L.push(`- **${item.claimId}** ${item.text} — ${item.evidenceStatus}; ${item.providerIds.map(providerName).join(', ')}.`);
+    for (const item of dossier.sharedConcerns) L.push(`- ${item.text} — ${item.evidenceStatus}; ${item.providerIds.map(providerName).join(', ')}.`);
   } else L.push('Shared concerns: none recorded.');
   L.push('');
   if (dossier.uniqueSupportedInsights.length) {
     L.push('Unique supported insights:');
-    for (const item of dossier.uniqueSupportedInsights) L.push(`- **${item.claimId}** ${item.text} — ${providerName(item.providerId)}; ${item.verificationStatus}.`);
+    for (const item of dossier.uniqueSupportedInsights) L.push(`- ${item.text} — ${providerName(item.providerId)}; ${item.verificationStatus}.`);
   } else L.push('Unique supported insights: none recorded.');
   L.push('', '### Verified unique contributions', '', ...degradation(report, ['verification_skipped', 'single_model', 'low_diversity']));
   L.push('Only unique claims that survived independent verification receive credit.', '');
-  L.push('| Provider | Verified unique claim IDs | Count |', '|---|---|---|');
+  L.push('| Provider | Verified unique contributions | Count |', '|---|---|---|');
   for (const contribution of dossier.contributions) {
-    L.push(`| ${contribution.name} | ${refs(contribution.verifiedUniqueClaimIds)} | ${contribution.verifiedUniqueClaimIds.length} |`);
+    L.push(`| ${contribution.name} | ${cell(readerClaimRefs(report, contribution.verifiedUniqueClaimIds))} | ${contribution.verifiedUniqueClaimIds.length} |`);
   }
   L.push('');
 
@@ -209,6 +265,8 @@ export function renderDecisionDossierMarkdown(report: DecisionReportJson): strin
   L.push(`- By provider: ${Object.entries(report.receipt.byProvider).map(([provider, count]) => `${providerName(provider)} ${count}`).join(', ') || 'none'}`);
   L.push(`- Recorded model time: ${(report.receipt.modelTimeMs / 1000).toFixed(1)}s`);
   L.push(`- Degradation flags: ${report.flags.join(', ') || 'none'}`, '');
+
+  for (let index = 0; index < L.length; index++) L[index] = stripReaderClaimIds(L[index]!);
 
   L.push('## 10. Technical audit', '');
   L.push('<details>', '<summary>Original submissions and graph events</summary>', '');

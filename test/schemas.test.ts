@@ -97,8 +97,9 @@ describe('RunBrief preflight', () => {
     expect(RunBriefDraft.parse(draft)).toEqual(draft);
   });
 
-  it('rejects fewer than 3 questions and unknown keys', () => {
-    expect(() => RunBriefDraft.parse({ ...draft, questions: draft.questions.slice(0, 2) })).toThrow();
+  it('allows no redundant questions when supplied evidence resolves the context, but rejects unknown keys', () => {
+    expect(RunBriefDraft.parse({ ...draft, questions: [] })).toMatchObject({ questions: [] });
+    expect(RunBrief.parse({ ...draft, questions: [], answers: [] })).toMatchObject({ questions: [], answers: [] });
     expect(() => RunBriefDraft.parse({ ...draft, extra: true })).toThrow();
   });
 
@@ -426,6 +427,15 @@ describe('ActionPlan', () => {
       kill_signal: 'Fewer than 2 users describe the pain unprompted.',
     }],
     sequencing_note: 'Start with demand because it can kill the idea cheapest.',
+    feature_backlog: {
+      must: [{ feature: 'Provider readiness', user_value: 'Shows whether the workflow can run.', rationale: 'Required for the golden path.', effort: 'S' as const }],
+      should: [],
+      later: [],
+      wont: [{ feature: 'General chat', reason: 'Outside the decision workflow.' }],
+    },
+    implementation_plan: {
+      milestones: [{ order: 1, timebox: 'Day 1', outcome: 'Golden path works.', tasks: ['Wire the existing engine.'], acceptance_test: 'Five clean runs.' }],
+    },
   };
 
   it('accepts a valid strict plan', () => {

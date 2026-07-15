@@ -34,7 +34,7 @@ import { loadCouncilView, type CouncilView } from '../council/view.js';
 import { openCouncilHtml } from '../council/open.js';
 import type { GrillAnswer, IdeaMode, RunBriefDraft, RunMeta } from '../schemas/index.js';
 import { readJsonArtifact } from '../storage/runs-read.js';
-import { defaultBudgetFor } from '../orchestration/modes.js';
+import { defaultBudgetFor, defaultDeadlineFor, inferIdeaMode } from '../orchestration/modes.js';
 import { GLYPH, displayNames, elapsedLabel, initTimeline, markEnd, markStart, progressBar, runningPhrase, totalElapsed, type StageRow } from './timeline.js';
 import { formatCompletion, formatError, type CompletionView, type ErrorView } from './format.js';
 import { COMMANDS, PRODUCT_LINE, filterCommands, parseCommand, routeInput, scopeRedirect, suggestCommand, type ParsedCommand, type QuickAction } from './smart-entry.js';
@@ -276,7 +276,20 @@ export function App(props: AppProps): React.JSX.Element {
           setPhase('clarify');
         }),
     };
-    const ctx = new RunCtx({ runId, workflow: wf, mode, handles, roles: rs, writer, cwd: cwd ?? writer.dir, budget: budgetOverride, signal: controller.signal, events, replay });
+    const ctx = new RunCtx({
+      runId,
+      workflow: wf,
+      mode,
+      handles,
+      roles: rs,
+      writer,
+      cwd: cwd ?? writer.dir,
+      budget: budgetOverride,
+      deadlineMs: defaultDeadlineFor(wf, mode),
+      signal: controller.signal,
+      events,
+      replay,
+    });
     ctxRef.current = ctx;
     setWorkflow(wf);
     setRows(initTimeline(stages, rs, available));
@@ -302,7 +315,9 @@ export function App(props: AppProps): React.JSX.Element {
     });
   };
 
-  const startIdea = (text: string): void => startRun('idea-refinement', text, null, runIdeaRefinement, IDEA_STAGES);
+  const startIdea = (text: string): void => {
+    startRun('idea-refinement', text, null, runIdeaRefinement, IDEA_STAGES, undefined, inferIdeaMode(text));
+  };
 
   const startCodeReview = async (action: QuickAction): Promise<void> => {
     if (!repo || !repo.defaultBranch) {
@@ -536,7 +551,7 @@ export function App(props: AppProps): React.JSX.Element {
             <Box flexDirection="column" borderStyle="round" paddingX={1}>
               <Text>Run the idea council on:</Text>
               <Text color="cyan">  “{pendingIdea.length > 100 ? `${pendingIdea.slice(0, 97)}…` : pendingIdea}”</Text>
-              <Text dimColor>  10-stage pipeline · up to {budgetOverride ?? defaultBudgetFor('idea-refinement', 'council')} model calls · Ctrl+C aborts mid-run</Text>
+              <Text dimColor>  10-stage pipeline · {inferIdeaMode(pendingIdea)} mode · up to {budgetOverride ?? defaultBudgetFor('idea-refinement', inferIdeaMode(pendingIdea))} model calls · Ctrl+C aborts mid-run</Text>
               <Text>
                 <Text color="green">enter</Text> run  ·  <Text color="yellow">esc</Text> cancel
               </Text>

@@ -2,8 +2,8 @@
 // adjudicated risks, blind spots, and open questions into anchored validation actions. Rendering stays
 // deterministic; if the planner fails or produces unanchored actions, we write flagged unavailability.
 
-import type { ActionPlan as ActionPlanT, ActionPlanArtifact, IntentContract, JudgeReport, PlannerUnavailable } from '../../schemas/index.js';
-import { ActionPlan } from '../../schemas/index.js';
+import type { ActionPlan as ActionPlanT, ActionPlanArtifact, IntentContract, JudgeReport, PlannerUnavailable, RequestedOutput } from '../../schemas/index.js';
+import { ActionPlan, FeatureBacklog, ImplementationPlan } from '../../schemas/index.js';
 import { z } from 'zod';
 import { BudgetExceeded, isFatal, type RunCtx } from '../context.js';
 import { jsonCall } from '../jsonStage.js';
@@ -35,12 +35,14 @@ const PlannerOutput = z.object({
     kill_signal: z.string().min(1),
   }).strict()).min(1).max(7),
   sequencing_note: z.string().min(1),
+  feature_backlog: FeatureBacklog.optional(),
+  implementation_plan: ImplementationPlan.optional(),
 }).strict();
 type PlannerOutput = z.infer<typeof PlannerOutput>;
 
-const S9B_PROMPT = `ROLE: Validation planner. You write the next actions for a decision-maker after an
-idea council has already debated and judged the idea. Do not write a build roadmap. Write only validation
-actions that test unsettled risks, blind spots, or open questions. Cheapest decisive test first.{{SKILL}}
+const S9B_PROMPT = `ROLE: Validation planner. You write the requested practical outputs after an idea
+council has debated and judged the idea. The actions list remains validation work: test unsettled risks,
+blind spots, or open questions, with the cheapest decisive test first.{{SKILL}}
 
 Output ONLY JSON matching the ActionPlan schema:
 - actions: 1-7 ordered actions, each imperative and concrete.
@@ -53,6 +55,12 @@ Output ONLY JSON matching the ActionPlan schema:
 - Preserve the chair's numeric distinctions: operating break-even is not capital payback, and a target cap
   is not a known cost. Do not introduce or reinterpret a number that is absent from decision_snapshot.
 - sequencing_note explains why this order is cheapest and decisive.
+- Read requested_outputs in CONTEXT. When it includes FEATURE_BACKLOG, include feature_backlog with
+  must/should/later items {feature,user_value,rationale,effort:S|M|L} and wont items {feature,reason}.
+  Prioritize the smallest judge-impressing golden path; MUST is required, not a wishlist.
+- When requested_outputs includes IMPLEMENTATION_PLAN, include implementation_plan.milestones with
+  {order,timebox,outcome,tasks,acceptance_test}. This is a concrete build sequence, not validation prose.
+- Do not omit a requested output and do not invent an unrequested product surface.
 
 CONTEXT: {{CONTEXT_JSON}}`;
 
@@ -107,6 +115,7 @@ export function buildActionPlannerPrompt(input: {
   upheld_risks: UpheldRisk[];
   blind_spots: string[];
   open_questions: string[];
+  requested_outputs?: RequestedOutput[];
 }, skill: string): string {
   return S9B_PROMPT
     .replace('{{SKILL}}', skill ? `\n\n${skill}` : '')
@@ -133,13 +142,24 @@ export function validAnchor(anchor: string, anchors: PlanAnchors): boolean {
   return false;
 }
 
-export function anchoredActionPlan(plan: ActionPlanT, anchors: PlanAnchors): ActionPlanT | null {
+export function anchoredActionPlan(
+  plan: ActionPlanT,
+  anchors: PlanAnchors,
+  requestedOutputs: RequestedOutput[] = [],
+): ActionPlanT | null {
   const actions = plan.actions
     .filter((a) => validAnchor(a.validates, anchors))
     .sort((a, b) => a.order - b.order)
     .map((a, i) => ({ ...a, order: i + 1 }));
   if (actions.length === 0) return null;
-  return { actions, sequencing_note: plan.sequencing_note };
+  if (requestedOutputs.includes('FEATURE_BACKLOG') && !plan.feature_backlog) return null;
+  if (requestedOutputs.includes('IMPLEMENTATION_PLAN') && !plan.implementation_plan) return null;
+  return {
+    actions,
+    sequencing_note: plan.sequencing_note,
+    ...(requestedOutputs.includes('FEATURE_BACKLOG') && plan.feature_backlog ? { feature_backlog: plan.feature_backlog } : {}),
+    ...(requestedOutputs.includes('IMPLEMENTATION_PLAN') && plan.implementation_plan ? { implementation_plan: plan.implementation_plan } : {}),
+  };
 }
 
 export function normalizeEffort(raw?: string): 'S' | 'M' | 'L' {
@@ -161,6 +181,8 @@ export function normalizePlannerOutput(plan: PlannerOutput): ActionPlanT {
       effort: normalizeEffort(action.effort),
     })),
     sequencing_note: plan.sequencing_note,
+    ...(plan.feature_backlog ? { feature_backlog: plan.feature_backlog } : {}),
+    ...(plan.implementation_plan ? { implementation_plan: plan.implementation_plan } : {}),
   });
 }
 
@@ -190,6 +212,8 @@ export async function s9bPlan(
   judgeReport: JudgeReport,
 ): Promise<ActionPlanArtifact> {
   const openQuestions = mergeOpenQuestions(seats);
+  const requestedOutputs: RequestedOutput[] = (contract as IntentContract & { requested_outputs?: RequestedOutput[] }).requested_outputs
+    ?? ['DECISION'];
   const risks = unresolvedRisks(graph, judgeReport);
   const blindSpots = graph.holes.coverage.map((hole) => hole.label);
   const anchors: PlanAnchors = {
@@ -214,26 +238,28 @@ export async function s9bPlan(
     upheld_risks: risks,
     blind_spots: blindSpots,
     open_questions: openQuestions,
+    requested_outputs: requestedOutputs,
   }, loadSkill('idea-refinement', 'planner'));
 
   try {
     const first = normalizePlannerOutput(await jsonCall(ctx, ctx.handle(ctx.roles.judge), 'S9b-plan', prompt, PlannerOutput, {
       repair: ctx.budget.limit - ctx.budget.used >= 2,
     }));
-    const anchored = anchoredActionPlan(first, anchors);
+    const anchored = anchoredActionPlan(first, anchors, requestedOutputs);
     if (anchored) {
       await ctx.writer.writeJson('action-plan', anchored);
       return anchored;
     }
     if (ctx.budget.limit - ctx.budget.used < 1) return fallback('plan_fallback');
     const repair =
-      `${prompt}\n\n---\nYour previous plan had no actions with valid anchors.\n` +
+      `${prompt}\n\n---\nYour previous plan had no actions with valid anchors or omitted a requested deliverable.\n` +
       `Valid graph claim ids: ${anchors.claimIds.join(', ') || '(none)'}\n` +
       `Valid blind spots: ${anchors.blindSpots.join(' | ') || '(none)'}\n` +
       `Valid open questions: ${anchors.openQuestions.join(' | ') || '(none)'}\n` +
-      `Output ONLY corrected JSON with every action anchored to one of those values.`;
+      `Required outputs: ${requestedOutputs.join(', ')}\n` +
+      `Output ONLY corrected JSON with every action anchored and every requested deliverable present.`;
     const repaired = normalizePlannerOutput(await jsonCall(ctx, ctx.handle(ctx.roles.judge), 'S9b-anchor-repair', repair, PlannerOutput, { repair: false }));
-    const repairedAnchored = anchoredActionPlan(repaired, anchors);
+    const repairedAnchored = anchoredActionPlan(repaired, anchors, requestedOutputs);
     if (repairedAnchored) {
       await ctx.writer.writeJson('action-plan', repairedAnchored);
       return repairedAnchored;
