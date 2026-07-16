@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { compileDecisionGraph, type AnalystSubmission, type Stance } from '../src/orchestration/decision-graph.js';
+import { compileDecisionGraph, interpretClaimOutcome, type AnalystSubmission, type Stance } from '../src/orchestration/decision-graph.js';
 import {
   buildDecisionReport,
   computeConfidence,
@@ -117,6 +117,30 @@ function fixtures(stanceB: Stance = 'SUPPORT') {
 }
 
 describe('decision report statuses and confidence', () => {
+  it('translates legacy rulings into proposition truth and decision effect once', () => {
+    const { graph } = fixtures('OPPOSE');
+    const claim = graph.claims[0]!;
+    expect(interpretClaimOutcome(graph, claim, { ruling: 'REJECT' })).toMatchObject({
+      propositionTruth: 'HOLDS', decisionEffect: 'HELD',
+    });
+    expect(interpretClaimOutcome(graph, claim, { ruling: 'UPHOLD' })).toMatchObject({
+      propositionTruth: 'FAILS', decisionEffect: 'FAILED',
+    });
+
+    const consensus = fixtures().graph;
+    expect(interpretClaimOutcome(consensus, consensus.claims[0]!, { ruling: 'UPHOLD' })).toMatchObject({
+      propositionTruth: 'FAILS', decisionEffect: 'HELD',
+    });
+
+    const concern = compileDecisionGraph([
+      { provider: 'agy', submission: submission([{ id: 'P1', proposition: 'Demand is too weak.', stance: 'OPPOSE' }]) },
+      { provider: 'codex', submission: submission([{ id: 'P1', proposition: 'Demand is too weak.', stance: 'OPPOSE' }]) },
+    ], rubric, [['agy/P1', 'codex/P1']]);
+    expect(interpretClaimOutcome(concern, concern.claims[0])).toMatchObject({
+      propositionTruth: 'HOLDS', decisionEffect: 'FAILED',
+    });
+  });
+
   it('maps judge recommendations onto report statuses', () => {
     expect(statusFrom({ recommendation: 'PROCEED' } as JudgeReport)).toBe('ACCEPTED');
     expect(statusFrom({ recommendation: 'PROCEED_WITH_CONDITIONS' } as JudgeReport)).toBe('ACCEPTED_WITH_CONDITIONS');
@@ -396,21 +420,18 @@ describe('R7 decision dossier', () => {
 });
 
 describe('terminal summary (level 1)', () => {
-  it('renders the one-screen verdict block with paths', () => {
+  it('renders a concise one-screen verdict, takeaways, next step, and report path', () => {
     const { ctx, args } = fixtures('OPPOSE');
     const report = buildDecisionReport(ctx, args);
     const text = renderTerminalSummary(report, { markdownPath: './r.md', jsonPath: './r.json' });
 
-    expect(text).toContain('MULTI-MODEL DECISION REPORT');
+    expect(text).toContain('AIKI · COUNCIL DECISION');
     expect(text).toContain('Verdict:');
-    expect(text).toContain('Decision state: ACCEPTED');
-    expect(text).toContain('Evidence coverage:');
-    expect(text).toContain('not a probability of correctness');
-    expect(text).toContain('Decision numbers:');
-    expect(text).toContain('Payback (not computable): No payback period available');
-    expect(text).toContain('Options: Proceed — Under $10k (target cap)');
-    expect(text).toContain('Go/no-go tripwire:');
+    expect(text).toContain('Key takeaways:');
+    expect(text).toContain('Next step:');
     expect(text).toContain('./r.md');
-    expect(text).toContain('./r.json');
+    expect(text).not.toContain('./r.json');
+    expect(text).not.toMatch(/structural score|verification coverage|decision state|payback/i);
+    expect(text.split('\n').filter((line) => line.trim()).length).toBeLessThanOrEqual(10);
   });
 });

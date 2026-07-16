@@ -4,7 +4,7 @@ import { DISPLAY_NAME, type ProviderId } from '../providers/types.js';
 import type { WorkflowId } from '../orchestration/context.js';
 import { RoleOutput as RoleOutputSchema, type ActionPlanArtifact, type AnnotatedFinding, type DecisionGraph, type DisagreementMap, type IdeaMode, type JudgeReport, type Recommendation, type ReviewMap, type RoleOutput, type RunMeta } from '../schemas/index.js';
 import { deriveAudit, deriveScorecard, mergeOpenQuestions, type AuditRow, type DecisionReportJson, type ScorecardRow } from '../orchestration/stages/s10-render.js';
-import { claimLookup, readerClaimLabel, readerClaimRefs, renderDecisionDossierMarkdown, stripReaderClaimIds } from '../orchestration/decision-dossier.js';
+import { buildReaderProjection, claimLookup, readerClaimLabel, readerClaimRefs, renderDecisionDossierMarkdown, stripReaderClaimIds } from '../orchestration/decision-dossier.js';
 import type { SeatOutput } from '../orchestration/stages/s4-analyze.js';
 import { IDEA_RUBRIC } from '../workflows/idea-refinement.js';
 import { listArtifacts, readJsonArtifact } from '../storage/runs-read.js';
@@ -607,6 +607,50 @@ function renderDossierIdeaBody(report: DecisionReportJson): string {
   return `${stripReaderClaimIds(readerBody, labelFor)}${section('10', 'Technical audit', technical, 420)}`;
 }
 
+function renderReaderBriefIdeaBody(report: DecisionReportJson): string {
+  const dossier = report.dossier;
+  const projection = buildReaderProjection(report);
+  const tone: Tone = dossier.recommendation.status === 'ACCEPTED' ? 'good'
+    : dossier.recommendation.status === 'REJECTED' ? 'risk' : 'caution';
+  const hero = `<section class="verdict tone-${tone} reveal" style="animation-delay:60ms">
+    <span class="pill">Recommendation</span>
+    <p class="verdict-text">${escapeHtml(projection.headline)}</p>
+    <p class="verdict-detail">${escapeHtml(projection.bottomLine)}</p>
+  </section>`;
+  const warnings = projection.warnings.length || projection.notices.length
+    ? `<div class="warns">${projection.warnings.map((warning) => `<span class="warn">⚑ ${escapeHtml(warning.message)}</span>`).join('')}${projection.notices.map((notice) => `<span class="warn">ⓘ ${escapeHtml(notice.message)}</span>`).join('')}</div>`
+    : '';
+  const snapshot = projection.snapshot ? section('', 'Decision numbers', `${dossierTable(
+    ['Metric', 'Value', 'What it means'],
+    projection.snapshot.decisiveNumbers.map((item) => [item.label, item.value, item.meaning]),
+  )}${projection.snapshot.payback ? `<div class="action-callout"><span>Payback · ${escapeHtml(projection.snapshot.payback.status.replaceAll('_', ' '))}</span><p>${escapeHtml(projection.snapshot.payback.result)} — ${escapeHtml(projection.snapshot.payback.basis)}</p></div>` : ''}<h3>Options at a glance</h3>${dossierTable(
+    ['Path', 'Commitment', 'Basis', 'Trade-off'],
+    projection.snapshot.options.map((item) => [item.label, item.commitment, item.commitmentKind.replace('_', ' '), item.tradeoff]),
+  )}${projection.snapshot.tripwire ? `<div class="action-callout"><span>Go/no-go tripwire</span><p><strong>${escapeHtml(projection.snapshot.tripwire.metric)}: ${escapeHtml(projection.snapshot.tripwire.threshold)}</strong> — ${escapeHtml(projection.snapshot.tripwire.decisionRule)}</p></div>` : ''}`, 80) : '';
+  const editorial = projection.sections.map((item, index) => section(
+    String(index + 1).padStart(2, '0'),
+    item.heading,
+    `<p class="lede">${escapeHtml(item.summary)}</p>${item.bullets.length
+      ? `<ul class="reasons">${item.bullets.map((bullet) => `<li>${escapeHtml(bullet)}</li>`).join('')}</ul>`
+      : ''}`,
+    100 + index * 40,
+  )).join('');
+
+  const backlog = projection.featureBacklog;
+  const features = backlog ? section('', 'Feature priorities', `<div class="feature-groups">${([
+    ['MUST', 'Build for the first useful release', backlog.must],
+    ['SHOULD', 'Add after the golden path is stable', backlog.should],
+    ['LATER', 'Keep outside the current build', backlog.later],
+  ] as const).filter(([, , items]) => items.length).map(([priority, description, items]) => `<section class="feature-group priority-${priority.toLowerCase()}"><header><div><span>${priority}</span><h4>${description}</h4></div><strong>${items.length}</strong></header><ul>${items.map((item) => `<li><div class="feature-title"><strong>${escapeHtml(item.feature)}</strong><span>${item.effort}</span></div><p>${escapeHtml(item.user_value)}</p><small>${escapeHtml(item.rationale)}</small></li>`).join('')}</ul></section>`).join('')}</div>${backlog.wont.length ? `<h3>Not in this scope</h3><ul class="checks">${backlog.wont.map((item) => `<li><strong>${escapeHtml(item.feature)}</strong> — ${escapeHtml(item.reason)}</li>`).join('')}</ul>` : ''}`, 340) : '';
+  const buildPlan = projection.implementationPlan ? section('', 'Build plan', `<ol class="milestone-list">${projection.implementationPlan.milestones.map((milestone) => `<li><div class="milestone-marker"><span>${String(milestone.order).padStart(2, '0')}</span><small>${escapeHtml(milestone.timebox)}</small></div><article><h4>${escapeHtml(milestone.outcome)}</h4><ul>${milestone.tasks.map((task) => `<li>${escapeHtml(task)}</li>`).join('')}</ul><div class="acceptance"><span>Done when</span><p>${escapeHtml(milestone.acceptance_test)}</p></div></article></li>`).join('')}</ol>`, 380) : '';
+  const caveats = projection.caveats.length ? section('', 'Top caveats', `<ul class="checks">${projection.caveats.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`, 420) : '';
+  const sources = projection.sources.length ? section('', 'Sources', `<ul class="agree">${projection.sources.map((source) => `<li><p>${source.url ? `<a href="${escapeHtml(source.url)}" rel="noopener noreferrer">${escapeHtml(source.label)}</a>` : escapeHtml(source.label)}</p>${source.citedFor.length ? `<small>Cited for: ${source.citedFor.map(escapeHtml).join('; ')}</small>` : ''}</li>`).join('')}</ul>`, 460) : '';
+  const nextStep = section('', 'Next step', `<div class="action-callout"><span>Do this now</span><p>${escapeHtml(projection.nextStep)}</p></div>`, 500);
+  const audit = `<details class="fold council-audit"><summary>Council audit — reasoning, evidence, dissent, and run receipt</summary><div class="fold-body">${renderDossierIdeaBody(report)}</div></details>`;
+
+  return `${hero}${warnings}${snapshot}${editorial}${features}${buildPlan}${caveats}${sources}${nextStep}${audit}`;
+}
+
 function renderLegacyIdeaBody(view: CouncilView): string {
   const risks = view.risks ?? [];
   const agreements = view.agreements ?? [];
@@ -1006,19 +1050,22 @@ function renderTechnical(view: CouncilView): string {
 export function renderCouncilHtml(view: CouncilView): string {
   const isIdea = view.workflow !== 'code-review';
   const quick = isIdea && view.mode === 'quick';
+  const hasReaderBrief = Boolean(view.decisionReport?.dossier.readerBrief);
   const kicker = quick ? 'aiki · quick analysis' : isIdea ? 'aiki · idea refinement' : 'aiki · code review';
   const title = isIdea && view.topic ? cleanTopic(view.topic) : (isIdea ? 'Idea refinement' : 'Code review');
   const panel = view.columns.map((c) => c.title);
-  const metaBits = [
+  const metaBits = hasReaderBrief ? [] : [
     panel.length ? `${quick ? 'Analyst' : 'Panel'}: ${panel.join(' · ')}` : '',
     !quick && view.moderator ? `Chair: ${view.moderator}` : '',
     view.calls,
   ].filter(Boolean);
-  const flags = view.flags.length
+  const flags = !hasReaderBrief && view.flags.length
     ? `<div class="warns">${view.flags.map((f) => `<span class="warn">⚑ ${escapeHtml(f.replaceAll('_', ' '))}</span>`).join('')}</div>`
     : '';
   const body = isIdea && view.decisionReport?.dossier
-    ? renderDossierIdeaBody(view.decisionReport)
+    ? view.decisionReport.dossier.readerBrief
+      ? renderReaderBriefIdeaBody(view.decisionReport)
+      : renderDossierIdeaBody(view.decisionReport)
     : quick ? renderQuickIdeaBody(view) : isIdea ? renderIdeaBody(view) : renderReviewBody(view);
   // Embed the report as Markdown for the Copy button. Escape "<" so a "</script>" in content can't break out.
   const md = JSON.stringify(councilMarkdown(view)).replace(/</g, '\\u003c');

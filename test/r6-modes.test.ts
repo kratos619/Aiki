@@ -74,23 +74,25 @@ afterEach(async () => {
 });
 
 describe('R6 mode call plans', () => {
-  it('freezes the explicit quick/council/research ceilings and adaptive defaults', () => {
+  it('keeps quick cheap and makes council/research exact aliases', () => {
+    const fullCouncil = {
+      baseCalls: 6, optionalCalls: 4, maxCalls: 10, reservedCalls: 2,
+      defaultBudget: 12, deadlineMs: 45 * 60 * 1000,
+    };
     expect(IDEA_MODE_PLANS.quick).toMatchObject({ baseCalls: 3, optionalCalls: 0, maxCalls: 3, reservedCalls: 0 });
-    expect(IDEA_MODE_PLANS.council).toMatchObject({ baseCalls: 6, optionalCalls: 2, maxCalls: 8, reservedCalls: 2 });
-    expect(IDEA_MODE_PLANS.research).toMatchObject({ baseCalls: 6, optionalCalls: 4, maxCalls: 10, reservedCalls: 2 });
+    expect(IDEA_MODE_PLANS.council).toEqual(fullCouncil);
+    expect(IDEA_MODE_PLANS.research).toEqual(fullCouncil);
     expect(defaultBudgetFor('idea-refinement', 'quick')).toBe(4);
-    expect(defaultBudgetFor('idea-refinement', 'council')).toBe(10);
+    expect(defaultBudgetFor('idea-refinement', 'council')).toBe(12);
     expect(defaultBudgetFor('idea-refinement', 'research')).toBe(12);
   });
 
-  // Research legitimately does 2-3× the work (repairs + coverage-fill + verify + rebuttal + chair +
-  // planner); a flat 20-min wall clock killed run 20260715-1404 at S9 after valid work through S8.
-  it('gives research mode a longer wall-clock than quick/council; code-review keeps the legacy cap', () => {
+  it('gives both full-council aliases the research wall-clock; quick/code-review stay at 20 minutes', () => {
     expect(defaultDeadlineFor('idea-refinement', 'quick')).toBe(20 * 60 * 1000);
-    expect(defaultDeadlineFor('idea-refinement', 'council')).toBe(20 * 60 * 1000);
+    expect(defaultDeadlineFor('idea-refinement', 'council')).toBe(45 * 60 * 1000);
     expect(defaultDeadlineFor('idea-refinement', 'research')).toBe(45 * 60 * 1000);
     expect(defaultDeadlineFor('code-review')).toBe(20 * 60 * 1000);
-    expect(defaultDeadlineFor('idea-refinement', 'research')).toBeGreaterThan(defaultDeadlineFor('idea-refinement', 'council'));
+    expect(defaultDeadlineFor('idea-refinement', 'research')).toBe(defaultDeadlineFor('idea-refinement', 'council'));
   });
 
   it('classifies the receipt into discovery, verification, repair, and planning', () => {
@@ -102,11 +104,54 @@ describe('R6 mode call plans', () => {
     expect(callCategory('S9b-plan')).toBe('planning');
   });
 
-  it('selects research only for an explicit research request; an explicit flag can still override it', () => {
-    expect(inferIdeaMode('Do some research and check the links before planning this.')).toBe('research');
-    expect(inferIdeaMode('Look up the current hackathon rules.')).toBe('research');
+  it('uses one full-council mode regardless of research wording', () => {
+    expect(inferIdeaMode('Do some research and check the links before planning this.')).toBe('council');
+    expect(inferIdeaMode('Look up the current hackathon rules.')).toBe('council');
+    expect(inferIdeaMode('Improve this product plan and do some reserach before brainstorming.')).toBe('council');
     expect(inferIdeaMode('Here is our package: https://npmjs.com/package/aiki-cli')).toBe('council');
     expect(inferIdeaMode('Stress-test this product idea.')).toBe('council');
+  });
+
+  it.each(['council', 'research'] as const)('uses the 45-minute default inside a %s RunCtx', (mode) => {
+    let now = 0;
+    const writer = new RunWriter(`20260716-2200-idea-refinement-${mode}`, root);
+    const ctx = new RunCtx({
+      runId: writer.runId,
+      workflow: 'idea-refinement',
+      mode,
+      handles: ['agy', 'codex', 'claude'].map((id) => handle(id as ProviderId)),
+      roles: { analyst: 'agy', judge: 'claude', verifier: 'codex', s4: ['agy', 'codex'] },
+      writer,
+      cwd: writer.dir,
+      now: () => now,
+    });
+
+    now = 20 * 60 * 1000 + 1;
+    expect(() => ctx.guard()).not.toThrow();
+    now = 45 * 60 * 1000 + 1;
+    expect(() => ctx.guard()).toThrow(/45|2700000/);
+  });
+
+  it('never enables source investigation for code-review S4 calls', async () => {
+    let research: boolean | undefined;
+    const codex = handle('codex');
+    codex.adapter.run = async (request): Promise<RunResultAdapter> => {
+      research = request.research;
+      return { ok: true, text: '{}', json: {}, durationMs: 1 };
+    };
+    const writer = new RunWriter('20260716-2200-code-review-alias', root);
+    const ctx = new RunCtx({
+      runId: writer.runId,
+      workflow: 'code-review',
+      handles: [codex, handle('claude'), handle('agy')],
+      roles: { analyst: 'codex', judge: 'agy', verifier: 'claude', s4: ['codex', 'claude'] },
+      writer,
+      cwd: writer.dir,
+    });
+
+    await ctx.call(codex, { prompt: 'review', expectJson: true }, 'S4-codex');
+
+    expect(research).toBe(false);
   });
 
   it('reserves chair + planner before any optional council call', async () => {

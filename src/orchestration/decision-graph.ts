@@ -36,6 +36,41 @@ export type ClaimState = DecisionClaim['state'];
 export type EvidenceState = DecisionClaim['evidence_state'];
 export type Sensitivity = DecisionClaim['sensitivity'];
 
+export interface ClaimOutcome {
+  propositionTruth: 'HOLDS' | 'FAILS' | 'UNRESOLVED';
+  decisionEffect: 'HELD' | 'FAILED' | 'UNVERIFIED';
+}
+
+/** Decode the persisted legacy ruling once, keeping proposition truth separate from decision effect. */
+export function interpretClaimOutcome(
+  graph: DecisionGraph,
+  claim: DecisionClaim,
+  adjudication?: { ruling: 'UPHOLD' | 'REJECT' | 'UNRESOLVED' },
+): ClaimOutcome {
+  const first = graph.positions.find((position) => claim.position_ids.includes(position.id));
+  let propositionTruth: ClaimOutcome['propositionTruth'];
+  if (!adjudication || adjudication.ruling === 'UNRESOLVED') {
+    propositionTruth = claim.state === 'DISAGREEMENT' || claim.state === 'UNCERTAIN' || claim.evidence_state !== 'SUPPORTED'
+      ? 'UNRESOLVED' : 'HOLDS';
+  } else if (claim.state === 'DISAGREEMENT') {
+    propositionTruth = adjudication.ruling === 'UPHOLD' ? 'FAILS' : 'HOLDS';
+  } else {
+    const propositionIsObjection = first?.stance === 'OPPOSE';
+    propositionTruth = adjudication.ruling === 'UPHOLD'
+      ? (propositionIsObjection ? 'HOLDS' : 'FAILS')
+      : (propositionIsObjection ? 'FAILS' : 'HOLDS');
+  }
+
+  let decisionEffect: ClaimOutcome['decisionEffect'];
+  if (claim.state === 'UNCERTAIN' || claim.evidence_state !== 'SUPPORTED') decisionEffect = 'UNVERIFIED';
+  else if (claim.state === 'SHARED_CONCERN' || (claim.state === 'UNIQUE' && first?.stance === 'OPPOSE')) decisionEffect = 'FAILED';
+  else if (claim.state === 'DISAGREEMENT') {
+    decisionEffect = adjudication?.ruling === 'UPHOLD' ? 'FAILED'
+      : adjudication?.ruling === 'REJECT' ? 'HELD' : 'UNVERIFIED';
+  } else decisionEffect = 'HELD';
+  return { propositionTruth, decisionEffect };
+}
+
 export interface Escalation {
   claim_id: string;
   reason: string;

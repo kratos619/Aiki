@@ -34,10 +34,11 @@ async function runSeat(ctx: RunCtx, seat: ProviderId, label: string, lane: IdeaL
   return { provider: seat, sample: label, lane, output };
 }
 
-export async function s4Analyze(ctx: RunCtx, prompts: LanePrompts): Promise<SeatOutput[]> {
+export async function s4Analyze(ctx: RunCtx, prompts: LanePrompts, needsSourceFallback = false): Promise<SeatOutput[]> {
   const seats = ctx.roles.s4;
   const settled = await Promise.allSettled(seats.map((seat, index) => {
     const lane = IDEA_LANES[index % IDEA_LANES.length]!;
+    if (needsSourceFallback && ctx.mode !== 'quick' && seat === 'codex') ctx.addFlag('source_fallback_search');
     return runSeat(ctx, seat, seat, lane, prompts[lane]);
   }));
 

@@ -70,6 +70,8 @@ const FLAG_EXPLAIN: Record<string, string> = {
   synthesis_suspect: 'the chair output needed a deterministic repair; phrasing may be less reliable than the underlying graph',
   headless_intent: 'no human confirmed the interpretation; documented defaults were used',
   weak_seat: 'one scout seat contributed far less evidenced material than the other; treat convergence cautiously',
+  source_fallback_search: 'a supplied page blocked direct reading; the source-investigation seat searched for accessible sources instead',
+  deliverable_gap: 'one or more surviving scouts omitted a requested feature or implementation proposal',
 };
 
 function degradation(report: DecisionReportJson, flags: string[]): string[] {
@@ -95,8 +97,225 @@ function councilRead(report: DecisionReportJson): string {
   return `${report.disagreements.length} genuine disagreement${report.disagreements.length === 1 ? '' : 's'} reached the chair; ${resolved} ${resolved === 1 ? 'was' : 'were'} resolved.`;
 }
 
-/** Canonical R7 Markdown. HTML and Copy-Markdown consume the same persisted dossier object. */
-export function renderDecisionDossierMarkdown(report: DecisionReportJson): string {
+export function sanitizeReaderText(text: string, labelFor?: (id: string) => string | null): string {
+  return stripReaderClaimIds(text, labelFor)
+    .replace(/\b(?:G|C|D)\d+\b/g, '')
+    .replace(/\bUNVERIFIABLE\b/gi, 'not independently confirmed')
+    .replace(/\bUNVERIFIED\b/gi, 'not yet confirmed')
+    .replace(/\bPARTIAL\b/gi, 'partly supported')
+    .replace(/\bCONFLICTED\b/gi, 'supported by conflicting evidence')
+    .replace(/\bstructural score\b/gi, 'confidence estimate')
+    .replace(/\bevidence coverage\b/gi, 'source strength')
+    .replace(/\bverification coverage\b/gi, 'source strength')
+    .replace(/\b(?:claim|graph) ids?\b/gi, 'internal references')
+    .replace(/\b(?:provider|model) calls?\b/gi, 'analysis steps')
+    .replace(/\banswer editor\b/gi, 'answer synthesis')
+    .replace(/\breader_brief\b/gi, 'reader summary')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([.,;:])/g, '$1')
+    .trim();
+}
+
+export function cleanReaderText(report: DecisionReportJson, text: string): string {
+  return sanitizeReaderText(text, claimLookup(report));
+}
+
+const MATERIAL_WARNING_ORDER = [
+  'synthesis_suspect', 'low_diversity', 'weak_seat', 'deliverable_gap', 'plan_skipped',
+  'plan_fallback', 'headless_intent', 'verification_skipped', 'research_ungrounded',
+] as const;
+
+const READER_WARNING: Record<(typeof MATERIAL_WARNING_ORDER)[number], string> = {
+  synthesis_suspect: 'The final synthesis needed repair; treat its wording cautiously.',
+  low_diversity: 'Independent diversity was reduced because one scout seat had to be resampled.',
+  weak_seat: 'One scout contributed much less evidenced material; treat convergence cautiously.',
+  deliverable_gap: 'At least one scout omitted a requested feature or implementation proposal.',
+  plan_skipped: 'The answer-planning step was skipped because its call budget was unavailable.',
+  plan_fallback: 'The answer planner failed validation; this report uses a deterministic fallback.',
+  headless_intent: 'No person confirmed the interpreted request; documented defaults were used.',
+  verification_skipped: 'Independent verification was skipped; important factual claims may remain unchecked.',
+  research_ungrounded: 'Source investigation did not produce a cited public source; treat current claims as ungrounded.',
+};
+
+export function isDecisionSnapshotRelevant(snapshot: DecisionReportJson['decisionSnapshot']): boolean {
+  if (!snapshot) return false;
+  const allUnknown = snapshot.options.every((option) => option.commitmentKind === 'UNKNOWN');
+  const paybackUnavailable = !snapshot.payback || snapshot.payback.status === 'NOT_COMPUTABLE';
+  return !(allUnknown && paybackUnavailable);
+}
+
+function safeHttpUrl(raw?: string): string | undefined {
+  if (!raw) return undefined;
+  try {
+    const url = new URL(raw);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function looksLocalPath(value?: string): boolean {
+  if (!value) return false;
+  return /^file:/i.test(value)
+    || /^(?:\/|\.\.?[\\/]|[A-Za-z]:[\\/])/.test(value)
+    || /^(?:[^:/\\]+[\\/])+[^/\\]+$/.test(value);
+}
+
+/** One cleaned reader contract consumed by Markdown, HTML, and terminal renderers. */
+export function buildReaderProjection(report: DecisionReportJson) {
+  const brief = report.dossier.readerBrief!;
+  const clean = (text: string) => cleanReaderText(report, text);
+  const sources: Array<{ id: string; label: string; url?: string; citedFor: string[] }> = [];
+  const sourceIndexByKey = new Map<string, number>();
+  for (const id of brief.source_ids) {
+    const source = report.dossier.evidence.find((item) => item.id === id);
+    if (!source) continue;
+    const url = safeHttpUrl(source.url) ?? safeHttpUrl(source.source);
+    const title = source.title && !looksLocalPath(source.title) ? clean(source.title) : undefined;
+    const label = title ?? (url ? url
+      : source.sourceKind === 'MODEL_KNOWLEDGE' ? 'Background model knowledge'
+        : source.sourceKind === 'USER' || looksLocalPath(source.source) ? 'User-supplied material' : 'Source material');
+    const key = url ? `url:${url.toLowerCase()}` : title ? `id:${source.id}` : `label:${label.toLowerCase()}`;
+    const citedFor = [...new Set(source.claimIds.flatMap((claimId) => {
+      const claim = report.claims.find((item) => item.id === claimId);
+      return claim ? [claimShortLabel(clean(claim.text))] : [];
+    }))].slice(0, 3);
+    const existingIndex = sourceIndexByKey.get(key);
+    if (existingIndex !== undefined) {
+      sources[existingIndex]!.citedFor = [...new Set([...sources[existingIndex]!.citedFor, ...citedFor])].slice(0, 3);
+      continue;
+    }
+    sourceIndexByKey.set(key, sources.length);
+    sources.push({ id: source.id, label, ...(url ? { url } : {}), citedFor });
+  }
+  const cleanBacklog = report.dossier.featureBacklog ? {
+    must: report.dossier.featureBacklog.must.map((item) => ({ ...item, feature: clean(item.feature), user_value: clean(item.user_value), rationale: clean(item.rationale) })),
+    should: report.dossier.featureBacklog.should.map((item) => ({ ...item, feature: clean(item.feature), user_value: clean(item.user_value), rationale: clean(item.rationale) })),
+    later: report.dossier.featureBacklog.later.map((item) => ({ ...item, feature: clean(item.feature), user_value: clean(item.user_value), rationale: clean(item.rationale) })),
+    wont: report.dossier.featureBacklog.wont.map((item) => ({ feature: clean(item.feature), reason: clean(item.reason) })),
+  } : undefined;
+  const cleanPlan = report.dossier.implementationPlan ? {
+    milestones: report.dossier.implementationPlan.milestones.map((item) => ({
+      ...item,
+      timebox: clean(item.timebox),
+      outcome: clean(item.outcome),
+      tasks: item.tasks.map(clean),
+      acceptance_test: clean(item.acceptance_test),
+    })),
+  } : undefined;
+  const snapshot = isDecisionSnapshotRelevant(report.decisionSnapshot) ? {
+    decisiveNumbers: report.decisionSnapshot!.decisiveNumbers.map((item) => ({ label: clean(item.label), value: clean(item.value), meaning: clean(item.meaning) })),
+    ...(report.decisionSnapshot!.payback ? { payback: {
+      status: report.decisionSnapshot!.payback.status,
+      result: clean(report.decisionSnapshot!.payback.result),
+      basis: clean(report.decisionSnapshot!.payback.basis),
+    } } : {}),
+    options: report.decisionSnapshot!.options.map((item) => ({
+      label: clean(item.label), commitment: clean(item.commitment), commitmentKind: item.commitmentKind, tradeoff: clean(item.tradeoff),
+    })),
+    ...(report.decisionSnapshot!.tripwire ? { tripwire: {
+      metric: clean(report.decisionSnapshot!.tripwire.metric),
+      threshold: clean(report.decisionSnapshot!.tripwire.threshold),
+      decisionRule: clean(report.decisionSnapshot!.tripwire.decisionRule),
+    } } : {}),
+  } : undefined;
+  return {
+    headline: clean(brief.headline),
+    bottomLine: clean(brief.bottom_line),
+    sections: brief.sections.map((section) => ({ heading: clean(section.heading), summary: clean(section.summary), bullets: section.bullets.map(clean) })),
+    featureBacklog: cleanBacklog,
+    implementationPlan: cleanPlan,
+    caveats: brief.caveats.map(clean),
+    warnings: MATERIAL_WARNING_ORDER.filter((flag) => report.flags.includes(flag)).map((flag) => ({ flag, message: READER_WARNING[flag] })),
+    notices: report.flags.includes('source_fallback_search')
+      ? [{ flag: 'source_fallback_search', message: 'Search attempted: a supplied page could not be read directly, so the source-investigation scout searched for accessible sources.' }]
+      : [],
+    snapshot,
+    sources,
+    nextStep: clean(brief.next_step),
+  };
+}
+
+function renderReaderBriefMarkdown(report: DecisionReportJson): string {
+  const projection = buildReaderProjection(report);
+  const L: string[] = [`# ${projection.headline}`, '', projection.bottomLine, ''];
+
+  for (const warning of projection.warnings) L.push(`> ⚠ ${warning.message}`, '');
+  for (const notice of projection.notices) L.push(`> ℹ ${notice.message}`, '');
+
+  if (projection.snapshot) {
+    L.push('## Decision numbers', '', '### Decisive numbers', '', '| Metric | Value | What it means |', '|---|---:|---|');
+    for (const item of projection.snapshot.decisiveNumbers) L.push(`| ${cell(item.label)} | ${cell(item.value)} | ${cell(item.meaning)} |`);
+    if (projection.snapshot.payback) {
+      L.push('', `**Payback — ${projection.snapshot.payback.status.replaceAll('_', ' ')}:** ${projection.snapshot.payback.result}`);
+      L.push(`Basis: ${projection.snapshot.payback.basis}`, '');
+    } else L.push('');
+    L.push('### Options at a glance', '', '| Path | Commitment | Basis | Trade-off |', '|---|---:|---|---|');
+    for (const option of projection.snapshot.options) {
+      L.push(`| ${cell(option.label)} | ${cell(option.commitment)} | ${option.commitmentKind.replace('_', ' ')} | ${cell(option.tradeoff)} |`);
+    }
+    if (projection.snapshot.tripwire) {
+      const tripwire = projection.snapshot.tripwire;
+      L.push('', '### Go/no-go tripwire', '', `**${tripwire.metric}: ${tripwire.threshold}** — ${tripwire.decisionRule}`, '');
+    } else L.push('');
+  }
+
+  for (const section of projection.sections) {
+    L.push(`## ${section.heading}`, '', section.summary, '');
+    for (const bullet of section.bullets) L.push(`- ${bullet}`);
+    if (section.bullets.length) L.push('');
+  }
+
+  if (projection.featureBacklog) {
+    L.push('## Feature priorities', '', '| Priority | Feature | User value | Why now | Effort |', '|---|---|---|---|---|');
+    for (const [priority, items] of [
+      ['MUST', projection.featureBacklog.must],
+      ['SHOULD', projection.featureBacklog.should],
+      ['LATER', projection.featureBacklog.later],
+    ] as const) {
+      for (const item of items) {
+        L.push(`| ${priority} | ${cell(item.feature)} | ${cell(item.user_value)} | ${cell(item.rationale)} | ${item.effort} |`);
+      }
+    }
+    if (projection.featureBacklog.wont.length) {
+      L.push('', '**Not in this scope**', '');
+      for (const item of projection.featureBacklog.wont) L.push(`- **${item.feature}:** ${item.reason}`);
+    }
+    L.push('');
+  }
+
+  if (projection.implementationPlan) {
+    L.push('## Build plan', '', '| # | Timebox | Outcome | Work | Done when |', '|---|---|---|---|---|');
+    for (const milestone of projection.implementationPlan.milestones) {
+      L.push(`| ${milestone.order} | ${cell(milestone.timebox)} | ${cell(milestone.outcome)} | ${cell(milestone.tasks.join('; '))} | ${cell(milestone.acceptance_test)} |`);
+    }
+    L.push('');
+  }
+
+  if (projection.caveats.length) {
+    L.push('## Top caveats', '');
+    for (const caveat of projection.caveats) L.push(`- ${caveat}`);
+    L.push('');
+  }
+
+  if (projection.sources.length) {
+    L.push('## Sources', '');
+    for (const source of projection.sources) {
+      const citationScope = source.citedFor.length ? ` — Cited for: ${source.citedFor.join('; ')}` : '';
+      L.push(`${source.url ? `- [${source.label.replace(/[\[\]]/g, '')}](${source.url})` : `- ${source.label}`}${citationScope}`);
+    }
+    L.push('');
+  }
+
+  L.push('## Next step', '', projection.nextStep, '');
+
+  const legacy = renderLegacyDecisionDossierMarkdown(report).split('\n').slice(2).join('\n');
+  L.push('## Council audit', '', '<details>', '<summary>Show the council reasoning, evidence ledger, dissent, and run receipt</summary>', '', legacy, '', '</details>', '');
+  return L.join('\n');
+}
+
+/** Pre-v5 deterministic report, retained as the replay fallback and the collapsed v5 audit body. */
+function renderLegacyDecisionDossierMarkdown(report: DecisionReportJson): string {
   const { dossier } = report;
   const labelFor = claimLookup(report);
   const keyFindings = report.keyFindings?.length ? report.keyFindings : [dossier.recommendation.reason];
@@ -386,4 +605,9 @@ export function renderDecisionDossierMarkdown(report: DecisionReportJson): strin
   L.push('', '</details>', '');
 
   return L.join('\n');
+}
+
+/** Canonical Markdown. HTML and Copy-Markdown consume the same persisted reader brief. */
+export function renderDecisionDossierMarkdown(report: DecisionReportJson): string {
+  return report.dossier.readerBrief ? renderReaderBriefMarkdown(report) : renderLegacyDecisionDossierMarkdown(report);
 }

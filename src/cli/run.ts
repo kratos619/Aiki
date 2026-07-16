@@ -44,7 +44,7 @@ export function estimateRun(workflow: WorkflowId, opts: { cheap?: boolean; mode?
   return {
     calls: plan.maxCalls,
     opus: mode === 'quick' ? 1 : 2,
-    minCalls: mode === 'research' ? 8 : plan.baseCalls,
+    minCalls: plan.maxCalls - plan.reservedCalls,
     reserved: plan.reservedCalls,
   };
 }

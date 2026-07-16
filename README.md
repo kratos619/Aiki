@@ -50,9 +50,8 @@ stop copy-pasting between them by hand.
 - **Evidence-grounded decisions.** Supply local sources with `--evidence`; Aiki records their paths and
   hashes, checks freshness and citations, independently verifies selected load-bearing claims, and shows the
   remaining coverage gaps before the chair.
-- **Three bounded modes.** Use `quick` for one structured analyst, `council` for bounded multi-model
-  deliberation, or `research` for current-fact work. Explicit research wording selects `research`
-  deterministically; `--mode` always overrides it.
+- **Two bounded behaviors.** Use `quick` for one structured analyst or `council` for the full multi-model
+  decision council with source investigation. `research` remains accepted as an alias for `council`.
 - **A decision dossier, not an essay.** Reports lead with the recommendation, verified evidence coverage,
   decisive facts, first action, strongest counter-case, and critical unknowns. Financial and threshold-heavy
   decisions can include graph-anchored numbers, payback, option commitments, and a go/no-go tripwire.
@@ -236,7 +235,7 @@ Plain text is never charged silently — you get a confirm step before any run s
 aiki run idea-refinement "a fridge-photo-to-recipe app for busy parents"
 aiki run idea-refinement "an early idea" --mode quick             # one structured analyst; no council claim
 aiki run idea-refinement ./idea.md
-aiki run idea-refinement ./idea.md --mode research --evidence ./research/  # grounded, source-verifying council
+aiki run idea-refinement ./idea.md --mode council --evidence ./research/   # grounded, source-verifying council
 aiki run code-review --base main             # review this branch vs main
 aiki run code-review --diff ./changes.patch  # review a patch file
 aiki run code-review --cheap                 # Gemini+Codex review, Claude judges only disputes (~⅓ the Opus)
@@ -251,7 +250,7 @@ reads provider credential directories.
 
 Public `http(s)` links in an idea are snapshotted once before model calls and stored in
 `00a-url-sources.json`; every preflight reader and analyst sees that same text. npm package links use the
-registry metadata API. A snapshot records `FETCHED`, `BLOCKED`, or `FAILED` honestly. In research mode,
+registry metadata API. A snapshot records `FETCHED`, `BLOCKED`, or `FAILED` honestly. In full council mode,
 an unreadable supplied link stops before paid calls and asks for pasted text or a public export instead of
 letting the council guess or grill you for facts that should have come from the link.
 
@@ -269,10 +268,9 @@ only the disputes → report.
 complementary analyst lanes → deterministic claim/evidence graph audit → only decision-critical verification
 or rebuttal → evidence-linked chair → validation planner. The report is a graph-backed **decision dossier**,
 not an essay.
-Choose `--mode quick` for one structured analyst, `--mode council` for the full decision council, or
-`--mode research` for source-grounded current-fact work. Without a flag, the default is council unless the
-request explicitly asks to research, browse, look up, or check current sources; that conservative rule is
-deterministic, and an explicit flag wins:
+Choose `--mode quick` for one structured analyst or `--mode council` for the full source-investigating decision
+council. `--mode research` is retained as a compatibility alias and runs the same council. Without a flag, the
+default is the full council:
 
 - a **reader-first decision card** — recommendation, verified evidence coverage, decisive facts, first action,
   strongest counter-case, and critical unknowns before audit detail
@@ -360,8 +358,8 @@ This is the part that makes aiki trustworthy to point at a real repo:
 ## Costs & limits
 
 - **Runs cost real model calls** against your existing CLI subscriptions/quota. Idea refinement is nominally
-  **3 calls in quick**, **6–8 in council**, or **8–10 in research** (schema repairs can add calls within the
-  mode-aware budget); code review is about **5**. `aiki run` shows the mode, range, budget, and reserved
+  **3 calls in quick** or **8–10 in the full council** (`research` is the same behavior; schema repairs can add
+  calls within the mode-aware budget); code review is about **5**. `aiki run` shows the mode, range, budget, and reserved
   chair/planner calls before asking to confirm (skip with `--yes`).
 - **Not a general assistant.** Questions and "explore my whole codebase" requests are redirected, not answered
   — aiki reviews a *diff* and vets a *stated idea*.

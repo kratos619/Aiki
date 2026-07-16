@@ -4,7 +4,7 @@
 import { resolve } from 'node:path';
 import type { RunCtx, StageInfo } from '../orchestration/context.js';
 import { runStage, StageError } from '../orchestration/context.js';
-import { s4Analyze } from '../orchestration/stages/s4-analyze.js';
+import { s4Analyze, type SeatOutput } from '../orchestration/stages/s4-analyze.js';
 import { s5Drift } from '../orchestration/stages/s5-drift.js';
 import { s6Positions } from '../orchestration/stages/s6-positions.js';
 import { s7DecisionGraph, type RubricItem } from '../orchestration/stages/s7-decision-graph.js';
@@ -48,7 +48,7 @@ export function buildIdeaRubric(domainDimensions: DomainDimension[] = []): Rubri
 
 /** Idea S4 analyst template. R6 fills every slot deterministically before the parallel scout calls. */
 export const IDEA_S4_ANALYST_TEMPLATE = `ROLE: Independent analyst on a decision panel. You work ALONE; you will not see
-other analysts' output. Be adversarial toward the idea, not polite.
+other analysts' output. Improve the strongest version and pressure-test it honestly within your assigned lane.
 
 TASK CONTRACT: {{INTENT_CONTRACT_JSON}}
 INPUT DOCUMENT: read the file at {{INPUT_PATH}}{{SKILL}}
@@ -75,8 +75,11 @@ Produce ONLY JSON matching {{S4_SCHEMA_REF}} with:
 - coverage: one entry per rubric dimension {dimension_id, status COVERED|NOT_APPLICABLE,
   position_ids ([] when none), rationale (required for NOT_APPLICABLE)}.
 - decision_questions: questions {question, claim_ids} whose answers could change the verdict.
-Caps: at most 12 positions, 20 evidence cards, 8 calculations, 8 decision_questions.
-Rules: no motivation, no summaries of your own output, no markdown, JSON only.`;
+- deliverable_proposals: when requested_outputs includes FEATURE_BACKLOG or IMPLEMENTATION_PLAN, propose
+  concrete user-facing work as {output,title,detail,user_value,why_distinctive,evidence_ids}; otherwise [].
+  Proposals are recommendations, not factual claims. Use evidence_ids only when evidence directly supports them.
+Caps: at most 12 positions, 20 evidence cards, 8 calculations, 8 decision_questions, 8 deliverable_proposals.
+Rules: no unsupported hype, no summaries of your own output, no markdown, JSON only.`;
 
 /**
  * Resolve the {{SKILL}} slot before deterministic structural fill. An empty skill collapses the slot
@@ -94,11 +97,11 @@ export function buildAnalystPrompt(
   mode: IdeaMode,
   skill: string,
 ): string {
-  const modeRules = mode === 'research'
-    ? `\n\nMODE: research. Use provider-native read-only source investigation when available. Every current
+  const modeRules = mode !== 'quick'
+    ? `\n\nMODE: full council. Use provider-native read-only source investigation when available. Every current
 fact must have an independently checkable locator and access date. If investigation is unavailable,
 leave the claim unverified; never invent a source.`
-    : `\n\nMODE: council. Analyze independently; do not assume another seat will cover your lane.`;
+    : `\n\nMODE: quick. Analyze independently and keep unsupported claims visibly unverified.`;
   const prompt = buildAnalystTemplate(skill)
     .replace('{{INTENT_CONTRACT_JSON}}', JSON.stringify(contract))
     .replace('{{INPUT_PATH}}', inputPath)
@@ -125,6 +128,27 @@ export const IDEA_STAGES: StageInfo[] = [
   { id: 'S10', label: 'Report', role: null },
 ];
 
+/** Record guarantees observed at the surviving typed S4 boundary; never infer them from prompts. */
+export function recordIdeaOutcomeFlags(ctx: RunCtx, contract: DecisionContract, seats: SeatOutput[]): void {
+  if (ctx.mode === 'quick') return;
+  const requested = (contract.requested_outputs ?? [])
+    .filter((output) => output === 'FEATURE_BACKLOG' || output === 'IMPLEMENTATION_PLAN');
+  if (requested.some((output) => seats.some((seat) =>
+    !seat.output.deliverable_proposals.some((proposal) => proposal.output === output)))) {
+    ctx.addFlag('deliverable_gap');
+  }
+  const grounded = seats.some((seat) => {
+    const cited = new Set(seat.output.positions.flatMap((position) => position.evidence_ids));
+    return seat.output.evidence.some((card) =>
+      cited.has(card.id)
+      && (card.source_kind === 'PRIMARY' || card.source_kind === 'SECONDARY')
+      && card.freshness === 'CURRENT'
+      && Boolean(card.accessed_at && (card.url || card.locator))
+      && card.support !== 'CONTEXT_ONLY');
+  });
+  if (!grounded) ctx.addFlag('research_ungrounded');
+}
+
 /** Runs the full idea-refinement pipeline S0–S10. Throws on any fatal condition; the engine's
  *  `executeRun` wrapper turns that into a graceful failure + meta. Each stage is wrapped in
  *  `runStage` so the TUI timeline (T8) gets start/end events; headless, that's a no-op. */
@@ -133,12 +157,16 @@ export async function runIdeaRefinement(ctx: RunCtx, input: string): Promise<voi
   const urlSources = await snapshotUrlSources(input);
   await ctx.writer.writeJson('url-sources', urlSources);
   const unreadableSources = urlSources.sources.filter((source) => source.status !== 'FETCHED');
-  if (ctx.mode === 'research' && unreadableSources.length > 0) {
+  const needsSourceFallback = ctx.mode !== 'quick' && unreadableSources.length > 0;
+  const hasReadableResearch = Boolean(ctx.evidencePack?.files.length)
+    || urlSources.sources.some((source) => source.status === 'FETCHED');
+  const canSearch = ctx.roles.s4.includes('codex');
+  if (needsSourceFallback && !canSearch && !hasReadableResearch) {
     const details = unreadableSources.map((source) => `${source.url} (${source.status}: ${source.error})`).join('; ');
     throw new StageError(
       'S0',
       'SOURCE_UNREADABLE',
-      `research stopped before model calls because a supplied source could not be read: ${details}. Paste the relevant text or provide a public export, then rerun.`,
+      `source investigation stopped before model calls because no source was readable and Codex search is unavailable${details ? `: ${details}` : ''}. Paste the relevant text, provide a public export, or enable Codex, then rerun.`,
     );
   }
   const { contract, brief } = await runStage(ctx, 'S0', () =>
@@ -185,19 +213,17 @@ export async function runIdeaRefinement(ctx: RunCtx, input: string): Promise<voi
     return;
   }
 
-  if (ctx.mode === 'research' && !ctx.evidencePack && !ctx.available().includes('codex')) {
-    ctx.addFlag('research_ungrounded');
-  }
   const analystPrompt = buildAnalystPrompt(contract, inputPath, ctx.evidencePack, ctx.mode, analystSkill);
   await ctx.writer.writePrompt('analyst.md', analystPrompt);
   const lanePrompts = buildLanePrompts(analystPrompt, rubric);
-  const seats = await runStage(ctx, 'S4', () => s4Analyze(ctx, lanePrompts));
+  const seats = await runStage(ctx, 'S4', () => s4Analyze(ctx, lanePrompts, needsSourceFallback));
   const { kept } = await runStage(ctx, 'S5', () => s5Drift(ctx, contract, seats));
+  recordIdeaOutcomeFlags(ctx, contract, kept);
   const positions = await runStage(ctx, 'S6', () => s6Positions(ctx, kept));
   const graph = await runStage(ctx, 'S7', () => s7DecisionGraph(ctx, positions, rubric, contract.task));
   const verifications = await runStage(ctx, 'S8', () => s8Verify(ctx, graph));
   const rebuttals = await runStage(ctx, 'S8b', () => s8bRebuttal(ctx, graph, verifications, ctx.mode));
   const judgeReport = await runStage(ctx, 'S9', () => s9Judge(ctx, contract, graph, verifications, rubric, rebuttals));
-  const actionPlan = await runStage(ctx, 'S9b', () => s9bPlan(ctx, contract, kept, graph, judgeReport));
+  const actionPlan = await runStage(ctx, 'S9b', () => s9bPlan(ctx, contract, kept, graph, judgeReport, input));
   await runStage(ctx, 'S10', () => s10Render(ctx, { contract, seats: kept, graph, verifications, rebuttals, judgeReport, actionPlan, rubric, original: input }));
 }

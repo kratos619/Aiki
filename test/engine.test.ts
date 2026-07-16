@@ -108,7 +108,7 @@ function fakeAdapter(id: ProviderId, opts: { obvious?: boolean } = {}): Adapter 
           dissent: ['May not beat a single strong model on subjective synthesis.'],
           confidence_notes: 'HIGH on the consensus claims; MEDIUM on the contested one.',
         };
-      } else if (p.includes('ROLE: Validation planner')) {
+      } else if (p.includes('ROLE: User answer editor and action planner')) {
         obj = {
           actions: [{
             order: 1,
@@ -119,6 +119,17 @@ function fakeAdapter(id: ProviderId, opts: { obvious?: boolean } = {}): Adapter 
             kill_signal: 'Fewer than two developers describe the pain unprompted.',
           }],
           sequencing_note: 'Resolve target-user demand before deeper implementation.',
+          reader_brief: {
+            headline: 'Validate developer demand before expanding the local council',
+            bottom_line: 'The narrow orchestration path is feasible, but target-user demand should decide whether it grows.',
+            sections: [
+              { heading: 'Product direction', summary: 'Keep the first workflow focused on one decision.', bullets: ['Use the provider probe as the compatibility guard.'] },
+              { heading: 'Validation', summary: 'Test whether developers feel this pain before deeper implementation.', bullets: ['Interview five target developers.'] },
+            ],
+            next_step: 'Interview five target developers about local orchestration pain.',
+            caveats: ['Provider formats can still drift.'],
+            source_ids: [],
+          },
         };
       } else {
         obj = {};
@@ -185,7 +196,7 @@ describe('executeRun happy path (§24 T7: artifacts 00–10, end-to-end)', () =>
     const outcome = await executeRun(ctx, INPUT, runIdeaRefinement);
 
     expect(outcome.ok).toBe(true);
-    expect(outcome.callCount).toBe(8); // 6-call base + coverage fill + verifier; chair/planner preserved
+    expect(outcome.callCount).toBe(10); // 6-call base + four graph-triggered investigation/verification calls
 
     const dir = ctx.writer.dir;
     expect(await readFile(join(dir, '00-original.md'), 'utf8')).toBe(INPUT);
@@ -238,8 +249,9 @@ describe('executeRun happy path (§24 T7: artifacts 00–10, end-to-end)', () =>
     expect(verif.verifications[0]).toMatchObject({ claim_id: 'G2', status: 'CONTRADICTED', evidence_ids: ['agy/E2'] });
 
     const rebuttals = JSON.parse(await readFile(join(dir, '08b-rebuttals.json'), 'utf8'));
-    expect(rebuttals.events).toHaveLength(0);
-    expect(rebuttals.stop_reason).toBe('CALL_CAP_REACHED');
+    expect(rebuttals.events).toHaveLength(2);
+    expect(rebuttals.events.map((event: { response: string }) => event.response)).toEqual(['CONCEDE', 'COUNTER']);
+    expect(rebuttals.stop_reason).toBe('ROUND_COMPLETE');
 
     // S9: judge adjudicated the dispute only; non-empty dissent.
     const judge = JSON.parse(await readFile(join(dir, '09-judge-report.json'), 'utf8'));
@@ -253,7 +265,8 @@ describe('executeRun happy path (§24 T7: artifacts 00–10, end-to-end)', () =>
 
     // S10: graph-backed reader-first dossier rendered + machine-readable JSON.
     const report = await readFile(join(dir, 'final-report.md'), 'utf8');
-    expect(report).toContain('# Multi-Model Decision Report');
+    expect(report).toContain('# Validate developer demand before expanding the local council');
+    expect(report).toContain('## Council audit');
     expect(report).toContain('## 1. Decision');
     expect(report).toContain('## 2. Deliverables and action plan');
     expect(report).toContain('## 5. Risks and open questions');
@@ -261,14 +274,15 @@ describe('executeRun happy path (§24 T7: artifacts 00–10, end-to-end)', () =>
     expect(report).toContain('Gemini'); // agy shown as its DISPLAY_NAME (user-facing)
     const decisionReport = JSON.parse(await readFile(join(dir, '10-decision-report.json'), 'utf8'));
     expect(decisionReport).toMatchObject({ verdict: { status: 'ACCEPTED_WITH_CONDITIONS' } });
+    expect(decisionReport.dossier.readerBrief.headline).toContain('Validate developer demand');
     expect(decisionReport.claims.length).toBeGreaterThan(0);
     expect(decisionReport.dossier.claimChain.length).toBeGreaterThan(0);
 
     const meta = JSON.parse(await readFile(join(dir, 'meta.json'), 'utf8'));
     expect(meta.exit_status).toBe('ok');
-    expect(meta.call_count).toBe(8);
+    expect(meta.call_count).toBe(10);
     expect(meta.mode).toBe('council');
-    expect(meta.receipt).toEqual({ discovery: 5, verification: 2, repair: 0, planning: 1 });
+    expect(meta.receipt).toEqual({ discovery: 5, verification: 4, repair: 0, planning: 1 });
     expect(meta.roles).toMatchObject({ analyst: 'agy', judge: 'claude', s4_1: 'agy', s4_2: 'codex' });
   });
 });

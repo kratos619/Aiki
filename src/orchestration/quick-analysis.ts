@@ -3,6 +3,7 @@ import {
   ActionPlan,
   JudgeReport,
   QuickDecisionModel,
+  readerBriefIssues,
   type ActionPlanArtifact,
   type DecisionContract,
   type JudgeReport as JudgeReportT,
@@ -24,7 +25,7 @@ EVIDENCE PACK MANIFEST: {{EVIDENCE_PACK_JSON}}
 Output ONLY JSON:
 {
   "analysis": <the idea analyst object: task_echo, strongest_version, positions, evidence,
-    calculations, coverage, decision_questions>,
+    calculations, coverage, decision_questions, deliverable_proposals>,
   "verdict": "<2-5 sentence decision and core reason>",
   "recommendation": "PROCEED|PROCEED_WITH_CONDITIONS|PIVOT|STOP",
   "conditions": ["<only for PROCEED_WITH_CONDITIONS>"],
@@ -35,10 +36,15 @@ Output ONLY JSON:
     "validates":"<a local position id such as P1, or Q:<question prefix>>","effort":"S|M|L",
     "kill_signal":"<result that stops or reshapes the idea>"}],"sequencing_note":"<why this order>",
     "feature_backlog":{"must":[{"feature":"<name>","user_value":"<value>","rationale":"<why now>","effort":"S|M|L"}],"should":[],"later":[],"wont":[{"feature":"<name>","reason":"<why excluded>"}]},
-    "implementation_plan":{"milestones":[{"order":1,"timebox":"<Day 1>","outcome":"<working outcome>","tasks":["<task>"],"acceptance_test":"<observable pass condition>"}]}}
+    "implementation_plan":{"milestones":[{"order":1,"timebox":"<Day 1>","outcome":"<working outcome>","tasks":["<task>"],"acceptance_test":"<observable pass condition>"}]},
+    "reader_brief":{"headline":"<direct answer>","bottom_line":"<recommendation and why>",
+      "sections":[{"heading":"<useful heading>","summary":"<plain-language synthesis>","bullets":["<specific insight>"]},{"heading":"<useful heading>","summary":"<plain-language synthesis>","bullets":[]}],
+      "next_step":"<one action>","caveats":["<material limitation>"],"source_ids":["<evidence id from analysis, or empty>"]}}
 }
 Honor DECISION CONTRACT.requested_outputs. Include feature_backlog and implementation_plan whenever
 those exact outputs are requested; keep them concrete and scoped to the smallest useful golden path.
+reader_brief is always required. It directly answers the user, summarizes requested outputs, and never mentions
+claim ids, verification enums, structural scoring, evidence coverage, or model mechanics.
 Use only supplied evidence or clearly labeled MODEL_KNOWLEDGE. Never invent URLs. JSON only.`;
 
 export function buildQuickPrompt(
@@ -106,14 +112,28 @@ export function quickActionPlan(
     return valid ? [{ ...action, validates }] : [];
   }).map((action, index) => ({ ...action, order: index + 1 }));
   const requestedOutputs = contract.requested_outputs ?? ['DECISION'];
-  if (actions.length > 0) return ActionPlan.parse({
+  const sourceIds = new Set(graph.evidence.map((evidence) => evidence.id));
+  const readerBrief = {
+    ...decision.action_plan.reader_brief,
+    source_ids: decision.action_plan.reader_brief.source_ids.flatMap((id) => {
+      const global = graph.evidence.find((evidence) =>
+        evidence.provider === provider && (evidence.id === id || evidence.id.endsWith(`/${id}`)))?.id ?? id;
+      return sourceIds.has(global) ? [global] : [];
+    }),
+  };
+  const deliverablesPresent = (!requestedOutputs.includes('FEATURE_BACKLOG') || decision.action_plan.feature_backlog)
+    && (!requestedOutputs.includes('IMPLEMENTATION_PLAN') || decision.action_plan.implementation_plan);
+  if (deliverablesPresent && readerBriefIssues(readerBrief, graph.claims.map((claim) => claim.id)).length === 0) {
+    return ActionPlan.parse({
     actions,
     sequencing_note: decision.action_plan.sequencing_note,
+    reader_brief: readerBrief,
     ...(requestedOutputs.includes('FEATURE_BACKLOG') && decision.action_plan.feature_backlog
       ? { feature_backlog: decision.action_plan.feature_backlog } : {}),
     ...(requestedOutputs.includes('IMPLEMENTATION_PLAN') && decision.action_plan.implementation_plan
       ? { implementation_plan: decision.action_plan.implementation_plan } : {}),
-  });
+    });
+  }
   ctx.addFlag('plan_fallback');
   return {
     kind: 'PlannerUnavailable',

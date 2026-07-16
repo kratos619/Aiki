@@ -4,7 +4,7 @@
 
 ### Added
 - Public URL snapshots for idea prompts, including an npm registry adapter, private-network rejection,
-  auditable `FETCHED` / `BLOCKED` / `FAILED` status, and a research-mode gate that stops before model calls
+  auditable `FETCHED` / `BLOCKED` / `FAILED` status, and a full-council gate that stops before model calls
   when a supplied source cannot be read.
 - Requested-output planning: prompts that ask for a feature list or implementation plan now carry that
   requirement through the decision contract, the existing planner call, machine JSON, Markdown, and HTML.
@@ -16,9 +16,10 @@
   claims from JUDGMENT calls so verification priority and coverage describe checkable facts honestly.
   Deliverable detection now combines model-backed readings with a widened fallback that hears requests for
   standout or "ultra-level" features.
-- Explicit research wording selects research mode deterministically when `--mode` is absent; an explicit
-  mode remains authoritative. Preflight asks zero to four questions and may not repeat facts already present
-  in the user prompt or a fetched source.
+- `council` now includes the complete source-investigation path, 8–10-call allowance, 12-call repair budget,
+  and 45-minute deadline. `research` remains accepted as a compatibility alias with identical behavior.
+  Preflight asks zero to four questions and may not repeat facts already present in the user prompt or a
+  fetched source.
 - Reader-facing report sections use human claim text instead of internal graph ids such as `G1`; raw ids
   remain in machine artifacts and the Markdown technical audit.
 

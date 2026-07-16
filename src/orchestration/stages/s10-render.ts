@@ -4,15 +4,15 @@
 // A truly missing required field is a template bug (fail loudly); degraded-but-valid
 // states (S8 skipped, items UNVERIFIED, empty consensus) render normally. User-facing → DISPLAY_NAME.
 
-import type { ActionPlanArtifact, ClaimVerificationSet, FeatureBacklog, IdeaMode, ImplementationPlan, IntentContract, JudgeReport, RebuttalEventSet, RequestedOutput, VerificationSet } from '../../schemas/index.js';
+import { ReaderBrief as ReaderBriefSchema, readerBriefIssues, type ActionPlanArtifact, type ClaimVerificationSet, type FeatureBacklog, type IdeaMode, type ImplementationPlan, type IntentContract, type JudgeReport, type ReaderBrief, type RebuttalEventSet, type RequestedOutput, type VerificationSet } from '../../schemas/index.js';
 import type { ProviderId } from '../../providers/types.js';
 import { DISPLAY_NAME } from '../../providers/types.js';
 import type { RunCtx } from '../context.js';
 import { overlap, tokenize } from '../cluster.js';
 import type { SeatOutput } from './s4-analyze.js';
 import type { RubricItem } from './s7-decision-graph.js';
-import type { DecisionGraph } from '../decision-graph.js';
-import { renderDecisionDossierMarkdown } from '../decision-dossier.js';
+import { interpretClaimOutcome, type DecisionGraph } from '../decision-graph.js';
+import { buildReaderProjection, renderDecisionDossierMarkdown, sanitizeReaderText } from '../decision-dossier.js';
 import { callCategory } from '../modes.js';
 
 export interface AuditRow {
@@ -25,26 +25,18 @@ export interface AuditRow {
 
 /** Pure graph-backed decision audit. */
 export function deriveAudit(graph: DecisionGraph, judgeReport: JudgeReport): AuditRow[] {
-  const ruling = new Map(judgeReport.adjudications.map((a) => [a.id, a.ruling]));
+  const ruling = new Map(judgeReport.adjudications.map((a) => [a.id, a]));
   const positionById = new Map(graph.positions.map((position) => [position.id, position]));
 
   return graph.claims.map((claim) => {
     const positions = claim.position_ids.map((id) => positionById.get(id)!);
     const providers = [...new Set(positions.map((position) => position.provider))];
-    let status: AuditRow['status'];
-    let confidence: AuditRow['confidence'];
-    if (claim.state === 'UNCERTAIN' || claim.evidence_state !== 'SUPPORTED') {
-      [status, confidence] = ['unverified', 'LOW'];
-    } else if (claim.state === 'SHARED_CONCERN' || (claim.state === 'UNIQUE' && positions[0]?.stance === 'OPPOSE')) {
-      [status, confidence] = ['failed', providers.length >= 2 ? 'HIGH' : 'MEDIUM'];
-    } else if (claim.state === 'DISAGREEMENT') {
-      const result = ruling.get(claim.id);
-      if (result === 'UPHOLD') [status, confidence] = ['failed', 'MEDIUM'];
-      else if (result === 'REJECT') [status, confidence] = ['held', 'MEDIUM'];
-      else [status, confidence] = ['unverified', 'LOW'];
-    } else {
-      [status, confidence] = ['held', providers.length >= 2 ? 'HIGH' : 'MEDIUM'];
-    }
+    const outcome = interpretClaimOutcome(graph, claim, ruling.get(claim.id));
+    const status = outcome.decisionEffect === 'HELD' ? 'held'
+      : outcome.decisionEffect === 'FAILED' ? 'failed' : 'unverified';
+    const confidence: AuditRow['confidence'] = status === 'unverified' ? 'LOW'
+      : claim.state === 'DISAGREEMENT' ? 'MEDIUM'
+        : providers.length >= 2 ? 'HIGH' : 'MEDIUM';
     return { id: claim.id, statement: claim.proposition, providers, status, confidence };
   });
 }
@@ -184,7 +176,7 @@ export interface DecisionDossier {
     conditions: Array<{ text: string; claimIds: string[] }>;
   };
   claimChain: Array<{ claimId: string; text: string; ruling: ClaimRuling; evidenceStatus: string; dependsOn: string[] }>;
-  evidence: Array<{ id: string; source: string; sourceKind: string; date: string; freshness: string; verificationStatus: string; claimIds: string[] }>;
+  evidence: Array<{ id: string; source: string; sourceKind: string; title?: string; url?: string; date: string; freshness: string; verificationStatus: string; claimIds: string[] }>;
   positionChanges: Array<{ eventId: string; claimId: string; responder: ProviderId; response: string; reasoning: string; evidenceIds: string[]; narrowedProposition?: string }>;
   sharedConcerns: Array<{ claimId: string; text: string; providerIds: ProviderId[]; evidenceStatus: string }>;
   uniqueSupportedInsights: Array<{ claimId: string; text: string; providerId: ProviderId; verificationStatus: string }>;
@@ -197,6 +189,7 @@ export interface DecisionDossier {
   };
   featureBacklog?: FeatureBacklog;
   implementationPlan?: ImplementationPlan;
+  readerBrief?: ReaderBrief;
   missingRequestedOutputs: Array<'FEATURE_BACKLOG' | 'IMPLEMENTATION_PLAN'>;
   counterCase: { available: boolean; reasoning: string; claimIds: string[] };
   contributions: Array<{ provider: ProviderId; name: string; verifiedUniqueClaimIds: string[] }>;
@@ -261,15 +254,86 @@ const STANCE_MAP: Record<string, MapStance> = { SUPPORT: 'AGREE', OPPOSE: 'DISAG
 const VERIFICATION_MAP = { SUPPORTED: 'VERIFIED', CONFLICTED: 'PARTIAL', UNVERIFIED: 'UNVERIFIED' } as const;
 const SEVERITY_MAP: Record<string, 'High' | 'Medium' | 'Low'> = { DECISIVE: 'High', MATERIAL: 'Medium', LOW: 'Low' };
 
-function claimRuling(claim: DecisionGraph['claims'][number], adjudication?: { ruling: string }): ClaimRuling {
-  // UPHOLD/REJECT inverts ONLY on a disagreement (the ruling is on the objection); for every other
-  // state the ruling is evidence-based, matching deriveAudit's semantics.
-  if (claim.state === 'DISAGREEMENT') {
-    if (!adjudication || adjudication.ruling === 'UNRESOLVED') return 'UNRESOLVED';
-    return adjudication.ruling === 'UPHOLD' ? 'REJECTED' : 'ACCEPTED';
-  }
-  if (claim.state === 'UNCERTAIN') return 'UNRESOLVED';
-  return claim.evidence_state === 'SUPPORTED' ? 'ACCEPTED' : 'CONDITIONAL';
+function claimRuling(
+  graph: DecisionGraph,
+  claim: DecisionGraph['claims'][number],
+  adjudication?: JudgeReport['adjudications'][number],
+): ClaimRuling {
+  const truth = interpretClaimOutcome(graph, claim, adjudication).propositionTruth;
+  return truth === 'HOLDS' ? 'ACCEPTED' : truth === 'FAILS' ? 'REJECTED' : 'UNRESOLVED';
+}
+
+function fallbackReaderBrief(args: {
+  graph: DecisionGraph;
+  judgeReport: JudgeReport;
+  actionPlan?: ActionPlanArtifact;
+  openQuestions: string[];
+  missingRequestedOutputs: Array<'FEATURE_BACKLOG' | 'IMPLEMENTATION_PLAN'>;
+  flags: ReadonlySet<string>;
+}): ReaderBrief {
+  const labelFor = (id: string) => args.graph.claims.find((claim) => claim.id === id)?.proposition ?? null;
+  const clean = (value: string, max: number) => {
+    const text = sanitizeReaderText(value, labelFor);
+    if (text.length <= max) return text;
+    const clipped = text.slice(0, max - 1);
+    const boundary = clipped.lastIndexOf(' ');
+    return `${clipped.slice(0, boundary > max * 0.6 ? boundary : max - 1).trimEnd()}…`;
+  };
+  const keyPoints = args.judgeReport.key_points ?? [];
+  const missing = args.missingRequestedOutputs.length
+    ? `Requested deliverables unavailable: ${args.missingRequestedOutputs.join(', ')}.`
+    : 'No additional requested deliverable was synthesized.';
+  const firstAction = args.actionPlan && !('kind' in args.actionPlan) ? args.actionPlan.actions[0]?.action : undefined;
+  const nextStep = firstAction
+    ?? args.openQuestions[0]
+    ?? args.judgeReport.strongest_counter_case?.reasoning
+    ?? 'Review the unresolved decision evidence before committing.';
+  const adjudicationById = new Map(args.judgeReport.adjudications.map((item) => [item.id, item]));
+  const acceptedClaims = new Set(args.graph.claims
+    .filter((claim) => claim.evidence_state === 'SUPPORTED'
+      && interpretClaimOutcome(args.graph, claim, adjudicationById.get(claim.id)).propositionTruth === 'HOLDS')
+    .map((claim) => claim.id));
+  const sourceIds = args.graph.evidence
+    .filter((evidence) => {
+      if (evidence.source_kind !== 'PRIMARY' && evidence.source_kind !== 'SECONDARY') return false;
+      try {
+        const url = new URL(evidence.url ?? '');
+        if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
+      } catch {
+        return false;
+      }
+      return args.graph.edges.some((edge) => edge.from === evidence.id && edge.type === 'SUPPORTS' && acceptedClaims.has(edge.to));
+    })
+    .map((evidence) => evidence.id)
+    .slice(0, 8);
+  const raw = {
+    headline: clean(args.judgeReport.verdict, 160),
+    bottom_line: clean(args.judgeReport.verdict, 1200),
+    sections: [
+      {
+        heading: 'Why',
+        summary: clean(keyPoints[0] ?? args.judgeReport.verdict, 1000),
+        bullets: [...keyPoints.slice(1, 3), ...(args.judgeReport.conditions ?? []).slice(0, 2)].map((item) => clean(item, 500)),
+      },
+      {
+        heading: 'What remains',
+        summary: missing,
+        bullets: [args.openQuestions[0], args.judgeReport.strongest_counter_case?.reasoning]
+          .filter((item): item is string => Boolean(item)).map((item) => clean(item, 500)),
+      },
+    ],
+    next_step: clean(nextStep, 600),
+    caveats: [
+      ...(args.missingRequestedOutputs.length ? [missing] : []),
+      ...(args.flags.has('plan_skipped') || args.flags.has('plan_fallback')
+        ? ['The requested synthesis was unavailable; this concise summary uses the recorded chair decision only.'] : []),
+    ],
+    source_ids: sourceIds,
+  };
+  const brief = ReaderBriefSchema.parse(raw);
+  const issues = readerBriefIssues(brief, args.graph.claims.map((claim) => claim.id));
+  if (issues.length) throw new Error(`fallback reader brief leaked graph ids: ${issues.join(', ')}`);
+  return brief;
 }
 
 function verificationStatusByClaim(verifications: ClaimVerificationSet | VerificationSet): Map<string, string> {
@@ -295,6 +359,8 @@ function buildDossier(args: {
   rebuttals?: RebuttalEventSet;
   rubric: RubricItem[];
   requestedOutputs: RequestedOutput[];
+  newDecisionContract: boolean;
+  flags: ReadonlySet<string>;
 }): DecisionDossier {
   const { graph, judgeReport, actionPlan, rebuttals, seats } = args;
   const claimById = new Map(graph.claims.map((claim) => [claim.id, claim]));
@@ -358,6 +424,8 @@ function buildDossier(args: {
       id: item.id,
       source: item.locator ?? (item.source_kind === 'MODEL_KNOWLEDGE' ? `${disp(item.provider)} model knowledge` : item.source_kind),
       sourceKind: item.source_kind,
+      ...(item.title ? { title: item.title } : {}),
+      ...(item.url ? { url: item.url } : {}),
       date: item.accessed_at ?? 'Not recorded',
       freshness: item.freshness,
       verificationStatus,
@@ -436,7 +504,7 @@ function buildDossier(args: {
       };
     });
 
-  const experiments: DecisionDossier['experiments'] = actionPlan && !('kind' in actionPlan)
+  const experiments: DecisionDossier['experiments'] = actionPlan && !('kind' in actionPlan) && actionPlan.actions.length > 0
     ? {
         status: 'AVAILABLE',
         note: actionPlan.sequencing_note,
@@ -451,9 +519,11 @@ function buildDossier(args: {
       }
     : {
         status: 'DEGRADED',
-        note: actionPlan && 'kind' in actionPlan
-          ? `Planner unavailable: ${actionPlan.reason}. Unresolved: ${actionPlan.unresolved_questions.join('; ')}`
-          : 'No planner artifact was recorded.',
+        note: actionPlan && !('kind' in actionPlan)
+          ? 'The answer is available, but no validation action survived anchor checks.'
+          : actionPlan && 'kind' in actionPlan
+            ? `Planner unavailable: ${actionPlan.reason}. Unresolved: ${actionPlan.unresolved_questions.join('; ')}`
+            : 'No planner artifact was recorded.',
         actions: [],
       };
   const featureBacklog = actionPlan && !('kind' in actionPlan) ? actionPlan.feature_backlog : undefined;
@@ -462,6 +532,15 @@ function buildDossier(args: {
     ...(args.requestedOutputs.includes('FEATURE_BACKLOG') && !featureBacklog ? ['FEATURE_BACKLOG' as const] : []),
     ...(args.requestedOutputs.includes('IMPLEMENTATION_PLAN') && !implementationPlan ? ['IMPLEMENTATION_PLAN' as const] : []),
   ];
+  const persistedReaderBrief = actionPlan && !('kind' in actionPlan) ? actionPlan.reader_brief : undefined;
+  const readerBrief = persistedReaderBrief ?? (args.newDecisionContract ? fallbackReaderBrief({
+    graph,
+    judgeReport,
+    actionPlan,
+    openQuestions: mergeOpenQuestions(seats),
+    missingRequestedOutputs,
+    flags: args.flags,
+  }) : undefined);
 
   const counter = judgeReport.strongest_counter_case;
   const contributions = args.models.map((model) => ({
@@ -504,6 +583,7 @@ function buildDossier(args: {
     experiments,
     ...(featureBacklog ? { featureBacklog } : {}),
     ...(implementationPlan ? { implementationPlan } : {}),
+    ...(readerBrief ? { readerBrief } : {}),
     missingRequestedOutputs,
     counterCase: counter
       ? { available: true, reasoning: counter.reasoning, claimIds: counter.claim_ids.filter((id) => claimById.has(id)) }
@@ -529,6 +609,11 @@ export function buildDecisionReport(ctx: RunCtx, args: S10Args): DecisionReportJ
   const { contract, seats, graph, verifications, judgeReport, actionPlan } = args;
   const mode = ctx.mode ?? 'council';
   const flags = new Set(ctx.flags);
+  const newDecisionContract = 'success_bar' in contract;
+  const hasReaderBrief = Boolean(actionPlan && !('kind' in actionPlan) && actionPlan.reader_brief);
+  if (newDecisionContract && !hasReaderBrief && !flags.has('plan_skipped') && !flags.has('plan_fallback')) {
+    flags.add('plan_fallback');
+  }
   const confidence = computeConfidence(graph, flags);
   const status = statusFrom(judgeReport);
   const rulingById = new Map(judgeReport.adjudications.map((a) => [a.id, a]));
@@ -549,7 +634,7 @@ export function buildDecisionReport(ctx: RunCtx, args: S10Args): DecisionReportJ
       text: claim.proposition,
       stances,
       verification: VERIFICATION_MAP[claim.evidence_state],
-      ruling: claimRuling(claim, rulingById.get(claim.id)),
+      ruling: claimRuling(graph, claim, rulingById.get(claim.id)),
       loadBearing: claim.load_bearing,
       sensitivity: claim.sensitivity,
     };
@@ -675,6 +760,8 @@ export function buildDecisionReport(ctx: RunCtx, args: S10Args): DecisionReportJ
     rebuttals: args.rebuttals,
     rubric: args.rubric ?? [],
     requestedOutputs,
+    newDecisionContract,
+    flags,
   });
   const decisionSnapshot = judgeReport.decision_snapshot ? {
     decisiveNumbers: judgeReport.decision_snapshot.decisive_numbers.map((item) => ({
@@ -761,13 +848,11 @@ export function buildDecisionReport(ctx: RunCtx, args: S10Args): DecisionReportJ
       ? actionPlan.actions.map((action) => ({ order: action.order, action: action.action, why: action.why, effort: action.effort, killSignal: action.kill_signal }))
       : [],
     openQuestions,
-    flags: [...ctx.flags],
+    flags: [...flags],
     receipt: { calls: ctx.calls.length, budget: ctx.budget.limit, byProvider, modelTimeMs, categories: receiptCategories(ctx) },
     dossier,
   };
 }
-
-const pct = (n: number): string => `${Math.round(n * 100)}%`;
 
 export { renderDecisionDossierMarkdown };
 
@@ -776,48 +861,31 @@ export function renderReport(ctx: RunCtx, args: S10Args): string {
 }
 // ── Terminal summary (level 1) ───────────────────────────────────────────────
 
-const RULE = '─'.repeat(52);
+const RULE = '─'.repeat(48);
+
+function terminalLine(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
+}
 
 export function renderTerminalSummary(report: DecisionReportJson, paths: { markdownPath: string; jsonPath: string }): string {
-  const summary = report.consensusSummary;
-  const c = report.confidenceBreakdown;
-  const coverageTarget = c.verificationScope === 'FACTUAL' ? 'checkable factual claims' : 'load-bearing claims';
-  const snapshot = report.decisionSnapshot;
-  const decisiveLines = snapshot ? [
-    'Decision numbers:',
-    ...snapshot.decisiveNumbers.slice(0, 3).map((item) => `${item.label}: ${item.value} — ${item.meaning}`),
-    ...(snapshot.payback ? [`Payback (${snapshot.payback.status.replaceAll('_', ' ').toLowerCase()}): ${snapshot.payback.result}`] : []),
-    `Options: ${snapshot.options.map((option) => `${option.label} — ${option.commitment} (${option.commitmentKind.replace('_', ' ').toLowerCase()})`).join(' · ')}`,
-  ] : ['Decisive result:', report.verdict.primaryReason];
-  const checks: string[] = [
-    `[${c.verificationCoverage >= 0.5 ? 'PASS' : 'WARN'}] Verification coverage ${pct(c.verificationCoverage)} of ${coverageTarget}`,
-    `[PASS] Minority opinion preserved (${report.minority.dissent.length} dissent item(s))`,
-    `[${report.verification.refuted === 0 ? 'PASS' : 'WARN'}] Verifier refutations: ${report.verification.refuted}`,
-    ...(report.flags.length ? [`[WARN] Degradation flags: ${report.flags.join(', ')}`] : []),
-    `[WARN] Structural score ${c.score}/100 is heuristic — not yet benchmark-calibrated`,
-  ];
+  const projection = report.dossier.readerBrief ? buildReaderProjection(report) : undefined;
+  const candidates = projection
+    ? [...projection.sections.flatMap((section) => [section.summary, ...section.bullets]), ...projection.caveats, projection.nextStep]
+    : [...(report.keyFindings ?? []), ...report.verdict.conditions, report.verdict.primaryReason];
+  const takeaways = [...new Set(candidates.map(terminalLine).filter(Boolean))].slice(0, 3);
+  const nextStep = projection?.nextStep ?? report.recommendedActions[0]?.action ?? 'Open the report and choose the smallest decisive next action.';
   return [
-    report.mode === 'quick' ? 'SINGLE-MODEL DECISION REPORT' : 'MULTI-MODEL DECISION REPORT',
+    report.mode === 'quick' ? 'AIKI · SINGLE-MODEL DECISION' : 'AIKI · COUNCIL DECISION',
     RULE,
-    `Verdict: ${report.verdict.summary}`,
-    `Decision state: ${report.verdict.status}`,
-    `Evidence coverage: ${pct(c.verificationCoverage)} of ${coverageTarget} independently verified`,
-    c.verificationScope === 'FACTUAL'
-      ? 'Coverage note: design judgments are adjudicated by the chair, not verified; this is not a probability of correctness.'
-      : 'Coverage note: unchecked inputs remain; this is not a probability of correctness.',
-    `${report.mode === 'quick' ? 'Claims' : 'Consensus'}: ${report.verdict.consensusType.replaceAll('_', ' ')} — ${summary.accepted} accepted · ${summary.rejected} rejected · ${summary.unresolved} unresolved`,
+    `Verdict: ${terminalLine(projection?.headline ?? report.verdict.summary)}`,
+    terminalLine(projection?.bottomLine ?? report.verdict.primaryReason),
+    ...(projection?.warnings[0] ? [`Warning: ${projection.warnings[0].message}`] : []),
     '',
-    ...decisiveLines,
+    'Key takeaways:',
+    ...takeaways.map((item) => `- ${item}`),
     '',
-    ...(report.verdict.criticalWarning ? ['Critical warning:', report.verdict.criticalWarning, ''] : []),
-    ...(report.minority.dissent[0] ? ['Critical dissent:', report.minority.dissent[0], ''] : []),
-    'Verification:',
-    ...checks,
-    '',
-    ...(report.recommendedActions[0] ? ['Recommended action:', report.recommendedActions[0].action, ''] : []),
-    ...(snapshot?.tripwire ? ['Go/no-go tripwire:', `${snapshot.tripwire.metric}: ${snapshot.tripwire.threshold} — ${snapshot.tripwire.decisionRule}`, ''] : []),
-    `Full report: ${paths.markdownPath}`,
-    `Audit JSON:  ${paths.jsonPath}`,
+    `Next step: ${terminalLine(nextStep)}`,
+    `Report: ${paths.markdownPath}`,
   ].join('\n');
 }
 

@@ -9,6 +9,7 @@ import {
   Interpretation,
   IdeaRoleOutputModel,
   JudgeReport,
+  ReaderBrief,
   RoleOutput,
   RunMeta,
   salvageIdeaRoleOutputModel,
@@ -151,6 +152,29 @@ describe('RoleOutput (workflow-discriminated union)', () => {
     expect(IdeaRoleOutputModel.safeParse({
       ...modelOutput,
       evidence: [{ ...modelOutput.evidence[0], support: 'POSITIVE', freshness: 'recent' }],
+    }).success).toBe(false);
+  });
+
+  it('keeps requested deliverable proposals separate from graph positions and validates their evidence', () => {
+    const { workflow: _workflow, ...modelOutput } = idea;
+    const proposal = {
+      output: 'FEATURE_BACKLOG',
+      title: 'Council replay',
+      detail: 'Replay the independent analyses and final ruling as a visual timeline.',
+      user_value: 'Makes the multi-model advantage understandable in seconds.',
+      why_distinctive: 'Most AI tools hide disagreement inside one answer.',
+      evidence_ids: ['E1'],
+    };
+
+    expect(IdeaRoleOutputModel.parse({ ...modelOutput, deliverable_proposals: [proposal] }).deliverable_proposals)
+      .toEqual([proposal]);
+    expect(IdeaRoleOutputModel.safeParse({
+      ...modelOutput,
+      deliverable_proposals: [{ ...proposal, evidence_ids: ['E404'] }],
+    }).success).toBe(false);
+    expect(IdeaRoleOutputModel.safeParse({
+      ...modelOutput,
+      deliverable_proposals: Array.from({ length: 9 }, (_, index) => ({ ...proposal, title: `Feature ${index}` })),
     }).success).toBe(false);
   });
 
@@ -447,6 +471,24 @@ describe('ActionPlan', () => {
     expect(() => ActionPlan.parse({ ...valid, actions: Array.from({ length: 8 }, (_, i) => ({ ...valid.actions[0], order: i + 1 })) })).toThrow();
     expect(() => ActionPlan.parse({ ...valid, actions: [{ ...valid.actions[0], effort: 'XL' }] })).toThrow();
     expect(() => ActionPlan.parse({ ...valid, extra: true })).toThrow();
+  });
+
+  it('caps the user-facing reader brief and its citations', () => {
+    const brief = {
+      headline: 'Build the narrow workflow',
+      bottom_line: 'Ship the smallest useful council experience first.',
+      sections: [
+        { heading: 'Direction', summary: 'Make the council visible.', bullets: ['Lead with the decision.'] },
+        { heading: 'Delivery', summary: 'Start with replay.', bullets: [] },
+      ],
+      next_step: 'Build the replay golden path.',
+      caveats: ['Live execution still needs a security gate.'],
+      source_ids: ['codex/E1'],
+    };
+    expect(ReaderBrief.parse(brief)).toEqual(brief);
+    expect(() => ReaderBrief.parse({ ...brief, sections: [brief.sections[0]] })).toThrow();
+    expect(() => ReaderBrief.parse({ ...brief, caveats: ['1', '2', '3', '4'] })).toThrow();
+    expect(() => ReaderBrief.parse({ ...brief, source_ids: Array.from({ length: 9 }, (_, i) => `E${i}`) })).toThrow();
   });
 });
 
