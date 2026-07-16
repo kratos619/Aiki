@@ -20,7 +20,7 @@ import { probeFlags } from '../providers/probe.js';
 import type { RunWriter } from '../storage/runs.js';
 import { replayKey } from '../storage/replay.js';
 import type { EvidencePack } from './evidence-pack.js';
-import { callCategory, defaultBudgetFor, IDEA_MODE_PLANS, isOptionalStage, LEGACY_DEFAULT_BUDGET } from './modes.js';
+import { callCategory, defaultBudgetFor, defaultDeadlineFor, IDEA_MODE_PLANS, isOptionalStage, LEGACY_DEFAULT_BUDGET } from './modes.js';
 
 export type WorkflowId = 'idea-refinement' | 'code-review';
 
@@ -176,7 +176,7 @@ export class RunCtx {
     this.budget = { limit: opts.budget ?? defaultBudgetFor(opts.workflow, this.mode), used: 0 };
     this.handles = new Map(opts.handles.map((h) => [h.id, h]));
     this.signal = opts.signal;
-    this.deadlineMs = opts.deadlineMs ?? DEFAULT_DEADLINE_MS;
+    this.deadlineMs = opts.deadlineMs ?? defaultDeadlineFor(opts.workflow, this.mode);
     this.now = opts.now ?? Date.now;
     this.deadlineAt = this.now() + this.deadlineMs;
     this.replay = opts.replay;
@@ -257,7 +257,7 @@ export class RunCtx {
           timeoutMs: req.timeoutMs ?? DEFAULT_CALL_TIMEOUT_MS,
           expectJson: req.expectJson,
           readOnly: true,
-          research: this.mode === 'research' && stage.startsWith('S4'),
+          research: this.workflow === 'idea-refinement' && this.mode !== 'quick' && stage.startsWith('S4'),
           signal: this.signal, // Ctrl+C kills the in-flight child (T8); undefined headless
         },
         handle.flags,

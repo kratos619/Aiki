@@ -10,26 +10,32 @@ export interface IdeaModePlan {
 }
 
 const MINUTE = 60 * 1000;
+const FULL_COUNCIL_PLAN: IdeaModePlan = {
+  baseCalls: 6,
+  optionalCalls: 4,
+  maxCalls: 10,
+  reservedCalls: 2,
+  defaultBudget: 12,
+  deadlineMs: 45 * MINUTE,
+};
 
 /** Nominal calls exclude schema repairs; the adaptive default leaves a small repair cushion.
- *  `deadlineMs` is the wall-clock outer bound — research gets more headroom because it does 2-3× the
- *  work (repairs + coverage-fill + verify + rebuttal + chair + planner). The per-call timeout (900s)
+ *  `deadlineMs` is the wall-clock outer bound — the full council includes web investigation plus
+ *  repairs, coverage-fill, verification, rebuttal, chair, and planner. The per-call timeout (900s)
  *  stays the real runaway guard; this only bounds the SUM. 45 min matches the bench's proven ceiling
  *  for a hard research case (run 20260715-1404 died at S9 on the flat 20-min cap after valid work). */
 export const IDEA_MODE_PLANS: Record<IdeaMode, IdeaModePlan> = {
   quick: { baseCalls: 3, optionalCalls: 0, maxCalls: 3, reservedCalls: 0, defaultBudget: 4, deadlineMs: 20 * MINUTE },
-  council: { baseCalls: 6, optionalCalls: 2, maxCalls: 8, reservedCalls: 2, defaultBudget: 10, deadlineMs: 20 * MINUTE },
-  research: { baseCalls: 6, optionalCalls: 4, maxCalls: 10, reservedCalls: 2, defaultBudget: 12, deadlineMs: 45 * MINUTE },
+  council: FULL_COUNCIL_PLAN,
+  research: FULL_COUNCIL_PLAN,
 };
 
 export const LEGACY_DEFAULT_BUDGET = 18;
 export const LEGACY_DEADLINE_MS = 20 * MINUTE;
 
-/** Conservative intent hint. A URL alone never changes protocol; explicit --mode remains authoritative. */
-export function inferIdeaMode(input: string): IdeaMode {
-  return /\b(?:research|look\s+up|browse\s+(?:the\s+)?(?:web|internet)|search\s+(?:the\s+)?(?:web|internet)|check\s+(?:the\s+)?(?:links?|sources?|current|latest)|verify\s+(?:the\s+)?(?:links?|sources?|current|latest))\b/i.test(input)
-    ? 'research'
-    : 'council';
+/** Every non-quick idea run is the full source-investigating council. `research` remains a CLI alias. */
+export function inferIdeaMode(_input: string): IdeaMode {
+  return 'council';
 }
 
 export function defaultBudgetFor(

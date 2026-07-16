@@ -362,6 +362,15 @@ export const DecisionQuestion = z
   })
   .strict();
 
+export const DeliverableProposal = z.object({
+  output: z.enum(['FEATURE_BACKLOG', 'IMPLEMENTATION_PLAN']),
+  title: z.string().min(1),
+  detail: z.string().min(1),
+  user_value: z.string().min(1),
+  why_distinctive: z.string().min(1),
+  evidence_ids: z.array(z.string().min(1)).max(6),
+}).strict();
+
 const IdeaRoleOutputBase = z
   .object({
     workflow: z.literal('idea-refinement'),
@@ -372,6 +381,7 @@ const IdeaRoleOutputBase = z
     calculations: z.array(CalculationLedger).max(8).default([]),
     coverage: z.array(CoverageEntry).max(18), // 13 core + up to 5 preflight domain dimensions
     decision_questions: z.array(DecisionQuestion).max(8),
+    deliverable_proposals: z.array(DeliverableProposal).max(8).default([]),
   })
   .strict();
 
@@ -428,6 +438,11 @@ function checkSubmissionRefs(submission: SubmissionRefs, ctx: z.RefinementCtx): 
   for (const [index, question] of submission.decision_questions.entries()) {
     for (const id of question.claim_ids) {
       if (!positionIds.has(id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['decision_questions', index, 'claim_ids'], message: `unknown position id: ${id}` });
+    }
+  }
+  for (const [index, proposal] of submission.deliverable_proposals.entries()) {
+    for (const id of proposal.evidence_ids) {
+      if (!evidenceIds.has(id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['deliverable_proposals', index, 'evidence_ids'], message: `unknown evidence id: ${id}` });
     }
   }
 }
@@ -571,6 +586,17 @@ export function salvageIdeaRoleOutputModel(input: unknown): unknown {
       .slice(0, 8)
     : output.calculations;
 
+  const deliverableProposals = parseOrDrop(output.deliverable_proposals, (item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return DeliverableProposal.safeParse(item);
+    const proposal = item as Record<string, unknown>;
+    return DeliverableProposal.strip().safeParse({
+      ...proposal,
+      evidence_ids: Array.isArray(proposal.evidence_ids)
+        ? proposal.evidence_ids.filter((id) => keptEvidence.has(id as string))
+        : proposal.evidence_ids,
+    });
+  });
+
   return {
     ...output,
     evidence,
@@ -580,6 +606,7 @@ export function salvageIdeaRoleOutputModel(input: unknown): unknown {
       (item) => CoverageEntryBase.strip().superRefine(checkCoverageEntry).safeParse(item)),
     decision_questions: parseOrDrop(scrubIds(output.decision_questions, 'claim_ids'),
       (item) => DecisionQuestion.strip().safeParse(item)),
+    deliverable_proposals: deliverableProposals,
   };
 }
 
@@ -1001,7 +1028,36 @@ export const ImplementationPlan = z.object({
   }).strict()).min(1).max(7),
 }).strict();
 
-export const ActionPlan = z
+const ReaderBriefBase = z.object({
+  headline: z.string().min(1).max(160),
+  bottom_line: z.string().min(1).max(1200),
+  sections: z.array(z.object({
+    heading: z.string().min(1).max(120),
+    summary: z.string().min(1).max(1000),
+    bullets: z.array(z.string().min(1).max(500)).max(6),
+  }).strict()).min(2).max(6),
+  next_step: z.string().min(1).max(600),
+  caveats: z.array(z.string().min(1).max(500)).max(3),
+  source_ids: z.array(z.string().min(1)).max(8),
+}).strict();
+
+const READER_AUDIT_ENUM = /\b(?:UNVERIFIED|UNVERIFIABLE|PARTIAL|CONFLICTED)\b/;
+const READER_AUDIT_LANGUAGE = /\b(?:structural score|evidence coverage|verification coverage|claim ids?|graph ids?|provider calls?|model calls?|answer editor|reader_brief)\b/i;
+
+export const ReaderBrief = ReaderBriefBase.superRefine((brief, ctx) => {
+  const text = JSON.stringify(brief);
+  if (READER_AUDIT_ENUM.test(text) || READER_AUDIT_LANGUAGE.test(text)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'reader_brief contains internal audit language' });
+  }
+});
+
+/** Contextual reader-language check: only reject IDs that actually exist in this run. */
+export function readerBriefIssues(brief: z.infer<typeof ReaderBrief>, knownIds: Iterable<string>): string[] {
+  const text = JSON.stringify(brief);
+  return [...knownIds].filter((id) => new RegExp(`\\b${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(text));
+}
+
+const ActionPlanBase = z
   .object({
     actions: z
       .array(
@@ -1016,13 +1072,20 @@ export const ActionPlan = z
           })
           .strict(),
       )
-      .min(1)
       .max(7),
     sequencing_note: z.string().min(1),
     feature_backlog: FeatureBacklog.optional(),
     implementation_plan: ImplementationPlan.optional(),
+    // Optional only so pre-v5 run artifacts remain replayable. New decision contracts require it in S9b.
+    reader_brief: ReaderBrief.optional(),
   })
   .strict();
+
+export const ActionPlan = ActionPlanBase.superRefine((plan, ctx) => {
+  if (plan.actions.length === 0 && !plan.reader_brief) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['actions'], message: 'an empty action plan requires reader_brief' });
+  }
+});
 
 export const PlannerUnavailable = z.object({
   kind: z.literal('PlannerUnavailable'),
@@ -1041,7 +1104,7 @@ export const QuickDecisionModel = z.object({
   key_points: z.array(z.string().min(1)).min(2).max(8),
   dissent: z.array(z.string().min(1)).min(1).max(4),
   confidence_notes: z.string().min(1),
-  action_plan: ActionPlan,
+  action_plan: ActionPlanBase.extend({ reader_brief: ReaderBrief }),
 }).strict().superRefine((decision, ctx) => {
   const hasConditions = decision.conditions.length > 0;
   if (decision.recommendation === 'PROCEED_WITH_CONDITIONS' && !hasConditions) {
@@ -1105,6 +1168,8 @@ export const RunMeta = z.object({
     'headless_intent',
     'verification_skipped',
     'research_ungrounded',
+    'source_fallback_search',
+    'deliverable_gap',
     'single_model',
   ])).optional(),
 });
@@ -1114,6 +1179,7 @@ export const RunMeta = z.object({
 export type IntentContract = z.infer<typeof IntentContract>;
 export type DecisionContract = z.infer<typeof DecisionContract>;
 export type RequestedOutput = z.infer<typeof RequestedOutputSchema>;
+export type DeliverableProposal = z.infer<typeof DeliverableProposal>;
 export type UrlSourceStatus = z.infer<typeof UrlSourceStatusSchema>;
 export type UrlSourceSnapshot = z.infer<typeof UrlSourceSnapshot>;
 export type UrlSourceSet = z.infer<typeof UrlSourceSet>;
@@ -1169,6 +1235,7 @@ export type IdeaChairReportModel = z.infer<typeof IdeaChairReportModel>;
 export type ActionPlan = z.infer<typeof ActionPlan>;
 export type FeatureBacklog = z.infer<typeof FeatureBacklog>;
 export type ImplementationPlan = z.infer<typeof ImplementationPlan>;
+export type ReaderBrief = z.infer<typeof ReaderBrief>;
 export type PlannerUnavailable = z.infer<typeof PlannerUnavailable>;
 export type ActionPlanArtifact = z.infer<typeof ActionPlanArtifact>;
 export type QuickDecisionModel = z.infer<typeof QuickDecisionModel>;

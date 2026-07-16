@@ -34,7 +34,7 @@ describe('loadSkill', () => {
   it('loads the idea-refinement planner playbook', () => {
     const skill = loadSkill('idea-refinement', 'planner');
     expect(skill.length).toBeGreaterThan(0);
-    expect(skill).toContain('decisive validation');
+    expect(skill).toContain('Answer editor playbook');
   });
 
   it('returns empty string for a missing playbook (backward-compatible)', () => {

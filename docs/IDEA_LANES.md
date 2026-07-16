@@ -11,11 +11,14 @@ Before freezing the v3 default, run both assignments on every sanitized idea bui
 - `agy-market`: Gemini market/adoption, Codex economics/delivery;
 - `codex-market`: Codex market/adoption, Gemini economics/delivery.
 
-Dry-run the matrix with `aiki bench idea-refinement --set build`. It reports the nominal council-call ceiling
-(8 cases × 2 assignments = 16 council runs) and makes no model calls. Only `--yes` executes. A campaign
+Dry-run the matrix with `aiki bench idea-refinement --set build`. It reports the nominal 10-call full-council
+ceiling (8 cases × 2 assignments = 16 council runs) and makes no model calls. Only `--yes` executes. A campaign
 interrupted by a quota window or a crash is continued with `--resume`: completed case×rotation pairs in the
 latest `bench/results/idea-lanes-*.json` are kept and never re-paid; only missing or failed pairs run.
 Schema repairs can add calls within the council mode's adaptive budget.
+
+Campaigns created before 2026-07-16 used the older non-web council protocol. Archive those results before a
+new `--resume`; pre- and post-alias observations are not one comparable rotation campaign.
 
 `planIdeaLaneBench` produces the (remaining) build matrix without model calls. `runIdeaLaneBench` records
 run IDs, JSON repair rate, latency, and per-provider unique supported contributions. After blind claim

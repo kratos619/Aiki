@@ -65,15 +65,26 @@ const quickDecision = {
       kill_signal: 'Fewer than two describe the pain unprompted.',
     }],
     sequencing_note: 'Test demand before building.',
+    reader_brief: {
+      headline: 'Validate demand before building the local council',
+      bottom_line: 'The architecture is plausible, but the user need is still an assumption.',
+      sections: [
+        { heading: 'Product direction', summary: 'Keep the first workflow narrow.', bullets: ['Focus on one high-value decision path.'] },
+        { heading: 'Validation', summary: 'Test whether developers feel the pain.', bullets: ['Interview five target developers.'] },
+      ],
+      next_step: 'Interview five target developers before implementation.',
+      caveats: ['This is a single-analyst recommendation.'],
+      source_ids: [],
+    },
   },
 };
 
-function adapter(prompts: string[]): Adapter {
+function adapter(prompts: string[], decision = quickDecision): Adapter {
   return {
     id: 'claude',
     run: async (request): Promise<RunResultAdapter> => {
       prompts.push(request.prompt);
-      const value = request.prompt.includes('TWO-VIEW PREFLIGHT') ? preflightReading : quickDecision;
+      const value = request.prompt.includes('TWO-VIEW PREFLIGHT') ? preflightReading : decision;
       return { ok: true, text: JSON.stringify(value), json: value, durationMs: 1 };
     },
   };
@@ -89,30 +100,33 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
+async function runQuick(decision = quickDecision) {
+  const prompts: string[] = [];
+  const id: ProviderId = 'claude';
+  const handle: ProviderHandle = {
+    id,
+    adapter: adapter(prompts, decision),
+    flags: { id, jsonOutput: true, readOnlyFlag: 'plan' },
+    readOnly: 'plan',
+    version: 'test',
+  };
+  const runId = '20260713-1900-idea-refinement-r6qq';
+  const writer = new RunWriter(runId, root);
+  const ctx = new RunCtx({
+    runId,
+    workflow: 'idea-refinement',
+    mode: 'quick',
+    handles: [handle],
+    roles: resolveRoles('idea-refinement', [id]),
+    writer,
+    cwd: writer.dir,
+  });
+  return { prompts, ctx, outcome: await executeRun(ctx, INPUT, runIdeaRefinement) };
+}
+
 describe('R6 quick mode', () => {
   it('runs with one provider, spends three calls, and never presents itself as a council', async () => {
-    const prompts: string[] = [];
-    const id: ProviderId = 'claude';
-    const handle: ProviderHandle = {
-      id,
-      adapter: adapter(prompts),
-      flags: { id, jsonOutput: true, readOnlyFlag: 'plan' },
-      readOnly: 'plan',
-      version: 'test',
-    };
-    const runId = '20260713-1900-idea-refinement-r6qq';
-    const writer = new RunWriter(runId, root);
-    const ctx = new RunCtx({
-      runId,
-      workflow: 'idea-refinement',
-      mode: 'quick',
-      handles: [handle],
-      roles: resolveRoles('idea-refinement', [id]),
-      writer,
-      cwd: writer.dir,
-    });
-
-    const outcome = await executeRun(ctx, INPUT, runIdeaRefinement);
+    const { prompts, outcome } = await runQuick();
 
     expect(outcome.ok).toBe(true);
     expect(outcome.callCount).toBe(3);
@@ -121,7 +135,8 @@ describe('R6 quick mode', () => {
     expect(prompts.join('\n')).not.toContain('ROLE: Judge');
 
     const report = await readFile(join(outcome.dir, 'final-report.md'), 'utf8');
-    expect(report).toContain('# Single-Model Decision Report');
+    expect(report).toContain('# Validate demand before building the local council');
+    expect(report).toContain('## Council audit');
     expect(report).toContain('no council, consensus, or independent-verification claim');
     expect(report).not.toContain('# Multi-Model Decision Report');
 
@@ -133,5 +148,23 @@ describe('R6 quick mode', () => {
       receipt: { discovery: 3, verification: 0, repair: 0, planning: 0 },
     });
     expect(meta.flags).toEqual(expect.arrayContaining(['single_model', 'low_diversity', 'headless_intent']));
+  });
+
+  it('keeps a valid quick answer when its only validation action is unanchored', async () => {
+    const decision = {
+      ...quickDecision,
+      action_plan: {
+        ...quickDecision.action_plan,
+        actions: [{ ...quickDecision.action_plan.actions[0]!, validates: 'P404' }],
+      },
+    };
+
+    const { outcome } = await runQuick(decision);
+
+    expect(outcome.ok).toBe(true);
+    const plan = JSON.parse(await readFile(join(outcome.dir, '09b-action-plan.json'), 'utf8'));
+    expect(plan).toMatchObject({ actions: [], reader_brief: quickDecision.action_plan.reader_brief });
+    const meta = JSON.parse(await readFile(join(outcome.dir, 'meta.json'), 'utf8'));
+    expect(meta.flags ?? []).not.toContain('plan_fallback');
   });
 });

@@ -212,7 +212,7 @@ describe('R5 bounded rebuttal stage', () => {
     expect(prompts).toEqual([]);
   });
 
-  it('shares the council optional-call cap with coverage fill and keeps quick mode at zero', async () => {
+  it('keeps the full two-call rebuttal after coverage fill and keeps quick mode at zero', async () => {
     const conflict = graph([
       { provider: 'agy', stance: 'SUPPORT' },
       { provider: 'codex', stance: 'OPPOSE' },
@@ -222,8 +222,9 @@ describe('R5 bounded rebuttal stage', () => {
     council.attemptedStages.push('S7-coverage-fill');
 
     const capped = await s8bRebuttal(council, conflict, verified());
-    expect(council.budget.used).toBe(1);
-    expect(capped).toMatchObject({ stop_reason: 'CALL_CAP_REACHED' });
+    expect(council.budget.used).toBe(2);
+    expect(capped).toMatchObject({ stop_reason: 'ROUND_COMPLETE' });
+    expect(councilPrompts).toHaveLength(2);
 
     const quickPrompts: string[] = [];
     const quick = ctx(quickPrompts);

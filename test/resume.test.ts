@@ -97,7 +97,7 @@ function scriptAdapter(id: ProviderId, counter: { n: number }, opts: { judgeFail
           dissent: ['May not beat a single strong model on subjective synthesis.'],
           confidence_notes: 'HIGH on the consensus claims; MEDIUM on the contested one.',
         };
-      } else if (p.includes('ROLE: Validation planner')) {
+      } else if (p.includes('ROLE: User answer editor and action planner')) {
         obj = {
           actions: [{
             order: 1,
@@ -108,6 +108,17 @@ function scriptAdapter(id: ProviderId, counter: { n: number }, opts: { judgeFail
             kill_signal: 'Fewer than two developers describe the pain unprompted.',
           }],
           sequencing_note: 'Resolve target-user demand before deeper implementation.',
+          reader_brief: {
+            headline: 'Validate developer demand before expanding the local council',
+            bottom_line: 'The narrow orchestration path is feasible, but target-user demand should decide whether it grows.',
+            sections: [
+              { heading: 'Product direction', summary: 'Keep the first workflow focused on one decision.', bullets: ['Use the provider probe as the compatibility guard.'] },
+              { heading: 'Validation', summary: 'Test whether developers feel this pain before deeper implementation.', bullets: ['Interview five target developers.'] },
+            ],
+            next_step: 'Interview five target developers about local orchestration pain.',
+            caveats: ['Provider formats can still drift.'],
+            source_ids: [],
+          },
         };
       } else {
         obj = {};
@@ -145,10 +156,10 @@ describe('resume: call replay', () => {
     const c1 = { n: 0 };
     const first = await executeRun(makeCtx(c1), INPUT, runIdeaRefinement);
     expect(first.ok).toBe(true);
-    expect(c1.n).toBe(8); // six-call base + two optional calls
+    expect(c1.n).toBe(10); // six-call base + four optional calls
 
     const cache = await buildReplayCache(first.dir);
-    expect(cache.size).toBe(8);
+    expect(cache.size).toBe(10);
 
     // Resume: a NEW run (different id/dir) with the cache — nothing should reach a model.
     const c2 = { n: 0 };
@@ -156,7 +167,7 @@ describe('resume: call replay', () => {
     expect(resumed.ok).toBe(true);
     expect(c2.n).toBe(0); // ZERO real calls — proves replay + run-dir path normalization across ids
     expect(resumed.callCount).toBe(0);
-    await expect(readFile(join(resumed.dir, 'final-report.md'), 'utf8')).resolves.toContain('# Multi-Model Decision Report');
+    await expect(readFile(join(resumed.dir, 'final-report.md'), 'utf8')).resolves.toContain('# Validate developer demand before expanding the local council');
   });
 
   it('a run that died at S9 resumes and re-calls ONLY the judge (S1–S8 replayed)', async () => {
@@ -165,13 +176,13 @@ describe('resume: call replay', () => {
     expect(first.ok).toBe(false); // judge timed out
 
     const cache = await buildReplayCache(first.dir);
-    expect(cache.size).toBe(6); // preflight + scouts + coverage fill + verifier cached
+    expect(cache.size).toBe(8); // preflight + scouts + four optional calls cached
 
     const c2 = { n: 0 };
     const resumed = await executeRun(makeCtx(c2, { replay: cache }), INPUT, runIdeaRefinement);
     expect(resumed.ok).toBe(true);
     expect(c2.n).toBe(2); // judge + action planner re-called; everything before them replayed
-    await expect(readFile(join(resumed.dir, 'final-report.md'), 'utf8')).resolves.toContain('# Multi-Model Decision Report');
+    await expect(readFile(join(resumed.dir, 'final-report.md'), 'utf8')).resolves.toContain('# Validate developer demand before expanding the local council');
   });
 });
 
