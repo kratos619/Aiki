@@ -6,7 +6,7 @@ import { compileDecisionGraph, coverageHoleQueue, positionId, type CoverageHole 
 import { IdeaRoleOutputModel, type IdeaRoleOutput } from '../../schemas/index.js';
 import { isFatal, type RunCtx } from '../context.js';
 import { jsonCall } from '../jsonStage.js';
-import type { PositionSet } from './s6-positions.js';
+import { detectWeakSeat, type PositionSet } from './s6-positions.js';
 import { overlapCoefficient, tokenize } from '../cluster.js';
 
 export interface RubricItem {
@@ -89,6 +89,7 @@ export async function s7DecisionGraph(
   const completed = await fillCoverage(ctx, submissions, rubric, task);
   const groups = deterministicClaimGroups(completed);
   const graph = compileDecisionGraph(completed, rubric, groups);
+  if (detectWeakSeat(graph.positions, ctx.mode ?? 'council').length) ctx.addFlag('weak_seat');
   await ctx.writer.writeJson('decision-graph', graph);
   return graph;
 }

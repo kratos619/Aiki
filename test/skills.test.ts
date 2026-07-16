@@ -3,9 +3,12 @@
 import { describe, it, expect } from 'vitest';
 import { loadSkill, lintSkill } from '../src/orchestration/skills.js';
 import { buildReviewerPrompt } from '../src/workflows/code-review.js';
-import { buildJudgePrompt } from '../src/orchestration/stages/cr-s9-judge.js';
+import { buildJudgePrompt as buildReviewJudgePrompt } from '../src/orchestration/stages/cr-s9-judge.js';
 import { buildActionPlannerPrompt } from '../src/orchestration/stages/s9b-plan.js';
 import { buildAnalystTemplate } from '../src/workflows/idea-refinement.js';
+import { buildChairRepairPrompt, buildJudgePrompt as buildIdeaJudgePrompt } from '../src/orchestration/stages/s9-judge.js';
+import { buildVerifierPrompt } from '../src/orchestration/stages/s8-verify.js';
+import { buildRebuttalPrompt } from '../src/orchestration/stages/s8b-rebuttal.js';
 
 const path = '/repo/.aiki/runs/x/inputs/diff.patch';
 
@@ -42,6 +45,38 @@ describe('loadSkill', () => {
     expect(lintSkill(loadSkill('code-review', 'reviewer'))).toBeNull();
     expect(lintSkill(loadSkill('code-review', 'judge'))).toBeNull();
     expect(lintSkill(loadSkill('idea-refinement', 'planner'))).toBeNull();
+  });
+});
+
+describe('idea council playbook pack', () => {
+  it('loads a lint-clean chair playbook with strong-dissent discipline', () => {
+    const skill = loadSkill('idea-refinement', 'chair');
+    expect(skill).toContain('strong dissent');
+    expect(lintSkill(skill)).toBeNull();
+  });
+
+  it('loads a lint-clean verifier playbook with refute-first discipline', () => {
+    const skill = loadSkill('idea-refinement', 'verifier');
+    expect(skill).toContain('Refute first');
+    expect(lintSkill(skill)).toBeNull();
+  });
+
+  it('loads a lint-clean rebuttal playbook with steelman discipline', () => {
+    const skill = loadSkill('idea-refinement', 'rebuttal');
+    expect(skill).toContain('Steelman');
+    expect(lintSkill(skill)).toBeNull();
+  });
+
+  it('loads lint-clean market/adoption lens discipline', () => {
+    const skill = loadSkill('idea-refinement', 'market-adoption');
+    expect(skill).toContain('## Lens discipline (council seat)');
+    expect(lintSkill(skill)).toBeNull();
+  });
+
+  it('loads lint-clean economics/delivery lens discipline', () => {
+    const skill = loadSkill('idea-refinement', 'economics-delivery');
+    expect(skill).toContain('## Lens discipline (council seat)');
+    expect(lintSkill(skill)).toBeNull();
   });
 });
 
@@ -88,15 +123,15 @@ describe('buildJudgePrompt', () => {
   const disputes = [{ id: 'F1', claim: 'off-by-one', refutation: 'guarded above' }];
 
   it('embeds the disputed findings JSON', () => {
-    expect(buildJudgePrompt(disputes, '')).toContain('"id": "F1"');
+    expect(buildReviewJudgePrompt(disputes, '')).toContain('"id": "F1"');
   });
 
   it('injects the skill between the ruling defs and the JSON output rules when present', () => {
-    expect(buildJudgePrompt(disputes, 'JUDGE-RULES')).toContain('genuinely undecided.\n\nJUDGE-RULES\nOutput ONLY JSON');
+    expect(buildReviewJudgePrompt(disputes, 'JUDGE-RULES')).toContain('genuinely undecided.\n\nJUDGE-RULES\nOutput ONLY JSON');
   });
 
   it('empty skill collapses to the exact baseline (no dangling slot)', () => {
-    const filled = buildJudgePrompt(disputes, '');
+    const filled = buildReviewJudgePrompt(disputes, '');
     expect(filled).not.toContain('{{SKILL}}');
     expect(filled).toContain('genuinely undecided.\nOutput ONLY JSON matching the judge schema:');
   });
@@ -131,5 +166,37 @@ describe('buildActionPlannerPrompt', () => {
     const prompt = buildActionPlannerPrompt(input, '');
     expect(prompt).not.toContain('{{SKILL}}');
     expect(prompt).toContain('CONTEXT:');
+  });
+});
+
+describe('idea council role prompt seams', () => {
+  const graph = { positions: [], evidence: [], calculations: [], calculation_checks: [], claims: [], edges: [], holes: { coverage: [], evidence: [] } };
+  const contract = { task: 'test an idea', task_type: 'idea-refinement', constraints: [], unknowns: [], success_criteria: [] };
+
+  it('injects chair skill exactly once and the repair re-ask inherits it', () => {
+    const prompt = buildIdeaJudgePrompt(contract as never, graph as never, { verifications: [] }, [], undefined, undefined, 'CHAIR-RULES');
+    expect(prompt.match(/CHAIR-RULES/g)).toHaveLength(1);
+    expect(prompt).toContain('confidence.\n\nCHAIR-RULES\nESCALATED CLAIMS');
+    expect(buildChairRepairPrompt(prompt, '- fix the output\n').match(/CHAIR-RULES/g)).toHaveLength(1);
+  });
+
+  it('chair baseline has no dangling slot or extra blank line', () => {
+    const prompt = buildIdeaJudgePrompt(contract as never, graph as never, { verifications: [] }, [], undefined, undefined, '');
+    expect(prompt).not.toContain('{{SKILL}}');
+    expect(prompt).toContain('confidence.\nESCALATED CLAIMS');
+  });
+
+  it('injects verifier skill once and preserves the empty baseline', () => {
+    const filled = buildVerifierPrompt(graph as never, 'VERIFY-RULES');
+    expect(filled.match(/VERIFY-RULES/g)).toHaveLength(1);
+    expect(filled).toContain('JSON only.\n\nVERIFY-RULES\nITEMS:');
+    expect(buildVerifierPrompt(graph as never, '')).toContain('JSON only.\nITEMS:');
+  });
+
+  it('injects rebuttal skill once and preserves the empty baseline', () => {
+    const filled = buildRebuttalPrompt([], 'REBUTTAL-RULES');
+    expect(filled.match(/REBUTTAL-RULES/g)).toHaveLength(1);
+    expect(filled).toContain('JSON only.\n\nREBUTTAL-RULES\nNODES:');
+    expect(buildRebuttalPrompt([], '')).toContain('JSON only.\nNODES:');
   });
 });

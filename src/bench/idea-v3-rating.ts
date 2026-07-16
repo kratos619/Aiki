@@ -144,7 +144,7 @@ function blindId(seed: string): string {
 }
 
 /** Remove the explicit identifiers forbidden by BENCHMARK-IDEA-V3.md §4 before human rating. §4 bars
- *  provider/model names, run ids, arm labels, AND costs — so the R7 dossier's §9 "Run details" cost
+ *  provider/model names, run ids, arm labels, AND costs — so the dossier's "Run details" cost
  *  block (mode, call counts, categories, per-provider calls, model time, degradation flags) and the
  *  inline `> ⚠ DEGRADED: <flag tokens>` callouts are redacted too; the DEGRADED marker and any prose
  *  note stay, since those are quality self-assessments raters legitimately read. */

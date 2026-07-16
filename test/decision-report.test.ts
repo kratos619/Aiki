@@ -207,15 +207,14 @@ describe('R7 decision dossier', () => {
     const md = renderReport(ctx, args);
     const headers = [
       '## 1. Decision',
-      '## 2. Action plan',
+      '## 2. Deliverables and action plan',
       '## 3. Why this decision',
       '## 4. What could change the decision',
-      '## 5. Evidence and verification',
-      '## 6. Risks, gaps, and open questions',
-      '## 7. Disagreement and dissent',
-      '## 8. What the council added',
-      '## 9. Run details',
-      '## 10. Technical audit',
+      '## 5. Risks and open questions',
+      '## 6. Disagreement and dissent',
+      '## 7. What the council added',
+      '## 8. Run details',
+      '## 9. Technical audit',
     ];
     let previous = -1;
     for (const header of headers) {
@@ -241,9 +240,9 @@ describe('R7 decision dossier', () => {
     expect(md).toContain('### Implementation plan');
     expect(md).toContain('Day 1');
     expect(md).toContain('**Critical warning:**');
-    const readerBody = md.slice(0, md.indexOf('## 10. Technical audit'));
+    const readerBody = md.slice(0, md.indexOf('## 9. Technical audit'));
     expect(readerBody).not.toMatch(/\bG\d+\b/);
-    expect(md.slice(md.indexOf('## 10. Technical audit'))).toContain('G1');
+    expect(md.slice(md.indexOf('## 9. Technical audit'))).toContain('G1');
     expect(md).toContain('agy/E-P1');
     expect(md).toContain('VERIFIED');
     expect(md).toContain('Run a paid-demand test.');

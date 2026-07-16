@@ -10,6 +10,12 @@
   requirement through the decision contract, the existing planner call, machine JSON, Markdown, and HTML.
 
 ### Changed
+- **Report v4 answer-first decisions** — reports now lead with the requested deliverables and chair reasoning,
+  substitute readable claim labels for internal ids, dedupe and cap claim-named conditions, frame/cap risks,
+  summarize each council seat (including a plain-language `weak_seat` warning), and distinguish FACTUAL
+  claims from JUDGMENT calls so verification priority and coverage describe checkable facts honestly.
+  Deliverable detection now combines model-backed readings with a widened fallback that hears requests for
+  standout or "ultra-level" features.
 - Explicit research wording selects research mode deterministically when `--mode` is absent; an explicit
   mode remains authoritative. Preflight asks zero to four questions and may not repeat facts already present
   in the user prompt or a fetched source.

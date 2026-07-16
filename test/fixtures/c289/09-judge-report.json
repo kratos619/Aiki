@@ -1,0 +1,123 @@
+{
+  "adjudications": [
+    {
+      "id": "G1",
+      "ruling": "UNRESOLVED",
+      "reasoning": "The evidence supports treating a browser interface as an extension of the existing local CLI, but it does not establish the restrictive half of the claim — that the build must stay demo-only and non-general-purpose. Feasibility, capacity, and judging criteria remain unknown, so the scope ceiling is asserted rather than proven.",
+      "evidence_ids": [
+        "codex/E1",
+        "codex/E2",
+        "codex/E4",
+        "codex/E5"
+      ],
+      "effect_on_decision": "Justifies scoping serve as a CLI companion, but the demo-only ceiling becomes a condition rather than a settled fact.",
+      "what_would_change_it": "Confirmed hackathon judging rules plus an implementation estimate showing whether a broader web product is even reachable in the window."
+    },
+    {
+      "id": "G2",
+      "ruling": "UNRESOLVED",
+      "reasoning": "The installed-and-authenticated-CLI prerequisite (E1) does argue against a credible general-user proposition, which supports narrowing away from targeting everyone at once. However, no evidence establishes that multi-CLI technical users are the optimal initial segment or that they specifically need defensible reviews.",
+      "evidence_ids": [
+        "codex/E1",
+        "codex/E3"
+      ],
+      "effect_on_decision": "Supports narrowing the demo to one technical audience, but the exact segment and job stay a validation target.",
+      "what_would_change_it": "Segment-level demand evidence or onboarding tests comparing the candidate audiences."
+    },
+    {
+      "id": "G4",
+      "ruling": "UNRESOLVED",
+      "reasoning": "No supplied evidence measures differentiation, judge preference, or whether visible disagreement and provenance determine success, and E5 explicitly flags the missing comparative-quality evidence. The claim's directional thesis matches the settled, supported G19, but on its own verification it is not measured.",
+      "evidence_ids": [
+        "codex/E1",
+        "codex/E2",
+        "codex/E5"
+      ],
+      "effect_on_decision": "Reinforces that the UI itself is not the differentiator, but the winning condition remains unproven and must be validated.",
+      "what_would_change_it": "A comparative single-model-versus-council evaluation, or judge/user validation that provenance features change perceived quality."
+    },
+    {
+      "id": "G8",
+      "ruling": "UNRESOLVED",
+      "reasoning": "The evidence establishes a council product and a proposed browser interface but does not show that an argument map is essential or superior to simpler stage/provenance views. Its substance overlaps the settled, supported G26, yet G8 itself carries no comparative validation.",
+      "evidence_ids": [
+        "codex/E1",
+        "codex/E2"
+      ],
+      "effect_on_decision": "Points to the argument map as the lead feature, but as a design hypothesis to test rather than a proven requirement.",
+      "what_would_change_it": "User or judge testing of the argument map against alternative visualizations, plus evidence the workflow actually emits the claim/resolution structure."
+    },
+    {
+      "id": "G10",
+      "ruling": "UNRESOLVED",
+      "reasoning": "The evidence establishes the council and browser concepts but does not show that current synthesis is opaque or that claim-level linkage is necessary and feasible, and E5 notes comparative-quality evidence is missing. The thesis mirrors the settled, supported G28 but is not independently measured here.",
+      "evidence_ids": [
+        "codex/E1",
+        "codex/E2",
+        "codex/E5"
+      ],
+      "effect_on_decision": "Motivates claim-to-source provenance as a target feature, contingent on the orchestration emitting structured linkage data.",
+      "what_would_change_it": "Concrete examples of synthesized outputs with provenance gaps, plus structured linkage data from the orchestration stages showing traceability is achievable."
+    },
+    {
+      "id": "G17",
+      "ruling": "UNRESOLVED",
+      "reasoning": "The technical onboarding friction (E7) supports narrowing to one audience and job, and E9 confirms the proposed audience is currently too broad. Neither demonstrates that consequential technical reviewers are the optimal initial audience.",
+      "evidence_ids": [
+        "codex-coverage-fill/CFE1",
+        "codex-coverage-fill/CFE3"
+      ],
+      "effect_on_decision": "Supports picking one narrow technical job for the demo, but the specific choice stays a validation target.",
+      "what_would_change_it": "Segment-specific demand research or onboarding tests identifying the highest-value initial job."
+    }
+  ],
+  "verdict": "Proceed with `aiki serve` as an optional, demo-focused visual companion to the existing CLI, not a general-purpose web app — but only through a security-bounded, feasibility-gated path. The defensible win is not the browser UI itself; it is visibly proving how disagreement, critique, and provenance changed the synthesis (G19), delivered via a council argument map (G26) with claim-level provenance (G28). Because deadline, judging rules, and team capacity are unverified, the build must reuse the existing non-interactive orchestration path (G20), pass an early kill-gated spike (G21/G24), and enforce loopback-only execution with no arbitrary commands (G27).",
+  "recommendation": "PROCEED_WITH_CONDITIONS",
+  "conditions": [
+    "Proceed only after resolving evidence gap G2: load-bearing claim has conflicting evidence.",
+    "Proceed only after resolving evidence gap G3: claim requires independently checkable evidence.",
+    "Proceed only after resolving evidence gap G6: claim requires independently checkable evidence.",
+    "Proceed only after resolving evidence gap G7: claim requires independently checkable evidence.",
+    "Proceed only after resolving evidence gap G9: load-bearing claim has conflicting evidence.",
+    "Proceed only after resolving evidence gap G13: claim requires independently checkable evidence."
+  ],
+  "recommendation_claim_ids": [
+    "G1",
+    "G2",
+    "G3",
+    "G4",
+    "G6",
+    "G7"
+  ],
+  "condition_claim_ids": [
+    "G1",
+    "G2",
+    "G3",
+    "G4",
+    "G6",
+    "G7"
+  ],
+  "strongest_counter_case": {
+    "claim_ids": [
+      "G1"
+    ],
+    "reasoning": "Every 'winning feature' claim (differentiation, argument map, provenance) is UNVERIFIABLE on its own evidence — no comparative single-model-vs-council or judge test exists, so the whole thesis could be cosmetic in practice."
+  },
+  "key_points": [
+    "The differentiator is proving critique/disagreement improved the result, not the browser UI or parallel response panels (G19).",
+    "The argument map (claims → positions → critiques → resolutions → conclusion) is the essential view, corroborated as settled/supported (G26).",
+    "Claim-level provenance linking each synthesized claim to its source outputs and resolution status is what keeps the answer from being just another opaque model response (G28).",
+    "A browser-to-process boundary is materially riskier than a user-invoked CLI; loopback-only, fixed operations, bounded inputs, and clean cancellation are mandatory (G9/G27).",
+    "Viability depends on reusing the existing non-interactive orchestration path and streaming structured events rather than building a new PTY system (G20).",
+    "An early spike must gate the build; if council-run/streaming/cancel/failure-recovery don't work cleanly, fall back to a CLI or recorded-run demo (G12/G21).",
+    "Audience should narrow to one repeatable technical job — the installed-CLI prerequisite makes a general-user pitch non-credible (G2/G17).",
+    "Deadline, judging criteria, and team capacity are unverified, so scope and go/no-go stay conditional (G6/G7)."
+  ],
+  "dissent": [
+    "Every 'winning feature' claim (differentiation, argument map, provenance) is UNVERIFIABLE on its own evidence — no comparative single-model-vs-council or judge test exists, so the whole thesis could be cosmetic in practice.",
+    "Feasibility is genuinely unknown: wrapping interactive CLIs in a streaming local server is brittle (G13) and may exceed the team's capacity (G7/G15), making a live demo a coin-flip.",
+    "With deadline and judging rules unverified (G6/G23), committing to any build — even conditioned — is premature; the honest recommendation could be STOP-until-rules-known.",
+    "A polished CLI or pre-recorded-run visualization would satisfy the same 'show the council' goal with far less demo risk, undercutting the case for a live server at all."
+  ],
+  "confidence_notes": "Moderate confidence. The recommendation rests on the four settled UNIQUE/SUPPORTED claims (G19, G26, G27, G28) plus G24, which are the strongest anchors in the graph. Confidence is capped because every escalated feature claim verified as PARTIAL or UNVERIFIABLE and the key contingencies — deadline, judging rules, and team capacity (G6/G7/G23) — are entirely unverified, which is exactly why the verdict is conditioned rather than an unconditional proceed."
+}

@@ -2,14 +2,15 @@
 // read-only context; anonymous position text and the verifier record cross the boundary unchanged.
 
 import type { DecisionGraph } from '../decision-graph.js';
-import { selectEscalations } from '../decision-graph.js';
 import type { ClaimVerificationSet, IdeaChairReportModel as IdeaChairReportModelT, IntentContract, JudgeReport as JudgeReportT, RebuttalEventSet, Recommendation } from '../../schemas/index.js';
 import { IdeaChairReportModel } from '../../schemas/index.js';
 import type { ProviderId } from '../../providers/types.js';
 import { isFatal, StageError, type RunCtx } from '../context.js';
 import { jsonCall } from '../jsonStage.js';
+import { claimShortLabel } from '../decision-dossier.js';
+import { loadSkill } from '../skills.js';
 import type { RubricItem } from './s7-decision-graph.js';
-import { claimVerificationRefIssues } from './s8-verify.js';
+import { claimVerificationRefIssues, selectVerificationEscalations } from './s8-verify.js';
 
 type Adjudication = JudgeReportT['adjudications'][number];
 
@@ -48,7 +49,7 @@ Output ONLY JSON matching the judge schema:
 - key_points: 4-8 standalone decision-relevant bullets.
 - dissent: a JSON array of strings (an array even when there is only one) — the strongest arguments
   against your verdict.
-- confidence_notes: explain calibrated confidence.
+- confidence_notes: explain calibrated confidence.{{SKILL}}
 ESCALATED CLAIMS + VERIFICATION: {{ESCALATIONS_JSON}}
 APPEND-ONLY REBUTTAL EVENTS: {{REBUTTALS_JSON}}
 SETTLED/UNRESOLVED CONTEXT: {{CONTEXT_JSON}}`;
@@ -178,13 +179,30 @@ export function adjudicableClaimIds(graph: DecisionGraph, ids: Iterable<string>,
     .some((positionId) => positionById.get(positionId)?.provider === judgeProvider));
 }
 
+/** One condition per distinct claim behind an evidence hole, claim-labeled instead of a generic
+ *  placeholder reason. Deduped by claim_id and capped at 4 so the fallback conditions list doesn't
+ *  drown in near-identical entries. */
+export function evidenceHoleConditions(graph: DecisionGraph): string[] {
+  const claimById = new Map(graph.claims.map((claim) => [claim.id, claim]));
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const hole of graph.holes.evidence) {
+    if (seen.has(hole.claim_id)) continue;
+    seen.add(hole.claim_id);
+    const claim = claimById.get(hole.claim_id);
+    out.push(`Obtain independent evidence for: "${claimShortLabel(claim?.proposition ?? 'a load-bearing claim')}".`);
+    if (out.length === 4) break;
+  }
+  return out;
+}
+
 function fallbackConditions(graph: DecisionGraph, adjudications: Adjudication[]): string[] {
   const claimById = new Map(graph.claims.map((claim) => [claim.id, claim]));
   const upheld = adjudications
     .filter((item) => item.ruling === 'UPHOLD')
     .map((item) => `Proceed only if you can resolve: ${claimById.get(item.id)?.proposition ?? item.id}.`);
   const holes = graph.holes.coverage.map((hole) => `Proceed only after examining the ${hole.label} gap.`);
-  const evidenceHoles = graph.holes.evidence.map((hole) => `Proceed only after resolving evidence gap ${hole.claim_id}: ${hole.reason}.`);
+  const evidenceHoles = evidenceHoleConditions(graph);
   return [...upheld, ...holes, ...evidenceHoles, 'Proceed only after one cheap test confirms the core user need.'].slice(0, 6);
 }
 
@@ -195,8 +213,13 @@ export function buildJudgePrompt(
   rubric: RubricItem[],
   rebuttals: RebuttalEventSet = EMPTY_REBUTTALS,
   judgeProvider?: ProviderId,
+  skill = '',
 ): string {
-  return judgeInput(contract, graph, verifications, rubric, rebuttals, judgeProvider).prompt;
+  return judgeInput(contract, graph, verifications, rubric, rebuttals, judgeProvider, skill).prompt;
+}
+
+export function buildChairRepairPrompt(basePrompt: string, corrections: string): string {
+  return `${basePrompt}\n\n---\nCorrect these problems:\n${corrections}Output ONLY corrected JSON.`;
 }
 
 function judgeInput(
@@ -206,6 +229,7 @@ function judgeInput(
   rubric: RubricItem[],
   rebuttals: RebuttalEventSet,
   judgeProvider?: ProviderId,
+  skill = '',
 ): { prompt: string; evidenceRefs: Map<string, string> } {
   const positionById = new Map(graph.positions.map((position) => [position.id, position]));
   const verificationById = new Map(verifications.verifications.map((item) => [item.claim_id, item]));
@@ -215,7 +239,7 @@ function judgeInput(
   ])];
   const evidenceRefs = new Map(citedEvidence.map((id, index) => [`E${index + 1}`, id]));
   const aliasByEvidence = new Map([...evidenceRefs].map(([alias, id]) => [id, alias]));
-  const selectedIds = selectEscalations(graph, { max: 8 }).map((item) => item.claim_id);
+  const selectedIds = selectVerificationEscalations(graph).map((item) => item.claim_id);
   const eligibleIds = judgeProvider ? adjudicableClaimIds(graph, selectedIds, judgeProvider) : selectedIds;
   const escalationIds = new Set(eligibleIds);
   const escalations = graph.claims.filter((claim) => escalationIds.has(claim.id)).map((claim) => {
@@ -255,6 +279,7 @@ function judgeInput(
     ...(event.narrowed_proposition ? { narrowed_proposition: event.narrowed_proposition } : {}),
   }));
   const prompt = S9_PROMPT
+    .replace('{{SKILL}}', skill ? `\n\n${skill}` : '')
     .replace('{{RUBRIC_JSON}}', JSON.stringify(rubric.map((item) => item.label)))
     .replace('{{ESCALATIONS_JSON}}', JSON.stringify(escalations, null, 2))
     .replace('{{REBUTTALS_JSON}}', JSON.stringify(rebuttalContext, null, 2))
@@ -271,12 +296,20 @@ export async function s9Judge(
   rubric: RubricItem[],
   rebuttals: RebuttalEventSet = EMPTY_REBUTTALS,
 ): Promise<JudgeReportT> {
-  const selectedIds = selectEscalations(graph, { max: 8 }).map((item) => item.claim_id);
+  const selectedIds = selectVerificationEscalations(graph).map((item) => item.claim_id);
   const verificationIssues = claimVerificationRefIssues(graph, verifications, selectedIds);
   if (verificationIssues.length) throw new StageError('S9', 'BAD_OUTPUT', `invalid verification references: ${verificationIssues.join('; ')}`);
   const ids = adjudicableClaimIds(graph, selectedIds, ctx.roles.judge);
   const selfAuthored = new Set(selectedIds.filter((id) => !ids.includes(id)));
-  const input = judgeInput(contract, graph, verifications, rubric, rebuttals, ctx.roles.judge);
+  const input = judgeInput(
+    contract,
+    graph,
+    verifications,
+    rubric,
+    rebuttals,
+    ctx.roles.judge,
+    loadSkill('idea-refinement', 'chair'),
+  );
   const basePrompt = input.prompt;
   const judge = ctx.handle(ctx.roles.judge);
   const positionById = new Map(graph.positions.map((position) => [position.id, position]));
@@ -320,13 +353,13 @@ export async function s9Judge(
     (violations.length || evidenceViolations.length || report.dissent.length === 0 || recIssues.length || chairIssues.length)
     && ctx.budget.limit - ctx.budget.used > 1
   ) {
-    const repair = `${basePrompt}\n\n---\nCorrect these problems:\n`
+    const corrections = ''
       + (violations.length ? `- adjudications may reference only [${ids.join(', ')}], not ${violations.join(', ')}\n` : '')
       + (evidenceViolations.length ? `- evidence reference errors: ${evidenceViolations.join('; ')}\n` : '')
       + (report.dissent.length === 0 ? '- dissent must contain at least one item\n' : '')
       + (recIssues.length ? `- ${recIssues.join('; ')}\n` : '')
-      + (chairIssues.length ? `- chair contract errors: ${chairIssues.join('; ')}\n` : '')
-      + 'Output ONLY corrected JSON.';
+      + (chairIssues.length ? `- chair contract errors: ${chairIssues.join('; ')}\n` : '');
+    const repair = buildChairRepairPrompt(basePrompt, corrections);
     try {
       report = translateChairReport(await jsonCall(ctx, judge, 'S9-repair', repair, IdeaChairReportModel, {
         repair: ctx.budget.limit - ctx.budget.used > 2,
