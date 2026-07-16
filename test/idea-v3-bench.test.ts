@@ -199,7 +199,7 @@ describe('R8 idea-v3 protocol benchmark', () => {
       '**ACCEPTED_WITH_CONDITIONS** — negotiate the renewal.',
       '> ⚠ DEGRADED: recommendation has no stored graph anchor.', // prose note, not a tell — must survive
       '',
-      '## 9. Run details',
+      '## 8. Run details',
       '',
       '- Report ID: `20260714-2321-idea-refinement-8d5e`',
       '- Generated: 2026-07-14T23:21:00.000Z',

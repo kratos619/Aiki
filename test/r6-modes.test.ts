@@ -42,6 +42,7 @@ const reading = (provider: ProviderId, decision: string): ProviderPreflightReadi
       { id: 'Q2', axis: 'target_user', question: 'Who is first?', why_it_matters: 'It changes adoption risk.', suggested_answers: ['Solo developers', 'Teams'] },
       { id: 'Q3', axis: 'success_bar', question: 'What proves value?', why_it_matters: 'It sets the bar.', suggested_answers: ['Better recall', 'Lower cost'] },
     ],
+    requested_outputs: [],
   },
 });
 

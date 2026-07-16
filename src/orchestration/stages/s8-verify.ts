@@ -7,6 +7,7 @@ import type { ClaimVerificationSet as ClaimVerificationSetT } from '../../schema
 import { ClaimVerificationSet } from '../../schemas/index.js';
 import { isFatal, StageError, type RunCtx } from '../context.js';
 import { jsonCall } from '../jsonStage.js';
+import { loadSkill } from '../skills.js';
 
 const S8_PROMPT = `ROLE: Independent verifier. Check each anonymous decision claim below against the
 provided evidence cards and deterministic calculation checks. Output ONLY JSON:
@@ -16,12 +17,27 @@ provided evidence cards and deterministic calculation checks. Output ONLY JSON:
 VERIFIED = the proposition is supported. CONTRADICTED = it is refuted. PARTIAL = evidence is mixed or
 incomplete. UNVERIFIABLE = the supplied sources cannot decide. Cite only supplied evidence IDs. Model
 knowledge cannot verify a current, numeric, legal, medical, financial, market, or regulatory fact.
-Judge each item independently; no verdict quota. JSON only.
+Judge each item independently; no verdict quota. JSON only.{{SKILL}}
 ITEMS: {{ITEMS_JSON}}`;
 
 interface VerifierInput {
   prompt: string;
   evidenceRefs: Map<string, string>;
+}
+
+export function selectVerificationTargets<T extends { nature?: 'FACTUAL' | 'JUDGMENT' }>(claims: T[], max: number): T[] {
+  return claims
+    .map((claim, index) => ({ claim, index }))
+    .sort((left, right) => Number(right.claim.nature === 'FACTUAL') - Number(left.claim.nature === 'FACTUAL') || left.index - right.index)
+    .slice(0, max)
+    .map(({ claim }) => claim);
+}
+
+export function selectVerificationEscalations(graph: DecisionGraph, max = 8) {
+  const candidates = selectEscalations(graph, { max: graph.claims.length });
+  const byId = new Map(candidates.map((candidate) => [candidate.claim_id, candidate]));
+  const claims = candidates.map((candidate) => graph.claims.find((claim) => claim.id === candidate.claim_id)!);
+  return selectVerificationTargets(claims, max).map((claim) => byId.get(claim.id)!);
 }
 
 function evidenceIdsForClaim(graph: DecisionGraph, claimId: string): Set<string> {
@@ -36,12 +52,12 @@ function evidenceIdsForClaim(graph: DecisionGraph, claimId: string): Set<string>
   return new Set([...positionEvidence, ...calculationEvidence]);
 }
 
-function verifierInput(graph: DecisionGraph): VerifierInput {
+function verifierInput(graph: DecisionGraph, skill = ''): VerifierInput {
   const positionById = new Map(graph.positions.map((position) => [position.id, position]));
   const evidenceRefs = new Map(graph.evidence.map((evidence, index) => [`E${index + 1}`, evidence.id]));
   const aliasByEvidence = new Map([...evidenceRefs].map(([alias, id]) => [id, alias]));
   const evidenceById = new Map(graph.evidence.map((evidence) => [evidence.id, evidence]));
-  const items = selectEscalations(graph, { max: 8 }).map((escalation) => {
+  const items = selectVerificationEscalations(graph).map((escalation) => {
     const claim = graph.claims.find((item) => item.id === escalation.claim_id)!;
     const linkedEvidenceIds = evidenceIdsForClaim(graph, claim.id);
     return {
@@ -74,18 +90,21 @@ function verifierInput(graph: DecisionGraph): VerifierInput {
       evidence_hole: graph.holes.evidence.find((hole) => hole.claim_id === claim.id)?.reason,
     };
   });
-  return { prompt: S8_PROMPT.replace('{{ITEMS_JSON}}', JSON.stringify(items, null, 2)), evidenceRefs };
+  const prompt = S8_PROMPT
+    .replace('{{SKILL}}', skill ? `\n\n${skill}` : '')
+    .replace('{{ITEMS_JSON}}', JSON.stringify(items, null, 2));
+  return { prompt, evidenceRefs };
 }
 
-export function buildVerifierPrompt(graph: DecisionGraph): string {
-  return verifierInput(graph).prompt;
+export function buildVerifierPrompt(graph: DecisionGraph, skill = ''): string {
+  return verifierInput(graph, skill).prompt;
 }
 
 /** Validate every S8 claim/evidence reference before the chair can see it. */
 export function claimVerificationRefIssues(
   graph: DecisionGraph,
   verifications: ClaimVerificationSetT,
-  expectedIds: Iterable<string> = selectEscalations(graph, { max: 8 }).map((item) => item.claim_id),
+  expectedIds: Iterable<string> = selectVerificationEscalations(graph).map((item) => item.claim_id),
 ): string[] {
   const expected = new Set(expectedIds);
   const evidence = new Map(graph.evidence.map((item) => [item.id, item]));
@@ -118,7 +137,7 @@ export function claimVerificationRefIssues(
 }
 
 export async function s8Verify(ctx: RunCtx, graph: DecisionGraph): Promise<ClaimVerificationSetT> {
-  const escalations = selectEscalations(graph, { max: 8 });
+  const escalations = selectVerificationEscalations(graph);
   if (escalations.length === 0) {
     const empty: ClaimVerificationSetT = { verifications: [] };
     await ctx.writer.writeJson('verifications', empty);
@@ -147,7 +166,7 @@ export async function s8Verify(ctx: RunCtx, graph: DecisionGraph): Promise<Claim
   }
 
   try {
-    const input = verifierInput(graph);
+    const input = verifierInput(graph, loadSkill('idea-refinement', 'verifier'));
     // Optional work gets no model repair: one logical optional call must remain one call.
     const result = await jsonCall(ctx, ctx.handle(ctx.roles.verifier), 'S8', input.prompt, ClaimVerificationSet, { repair: false });
     const translated: ClaimVerificationSetT = {

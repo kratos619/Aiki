@@ -4,7 +4,7 @@ import { DISPLAY_NAME, type ProviderId } from '../providers/types.js';
 import type { WorkflowId } from '../orchestration/context.js';
 import { RoleOutput as RoleOutputSchema, type ActionPlanArtifact, type AnnotatedFinding, type DecisionGraph, type DisagreementMap, type IdeaMode, type JudgeReport, type Recommendation, type ReviewMap, type RoleOutput, type RunMeta } from '../schemas/index.js';
 import { deriveAudit, deriveScorecard, mergeOpenQuestions, type AuditRow, type DecisionReportJson, type ScorecardRow } from '../orchestration/stages/s10-render.js';
-import { readerClaimLabel, readerClaimRefs, renderDecisionDossierMarkdown, stripReaderClaimIds } from '../orchestration/decision-dossier.js';
+import { claimLookup, readerClaimLabel, readerClaimRefs, renderDecisionDossierMarkdown, stripReaderClaimIds } from '../orchestration/decision-dossier.js';
 import type { SeatOutput } from '../orchestration/stages/s4-analyze.js';
 import { IDEA_RUBRIC } from '../workflows/idea-refinement.js';
 import { listArtifacts, readJsonArtifact } from '../storage/runs-read.js';
@@ -448,12 +448,16 @@ function renderDossierIdeaBody(report: DecisionReportJson): string {
   const criticalUnknowns = report.criticalUnknowns?.length ? report.criticalUnknowns : report.openQuestions.slice(0, 3);
   const tone: Tone = dossier.recommendation.status === 'ACCEPTED' ? 'good'
     : dossier.recommendation.status === 'REJECTED' ? 'risk' : 'caution';
-  const conditions = dossier.recommendation.conditions.length
-    ? `<details class="decision-details"><summary>Conditions and decision state</summary><div><p><strong>Internal state:</strong> ${escapeHtml(dossier.recommendation.status)}</p><ul>${dossier.recommendation.conditions.map((condition) => `<li>${escapeHtml(condition.text)}</li>`).join('')}</ul></div></details>`
+  const labelFor = claimLookup(report);
+  // Substitute ids then dedupe before escaping, mirroring the markdown renderer: old stored artifacts
+  // may carry duplicate / bare-G# condition strings.
+  const conditionItems = [...new Set(dossier.recommendation.conditions.map((condition) => stripReaderClaimIds(condition.text, labelFor)))];
+  const conditions = conditionItems.length
+    ? `<details class="decision-details"><summary>Conditions and decision state</summary><div><p><strong>Internal state:</strong> ${escapeHtml(dossier.recommendation.status)}</p><ul>${conditionItems.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul></div></details>`
     : '';
   const startHere = dossier.experiments.actions[0]?.action ?? 'No executable next step was produced.';
-  const recommendationLead = stripReaderClaimIds(dossier.recommendation.reason);
-  const recommendationDetail = stripReaderClaimIds(dossier.recommendation.summary);
+  const recommendationLead = stripReaderClaimIds(dossier.recommendation.reason, labelFor);
+  const recommendationDetail = stripReaderClaimIds(dossier.recommendation.summary, labelFor);
   const factLabels = ['Decisive result', 'Consequence', 'Supporting signal'];
   const facts = keyFindings.slice(0, 3).map((finding, index) => `<article class="decision-fact"><span>${factLabels[index]}</span><p>${escapeHtml(finding)}</p></article>`).join('');
   const snapshot = report.decisionSnapshot;
@@ -563,10 +567,13 @@ function renderDossierIdeaBody(report: DecisionReportJson): string {
     <span>by provider ${escapeHtml(Object.entries(report.receipt.byProvider).map(([provider, count]) => `${providerName(provider)} ${count}`).join(', ') || 'none')}</span>
     <span>model time ${(report.receipt.modelTimeMs / 1000).toFixed(1)}s</span>
   </div>${report.flags.length ? `<div class="warns">${report.flags.map((flag) => `<span class="warn">⚑ ${escapeHtml(flag)}</span>`).join('')}</div>` : '<p class="muted">No degradation flags.</p>'}`;
-  const risks = dossierTable(
+  const shownRisks = report.risks.slice(0, 8);
+  const risks = `${dossierTable(
     ['Risk', 'Severity'],
-    report.risks.map((item) => [item.risk, item.severity]),
-  );
+    shownRisks.map((item) => [item.risk, item.severity]),
+  )}${report.risks.length > shownRisks.length
+    ? `<p class="muted">${report.risks.length - shownRisks.length} lower-severity items — more in the technical audit (full list in the stored JSON).</p>`
+    : ''}`;
   const questions = report.openQuestions.length
     ? `<ul class="checks">${report.openQuestions.map((question) => `<li>${escapeHtml(question)}</li>`).join('')}</ul>`
     : '<p class="muted">No verdict-flipping open question was recorded.</p>';
@@ -597,7 +604,7 @@ function renderDossierIdeaBody(report: DecisionReportJson): string {
     section('08', 'What the council added', `${shared}${unique}<h3>Verified unique contributions</h3>${contributions}`, 340),
     section('09', 'Run details', runDetails, 380),
   ].join('');
-  return `${stripReaderClaimIds(readerBody)}${section('10', 'Technical audit', technical, 420)}`;
+  return `${stripReaderClaimIds(readerBody, labelFor)}${section('10', 'Technical audit', technical, 420)}`;
 }
 
 function renderLegacyIdeaBody(view: CouncilView): string {

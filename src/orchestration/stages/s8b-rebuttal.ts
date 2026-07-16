@@ -17,6 +17,7 @@ import {
 import { isFatal, StageError, type RunCtx } from '../context.js';
 import { jsonCall } from '../jsonStage.js';
 import { IDEA_MODE_PLANS } from '../modes.js';
+import { loadSkill } from '../skills.js';
 import type { IdeaMode } from '../../schemas/index.js';
 
 export type RebuttalMode = IdeaMode;
@@ -39,7 +40,7 @@ Output ONLY JSON:
 CONCEDE = your position changes. COUNTER = retain it using a cited supplied card or a precise logical
 rebuttal. NARROW = state the smaller proposition actually supported. UNRESOLVED = evidence cannot decide.
 Return exactly one event per assigned claim. Cite only evidence IDs shown for that claim. Do not invent
-sources, URLs, claim IDs, or evidence IDs. JSON only.
+sources, URLs, claim IDs, or evidence IDs. JSON only.{{SKILL}}
 NODES: {{NODES_JSON}}`;
 
 interface Assignment {
@@ -108,6 +109,7 @@ function rebuttalInput(
   verifications: ClaimVerificationSet,
   escalationById: Map<string, Escalation>,
   assignment: Assignment,
+  skill = '',
 ): RebuttalInput {
   const claimIds = new Set(assignment.claim_ids);
   const positionRefs = new Map<string, string>();
@@ -167,10 +169,16 @@ function rebuttalInput(
   });
 
   return {
-    prompt: REBUTTAL_PROMPT.replace('{{NODES_JSON}}', JSON.stringify(nodes, null, 2)),
+    prompt: buildRebuttalPrompt(nodes, skill),
     evidenceRefs,
     allowedEvidence,
   };
+}
+
+export function buildRebuttalPrompt(nodes: unknown, skill = ''): string {
+  return REBUTTAL_PROMPT
+    .replace('{{SKILL}}', skill ? `\n\n${skill}` : '')
+    .replace('{{NODES_JSON}}', JSON.stringify(nodes, null, 2));
 }
 
 function translateEvents(
@@ -232,9 +240,10 @@ export async function s8bRebuttal(
   const assignments = planned.slice(0, optionalCalls);
   const escalationById = new Map(escalations.map((item) => [item.claim_id, item]));
   const events: RebuttalEvent[] = [];
+  const skill = loadSkill('idea-refinement', 'rebuttal');
 
   for (const assignment of assignments) {
-    const input = rebuttalInput(graph, verifications, escalationById, assignment);
+    const input = rebuttalInput(graph, verifications, escalationById, assignment, skill);
     try {
       const output = await jsonCall(
         ctx,

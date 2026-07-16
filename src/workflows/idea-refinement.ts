@@ -60,7 +60,10 @@ Produce ONLY JSON matching {{S4_SCHEMA_REF}} with:
 - task_echo: restate the task in ≤2 sentences (drift check).
 - strongest_version: the best honest version of this idea in ≤150 words.
 - positions: explicit claim positions with local_id, proposition, rubric dimension_id, stance
-  SUPPORT|OPPOSE|MIXED|UNKNOWN, basis EVIDENCE|INFERENCE|ASSUMPTION, load_bearing, if_false
+  SUPPORT|OPPOSE|MIXED|UNKNOWN, basis EVIDENCE|INFERENCE|ASSUMPTION, nature FACTUAL when the position
+  asserts something independently checkable about the world (rules, deadlines, prices, observed CLI
+  behavior, published numbers) or JUDGMENT for a design choice, recommendation, prioritization, or
+  prediction (when unsure use JUDGMENT), load_bearing, if_false
   STOP|PIVOT|CONDITION|MINOR, concise reasoning, evidence_ids, and depends_on position ids.
 - evidence: evidence cards {id, claim_supported, source_kind USER|PRIMARY|SECONDARY|MODEL_KNOWLEDGE,
   support SUPPORTS|CONTRADICTS|CONTEXT_ONLY (exact token, no extra words), freshness CURRENT|DATED|UNKNOWN,

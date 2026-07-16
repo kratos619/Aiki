@@ -129,6 +129,7 @@ export interface ConfidenceBreakdown {
   score: number; // 0–100
   label: 'High' | 'Medium' | 'Low';
   verificationCoverage: number; // 0–1: SUPPORTED load-bearing claims
+  verificationScope?: 'FACTUAL'; // absent preserves legacy/all-load-bearing semantics
   independentConvergence: number; // 0–1: multi-model agreement (CONSENSUS + SHARED_CONCERN)
   evidenceQuality: number; // 0–1: evidence cards beyond model memory
   stability: number; // 0–1: 1 minus degradation-flag penalty
@@ -142,8 +143,10 @@ const DEGRADATION_FLAGS = ['low_diversity', 'synthesis_suspect', 'plan_fallback'
  *  self-confidence never enters it, and consensus alone can never reach the High band. */
 export function computeConfidence(graph: DecisionGraph, flags: ReadonlySet<string>): ConfidenceBreakdown {
   const loadBearing = graph.claims.filter((claim) => claim.load_bearing);
-  const verificationCoverage = loadBearing.length
-    ? loadBearing.filter((claim) => claim.evidence_state === 'SUPPORTED').length / loadBearing.length : 0;
+  const factual = loadBearing.filter((claim) => claim.nature === 'FACTUAL');
+  const verificationClaims = factual.length ? factual : loadBearing;
+  const verificationCoverage = verificationClaims.length
+    ? verificationClaims.filter((claim) => claim.evidence_state === 'SUPPORTED').length / verificationClaims.length : 0;
   const independentConvergence = graph.claims.length
     ? graph.claims.filter((claim) => claim.state === 'CONSENSUS' || claim.state === 'SHARED_CONCERN').length / graph.claims.length : 0;
   const evidenceQuality = graph.evidence.length
@@ -155,7 +158,16 @@ export function computeConfidence(graph: DecisionGraph, flags: ReadonlySet<strin
   if (verificationCoverage < 0.5) score = Math.min(score, 79); // consensus alone never yields High
   score = Math.max(0, Math.min(100, score));
   const label = score >= 80 ? 'High' : score >= 60 ? 'Medium' : 'Low';
-  return { score, label, verificationCoverage, independentConvergence, evidenceQuality, stability, criticalRiskPenalty };
+  return {
+    score,
+    label,
+    verificationCoverage,
+    ...(factual.length ? { verificationScope: 'FACTUAL' as const } : {}),
+    independentConvergence,
+    evidenceQuality,
+    stability,
+    criticalRiskPenalty,
+  };
 }
 
 // ── Machine-readable report (level 3) ───────────────────────────────────────
@@ -188,6 +200,7 @@ export interface DecisionDossier {
   missingRequestedOutputs: Array<'FEATURE_BACKLOG' | 'IMPLEMENTATION_PLAN'>;
   counterCase: { available: boolean; reasoning: string; claimIds: string[] };
   contributions: Array<{ provider: ProviderId; name: string; verifiedUniqueClaimIds: string[] }>;
+  seatStats?: Array<{ provider: string; positions: number; evidenced: number; survivedIntoDecision: number }>;
   technical: {
     submissions: Array<{ provider: ProviderId; name: string; strongestVersion: string; positionIds: string[] }>;
     positions: Array<{ id: string; provider: ProviderId; stance: string; proposition: string; evidenceIds: string[] }>;
@@ -299,6 +312,16 @@ function buildDossier(args: {
   }
   const recommendationIds = (judgeReport.recommendation_claim_ids ?? [])
     .filter((id) => claimById.has(id));
+  const recommendationPositionIds = new Set(recommendationIds.flatMap((id) => claimById.get(id)?.position_ids ?? []));
+  const seatStats = [...graph.positions.reduce((stats, position) => {
+    const provider = position.id.split('/')[0]!.replace(/-coverage-fill$/, '');
+    const entry = stats.get(provider) ?? { provider, positions: 0, evidenced: 0, survivedIntoDecision: 0 };
+    entry.positions += 1;
+    if (position.evidence_ids.length) entry.evidenced += 1;
+    if (recommendationPositionIds.has(position.id)) entry.survivedIntoDecision += 1;
+    stats.set(provider, entry);
+    return stats;
+  }, new Map<string, NonNullable<DecisionDossier['seatStats']>[number]>()).values()];
   const anchors = recommendationIds.length
     ? recommendationIds
     : graph.claims.filter((claim) => claim.load_bearing).slice(0, 8).map((claim) => claim.id);
@@ -486,6 +509,7 @@ function buildDossier(args: {
       ? { available: true, reasoning: counter.reasoning, claimIds: counter.claim_ids.filter((id) => claimById.has(id)) }
       : { available: false, reasoning: 'No graph-anchored counter-case was recorded.', claimIds: [] },
     contributions,
+    seatStats,
     technical: {
       submissions: seats.map((seat) => ({
         provider: seat.provider,
@@ -561,10 +585,6 @@ export function buildDecisionReport(ctx: RunCtx, args: S10Args): DecisionReportJ
     ? (claims.some((claim) => claim.ruling === 'UNRESOLVED') ? 'convergent_with_unresolved_claims' as const : 'unanimous' as const)
     : disagreements.every((d) => d.status === 'RESOLVED') ? 'majority_with_dissent' as const : 'contested' as const;
 
-  const risks = graph.claims
-    .filter((claim) => claim.load_bearing && claim.evidence_state !== 'SUPPORTED')
-    .map((claim) => ({ risk: claim.proposition, severity: SEVERITY_MAP[claim.sensitivity] ?? 'Medium' }));
-
   // Frame the slot as what it is — a decisive assumption that is NOT proven. Echoing the bare
   // proposition inverts the meaning when the claim is phrased affirmatively (run 20260714-2321:
   // "a cutover can preserve compliance" read as reassurance, the opposite of the verdict).
@@ -573,6 +593,19 @@ export function buildDecisionReport(ctx: RunCtx, args: S10Args): DecisionReportJ
   const criticalWarning = criticalClaim
     ? `Unverified decisive assumption (if false, STOP): ${criticalClaim.proposition} — evidence ${criticalClaim.evidence_state}.`
     : null;
+
+  // Same framing problem as the critical warning above: an unsettled load-bearing claim rendered as
+  // its bare (often affirmatively-phrased) proposition reads as an endorsement, not a risk. Frame
+  // each explicitly, sort worst-first, and skip the claim already surfaced as the critical warning
+  // so it isn't double-counted.
+  const severityRank: Record<'High' | 'Medium' | 'Low', number> = { High: 0, Medium: 1, Low: 2 };
+  const risks = graph.claims
+    .filter((claim) => claim.load_bearing && claim.evidence_state !== 'SUPPORTED' && claim.id !== criticalClaim?.id)
+    .map((claim) => ({
+      risk: `Rests on unsettled claim: ${claim.proposition} (evidence ${claim.evidence_state}).`,
+      severity: SEVERITY_MAP[claim.sensitivity] ?? 'Medium',
+    }))
+    .sort((a, b) => severityRank[a.severity] - severityRank[b.severity]);
 
   const verificationResults = verifications.verifications.map((v) => {
     if ('claim_id' in v) {
@@ -748,6 +781,7 @@ const RULE = '─'.repeat(52);
 export function renderTerminalSummary(report: DecisionReportJson, paths: { markdownPath: string; jsonPath: string }): string {
   const summary = report.consensusSummary;
   const c = report.confidenceBreakdown;
+  const coverageTarget = c.verificationScope === 'FACTUAL' ? 'checkable factual claims' : 'load-bearing claims';
   const snapshot = report.decisionSnapshot;
   const decisiveLines = snapshot ? [
     'Decision numbers:',
@@ -756,7 +790,7 @@ export function renderTerminalSummary(report: DecisionReportJson, paths: { markd
     `Options: ${snapshot.options.map((option) => `${option.label} — ${option.commitment} (${option.commitmentKind.replace('_', ' ').toLowerCase()})`).join(' · ')}`,
   ] : ['Decisive result:', report.verdict.primaryReason];
   const checks: string[] = [
-    `[${c.verificationCoverage >= 0.5 ? 'PASS' : 'WARN'}] Verification coverage ${pct(c.verificationCoverage)} of load-bearing claims`,
+    `[${c.verificationCoverage >= 0.5 ? 'PASS' : 'WARN'}] Verification coverage ${pct(c.verificationCoverage)} of ${coverageTarget}`,
     `[PASS] Minority opinion preserved (${report.minority.dissent.length} dissent item(s))`,
     `[${report.verification.refuted === 0 ? 'PASS' : 'WARN'}] Verifier refutations: ${report.verification.refuted}`,
     ...(report.flags.length ? [`[WARN] Degradation flags: ${report.flags.join(', ')}`] : []),
@@ -767,8 +801,10 @@ export function renderTerminalSummary(report: DecisionReportJson, paths: { markd
     RULE,
     `Verdict: ${report.verdict.summary}`,
     `Decision state: ${report.verdict.status}`,
-    `Evidence coverage: ${pct(c.verificationCoverage)} of load-bearing claims independently verified`,
-    'Coverage note: unchecked inputs remain; this is not a probability of correctness.',
+    `Evidence coverage: ${pct(c.verificationCoverage)} of ${coverageTarget} independently verified`,
+    c.verificationScope === 'FACTUAL'
+      ? 'Coverage note: design judgments are adjudicated by the chair, not verified; this is not a probability of correctness.'
+      : 'Coverage note: unchecked inputs remain; this is not a probability of correctness.',
     `${report.mode === 'quick' ? 'Claims' : 'Consensus'}: ${report.verdict.consensusType.replaceAll('_', ' ')} — ${summary.accepted} accepted · ${summary.rejected} rejected · ${summary.unresolved} unresolved`,
     '',
     ...decisiveLines,

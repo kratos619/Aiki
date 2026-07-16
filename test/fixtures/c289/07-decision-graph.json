@@ -1,0 +1,1538 @@
+{
+  "positions": [
+    {
+      "local_id": "P1",
+      "proposition": "Verdict: build `aiki serve` only as an optional, demo-focused visual companion to the existing CLI, not as a general-purpose web application.",
+      "dimension_id": "D4",
+      "stance": "SUPPORT",
+      "basis": "INFERENCE",
+      "load_bearing": true,
+      "if_false": "PIVOT",
+      "reasoning": "A visual interface can reduce the explanation burden during a hackathon, but expanding into accounts, collaboration, hosting, or generic chat would consume time without proving Aiki's core advantage.",
+      "evidence_ids": [
+        "E1",
+        "E2",
+        "E3",
+        "E4",
+        "E5"
+      ],
+      "depends_on": [
+        "P4",
+        "P6",
+        "P7",
+        "P12"
+      ],
+      "id": "codex/P1",
+      "provider": "codex",
+      "source_id": "codex"
+    },
+    {
+      "local_id": "P2",
+      "proposition": "Aiki should not target developers, researchers, knowledge workers, and general users simultaneously; the initial audience should be technical users who already operate multiple AI CLIs and need defensible decisions or reviews.",
+      "dimension_id": "R1",
+      "stance": "OPPOSE",
+      "basis": "INFERENCE",
+      "load_bearing": true,
+      "if_false": "PIVOT",
+      "reasoning": "The installed-CLI prerequisite is incompatible with a credible general-user proposition. A broad audience also prevents the demo from showing one urgent, repeatable job clearly.",
+      "evidence_ids": [
+        "E1",
+        "E3"
+      ],
+      "depends_on": [],
+      "id": "codex/P2",
+      "provider": "codex",
+      "source_id": "codex"
+    },
+    {
+      "local_id": "P3",
+      "proposition": "The existing CLI is the strongest status-quo alternative and should remain the primary execution surface; the browser must add comprehension that the CLI cannot provide efficiently.",
+      "dimension_id": "R2",
+      "stance": "MIXED",
+      "basis": "INFERENCE",
+      "load_bearing": true,
+      "if_false": "CONDITION",
+      "reasoning": "If the browser merely duplicates prompt entry and final output, users can keep using the CLI or individual provider interfaces with less system complexity.",
+      "evidence_ids": [
+        "E1",
+        "E2"
+      ],
+      "depends_on": [
+        "P4",
+        "P8",
+        "P10"
+      ],
+      "id": "codex/P3",
+      "provider": "codex",
+      "source_id": "codex"
+    },
+    {
+      "local_id": "P4",
+      "proposition": "A browser UI is not meaningful differentiation; Aiki wins only if it visibly proves how disagreement, critique, and provenance changed the final result.",
+      "dimension_id": "R3",
+      "stance": "SUPPORT",
+      "basis": "INFERENCE",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "reasoning": "Parallel response cards and animated model streams are cosmetic. The defensible product claim is that council orchestration produces a more inspectable and useful conclusion than a conventional single-model answer.",
+      "evidence_ids": [
+        "E1",
+        "E2",
+        "E5"
+      ],
+      "depends_on": [
+        "P8",
+        "P10"
+      ],
+      "id": "codex/P4",
+      "provider": "codex",
+      "source_id": "codex"
+    },
+    {
+      "local_id": "P5",
+      "proposition": "Aiki's local-first npm distribution is suitable for a creator-controlled demo but creates substantial adoption friction for users who do not already have compatible provider CLIs installed and authenticated.",
+      "dimension_id": "R9",
+      "stance": "MIXED",
+      "basis": "INFERENCE",
+      "load_bearing": false,
+      "if_false": "MINOR",
+      "reasoning": "No API keys is attractive only after users have installed and configured the underlying tools. That narrows organic distribution and makes a zero-setup public web demo unavailable.",
+      "evidence_ids": [
+        "E1"
+      ],
+      "depends_on": [
+        "P2"
+      ],
+      "id": "codex/P5",
+      "provider": "codex",
+      "source_id": "codex"
+    },
+    {
+      "local_id": "P6",
+      "proposition": "An unconditional build decision is impossible until the submission deadline, judging rules, local-tool restrictions, and available implementation time are known.",
+      "dimension_id": "R10",
+      "stance": "UNKNOWN",
+      "basis": "EVIDENCE",
+      "load_bearing": true,
+      "if_false": "CONDITION",
+      "reasoning": "The hackathon page could not be verified, and the remaining schedule is absent. These facts determine whether even the reduced scope has positive expected value.",
+      "evidence_ids": [
+        "E4",
+        "E5"
+      ],
+      "depends_on": [],
+      "id": "codex/P6",
+      "provider": "codex",
+      "source_id": "codex"
+    },
+    {
+      "local_id": "P7",
+      "proposition": "The team's capacity to deliver a reliable server, event protocol, frontend, cancellation path, and rehearsed demonstration within the hackathon window is unknown.",
+      "dimension_id": "R13",
+      "stance": "UNKNOWN",
+      "basis": "EVIDENCE",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "reasoning": "Team size, remaining time, and current process-management behavior were not supplied. The interface is feasible only if it reuses an already non-interactive, structured orchestration path rather than requiring new PTY infrastructure.",
+      "evidence_ids": [
+        "E1",
+        "E5"
+      ],
+      "depends_on": [
+        "P12"
+      ],
+      "id": "codex/P7",
+      "provider": "codex",
+      "source_id": "codex"
+    },
+    {
+      "local_id": "P8",
+      "proposition": "The essential visualization is a council argument map showing claims, model positions, critiques, resolved and unresolved disagreements, and the effect of each stage on the synthesis.",
+      "dimension_id": "D1",
+      "stance": "SUPPORT",
+      "basis": "INFERENCE",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "reasoning": "Raw token streams are difficult to compare and do not demonstrate orchestration. Judges need to understand the causal path from competing analyses to the final decision.",
+      "evidence_ids": [
+        "E1",
+        "E2"
+      ],
+      "depends_on": [
+        "P4"
+      ],
+      "id": "codex/P8",
+      "provider": "codex",
+      "source_id": "codex"
+    },
+    {
+      "local_id": "P9",
+      "proposition": "An HTTP endpoint capable of launching arbitrary local CLI commands is unacceptable; the demo must use a loopback-only server, fixed internal workflows, bounded inputs, explicit cancellation, and process cleanup.",
+      "dimension_id": "D3",
+      "stance": "OPPOSE",
+      "basis": "INFERENCE",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "reasoning": "A browser-facing process launcher creates a materially different security boundary from a user-invoked CLI. Broad command execution or network exposure would make the hackathon feature reckless.",
+      "evidence_ids": [
+        "E1",
+        "E2",
+        "E5"
+      ],
+      "depends_on": [
+        "P7",
+        "P12"
+      ],
+      "id": "codex/P9",
+      "provider": "codex",
+      "source_id": "codex"
+    },
+    {
+      "local_id": "P10",
+      "proposition": "Every final claim should link to the contributing model outputs, critiques, and resolution status; otherwise the synthesized answer remains an opaque additional model response.",
+      "dimension_id": "D5",
+      "stance": "SUPPORT",
+      "basis": "INFERENCE",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "reasoning": "Provider badges alone are not provenance. The interface must expose which inputs survived critique, which were rejected, and where the final judge introduced unsupported conclusions.",
+      "evidence_ids": [
+        "E1",
+        "E2",
+        "E5"
+      ],
+      "depends_on": [
+        "P4",
+        "P8"
+      ],
+      "id": "codex/P10",
+      "provider": "codex",
+      "source_id": "codex"
+    },
+    {
+      "local_id": "P11",
+      "proposition": "The proposed feature can be justified as a hackathon showcase, but there is no evidence yet for a scalable business model or broad product demand.",
+      "dimension_id": "R8",
+      "stance": "MIXED",
+      "basis": "EVIDENCE",
+      "load_bearing": false,
+      "if_false": "MINOR",
+      "reasoning": "Local installed providers reduce Aiki's direct inference cost, but also transfer setup, compatibility, capacity, and concurrency constraints to each user. Monetization and growth evidence are absent.",
+      "evidence_ids": [
+        "E1",
+        "E5"
+      ],
+      "depends_on": [
+        "P2",
+        "P5"
+      ],
+      "id": "codex/P11",
+      "provider": "codex",
+      "source_id": "codex"
+    },
+    {
+      "local_id": "P12",
+      "proposition": "Kill the web build if an early end-to-end spike cannot complete one council run, stream structured stage events, cancel safely, and recover from one provider failure without orphaned processes.",
+      "dimension_id": "R7",
+      "stance": "SUPPORT",
+      "basis": "INFERENCE",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "reasoning": "These behaviors are prerequisites for a controlled live demonstration. If they require reworking provider execution, the safer hackathon alternative is a polished CLI demonstration or read-only visualization of recorded runs.",
+      "evidence_ids": [
+        "E1",
+        "E5"
+      ],
+      "depends_on": [
+        "P6",
+        "P7",
+        "P9"
+      ],
+      "id": "codex/P12",
+      "provider": "codex",
+      "source_id": "codex"
+    },
+    {
+      "local_id": "pos_feat_feasibility",
+      "proposition": "Wrapping interactive CLIs in a local web server with real-time streaming is highly complex and brittle, risking failure during a live hackathon demo.",
+      "dimension_id": "D2",
+      "stance": "OPPOSE",
+      "basis": "ASSUMPTION",
+      "load_bearing": true,
+      "if_false": "PIVOT",
+      "reasoning": "Managing pseudo-terminals, handling unpredictable CLI prompts, capturing streams, and mapping them to WebSockets for a smooth UI is notoriously difficult. A single unexpected CLI prompt or process crash can hang the entire user interface.",
+      "evidence_ids": [
+        "ev_pty_complexity"
+      ],
+      "depends_on": [],
+      "id": "agy/pos_feat_feasibility",
+      "provider": "agy",
+      "source_id": "agy"
+    },
+    {
+      "local_id": "pos_hackathon_strategy",
+      "proposition": "A visual, real-time dashboard tracking multiple LLM agents is a high-ROI hackathon feature that directly appeals to judges seeking tangible, visual impact.",
+      "dimension_id": "D4",
+      "stance": "SUPPORT",
+      "basis": "INFERENCE",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "reasoning": "Hackathons heavily favor visually impressive, easy-to-understand demos. A CLI tool, while technically impressive, often fails to quickly convey its value compared to a sleek UI showing real-time agent collaboration.",
+      "evidence_ids": [],
+      "depends_on": [],
+      "id": "agy/pos_hackathon_strategy",
+      "provider": "agy",
+      "source_id": "agy"
+    },
+    {
+      "local_id": "pos_cost_effort",
+      "proposition": "Building a reliable local web server and a responsive frontend within a hackathon timeframe is too high effort for a solo developer or small team.",
+      "dimension_id": "R5",
+      "stance": "MIXED",
+      "basis": "INFERENCE",
+      "load_bearing": true,
+      "if_false": "CONDITION",
+      "reasoning": "While modern frontend frameworks allow rapid UI building, the backend orchestration of CLIs adds immense complexity that may consume the entire time budget, leaving the core features unfinished.",
+      "evidence_ids": [],
+      "depends_on": [
+        "pos_feat_feasibility"
+      ],
+      "id": "agy/pos_cost_effort",
+      "provider": "agy",
+      "source_id": "agy"
+    },
+    {
+      "local_id": "pos_local_boundary",
+      "proposition": "Exposing local privileged CLI processes via an HTTP server introduces severe security and lifecycle management risks, even on localhost.",
+      "dimension_id": "R6",
+      "stance": "OPPOSE",
+      "basis": "INFERENCE",
+      "load_bearing": false,
+      "if_false": "MINOR",
+      "reasoning": "Although local, arbitrary command injection or poor lifecycle handling (zombie processes) can crash the host or create vulnerabilities. Hackathon projects often skip robust security, making this a latent risk.",
+      "evidence_ids": [],
+      "depends_on": [],
+      "id": "agy/pos_local_boundary",
+      "provider": "agy",
+      "source_id": "agy"
+    },
+    {
+      "local_id": "CF1",
+      "proposition": "The initial audience should be technical users making consequential reviews or decisions, not developers, researchers, knowledge workers, and general consumers simultaneously.",
+      "dimension_id": "R1",
+      "stance": "SUPPORT",
+      "basis": "INFERENCE",
+      "load_bearing": true,
+      "if_false": "PIVOT",
+      "reasoning": "Requiring installed and authenticated provider CLIs creates technical onboarding friction, while one specific audience and job makes the hackathon demonstration understandable.",
+      "evidence_ids": [
+        "CFE1",
+        "CFE3"
+      ],
+      "depends_on": [],
+      "id": "codex-coverage-fill/CF1",
+      "provider": "codex",
+      "source_id": "codex-coverage-fill"
+    },
+    {
+      "local_id": "CF2",
+      "proposition": "The primary alternatives are the existing Aiki CLI, running each provider CLI independently, and using a conventional single-model interface.",
+      "dimension_id": "R2",
+      "stance": "MIXED",
+      "basis": "INFERENCE",
+      "load_bearing": true,
+      "if_false": "CONDITION",
+      "reasoning": "The browser must reduce comparison and comprehension effort; duplicating prompt entry and final output would be weaker than retaining the CLI.",
+      "evidence_ids": [
+        "CFE1",
+        "CFE2"
+      ],
+      "depends_on": [
+        "CF1"
+      ],
+      "id": "codex-coverage-fill/CF2",
+      "provider": "codex",
+      "source_id": "codex-coverage-fill"
+    },
+    {
+      "local_id": "CF3",
+      "proposition": "Aiki's defensible differentiation is visible proof that disagreement and critique improved the result, not the existence of a browser UI or multiple response panels.",
+      "dimension_id": "R3",
+      "stance": "SUPPORT",
+      "basis": "INFERENCE",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "reasoning": "Without observable changes between initial model claims and the synthesis, the project is an orchestration-themed chat wrapper.",
+      "evidence_ids": [
+        "CFE1",
+        "CFE2"
+      ],
+      "depends_on": [
+        "CF2",
+        "CF10",
+        "CF12"
+      ],
+      "id": "codex-coverage-fill/CF3",
+      "provider": "codex",
+      "source_id": "codex-coverage-fill"
+    },
+    {
+      "local_id": "CF4",
+      "proposition": "A hackathon-sized `aiki serve` is technically viable only if it invokes the existing non-interactive orchestration path and streams structured stage events rather than introducing a new PTY-based execution system.",
+      "dimension_id": "R4",
+      "stance": "UNKNOWN",
+      "basis": "ASSUMPTION",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "reasoning": "The current process-management implementation has not been supplied. Reworking provider execution, cancellation, and streaming alongside the UI would make the scope unreliable.",
+      "evidence_ids": [
+        "CFE1",
+        "CFE5"
+      ],
+      "depends_on": [],
+      "id": "codex-coverage-fill/CF4",
+      "provider": "codex",
+      "source_id": "codex-coverage-fill"
+    },
+    {
+      "local_id": "CF5",
+      "proposition": "Kill the live web build if an early spike cannot complete one council run, emit structured progress, cancel cleanly, and survive one provider failure without orphaning processes.",
+      "dimension_id": "R7",
+      "stance": "SUPPORT",
+      "basis": "INFERENCE",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "reasoning": "These are minimum live-demo conditions. The fallback should be a polished CLI demonstration or a read-only viewer for recorded Aiki runs.",
+      "evidence_ids": [
+        "CFE5"
+      ],
+      "depends_on": [
+        "CF4",
+        "CF11"
+      ],
+      "id": "codex-coverage-fill/CF5",
+      "provider": "codex",
+      "source_id": "codex-coverage-fill"
+    },
+    {
+      "local_id": "CF6",
+      "proposition": "Distribution should remain npm-first: install Aiki, authenticate supported provider CLIs, run `aiki serve`, and open the loopback URL.",
+      "dimension_id": "R9",
+      "stance": "MIXED",
+      "basis": "INFERENCE",
+      "load_bearing": false,
+      "if_false": "PIVOT",
+      "reasoning": "This preserves Aiki's local-first identity but limits adoption to users willing to configure multiple CLI providers; it is suitable for a controlled hackathon demo, not broad consumer acquisition.",
+      "evidence_ids": [
+        "CFE1",
+        "CFE2"
+      ],
+      "depends_on": [
+        "CF1"
+      ],
+      "id": "codex-coverage-fill/CF6",
+      "provider": "codex",
+      "source_id": "codex-coverage-fill"
+    },
+    {
+      "local_id": "CF7",
+      "proposition": "Market timing cannot justify the build independently of the hackathon because the deadline, judging rules, and restrictions on localhost demonstrations remain unverified.",
+      "dimension_id": "R10",
+      "stance": "UNKNOWN",
+      "basis": "EVIDENCE",
+      "load_bearing": true,
+      "if_false": "CONDITION",
+      "reasoning": "Open Innovation or General AI appears thematically compatible, but schedule and submission constraints determine whether the reduced scope has positive value.",
+      "evidence_ids": [
+        "CFE3",
+        "CFE4",
+        "CFE5"
+      ],
+      "depends_on": [],
+      "id": "codex-coverage-fill/CF7",
+      "provider": "codex",
+      "source_id": "codex-coverage-fill"
+    },
+    {
+      "local_id": "CF8",
+      "proposition": "The first assumptions to validate are non-interactive provider execution, reliable cancellation and cleanup, structured stage outputs, judge comprehension, and measurable improvement over a single-model answer.",
+      "dimension_id": "R12",
+      "stance": "SUPPORT",
+      "basis": "INFERENCE",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "reasoning": "Failure of any execution assumption threatens the demo; failure to show understandable output improvement removes the product differentiation.",
+      "evidence_ids": [
+        "CFE4",
+        "CFE5"
+      ],
+      "depends_on": [
+        "CF3",
+        "CF4",
+        "CF5"
+      ],
+      "id": "codex-coverage-fill/CF8",
+      "provider": "codex",
+      "source_id": "codex-coverage-fill"
+    },
+    {
+      "local_id": "CF9",
+      "proposition": "Execution capability is currently unknown because team size, frontend experience, remaining engineer-days, and ownership of demo reliability were not supplied.",
+      "dimension_id": "R13",
+      "stance": "UNKNOWN",
+      "basis": "EVIDENCE",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "reasoning": "The scope is credible for a team that can reuse the orchestration core and build one narrow viewer; it is not credible if core process management must also be redesigned.",
+      "evidence_ids": [
+        "CFE5"
+      ],
+      "depends_on": [
+        "CF4",
+        "CF7"
+      ],
+      "id": "codex-coverage-fill/CF9",
+      "provider": "codex",
+      "source_id": "codex-coverage-fill"
+    },
+    {
+      "local_id": "CF10",
+      "proposition": "The essential interface is a council argument map that connects claims, model positions, critiques, resolved disagreements, unresolved conflicts, and final conclusions.",
+      "dimension_id": "D1",
+      "stance": "SUPPORT",
+      "basis": "INFERENCE",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "reasoning": "Raw token streams and side-by-side answers show activity but do not explain how orchestration created value.",
+      "evidence_ids": [
+        "CFE2",
+        "CFE5"
+      ],
+      "depends_on": [
+        "CF3"
+      ],
+      "id": "codex-coverage-fill/CF10",
+      "provider": "codex",
+      "source_id": "codex-coverage-fill"
+    },
+    {
+      "local_id": "CF11",
+      "proposition": "The server must bind to loopback, accept bounded workflow inputs, invoke only fixed Aiki operations, and provide cancellation and child-process cleanup; arbitrary command execution must not be exposed.",
+      "dimension_id": "D3",
+      "stance": "SUPPORT",
+      "basis": "INFERENCE",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "reasoning": "Browser-triggered local process execution creates a new security and lifecycle boundary even when the server is intended for local use.",
+      "evidence_ids": [
+        "CFE1",
+        "CFE5"
+      ],
+      "depends_on": [
+        "CF4"
+      ],
+      "id": "codex-coverage-fill/CF11",
+      "provider": "codex",
+      "source_id": "codex-coverage-fill"
+    },
+    {
+      "local_id": "CF12",
+      "proposition": "Every synthesized claim should link to its contributing model outputs, critiques, evidence references, and resolution status.",
+      "dimension_id": "D5",
+      "stance": "SUPPORT",
+      "basis": "INFERENCE",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "reasoning": "Provider labels alone do not establish provenance; without claim-level traceability, the synthesis remains another opaque model response.",
+      "evidence_ids": [
+        "CFE2",
+        "CFE5"
+      ],
+      "depends_on": [
+        "CF3",
+        "CF10"
+      ],
+      "id": "codex-coverage-fill/CF12",
+      "provider": "codex",
+      "source_id": "codex-coverage-fill"
+    }
+  ],
+  "evidence": [
+    {
+      "id": "codex/E1",
+      "claim_supported": "The supplied npm snapshot identifies aiki-cli version 0.3.1 as a local-first council for code review and idea stress-testing using Claude Code, Codex, and Gemini/Antigravity CLIs without API keys.",
+      "source_kind": "PRIMARY",
+      "url": "https://www.npmjs.com/package/aiki-cli",
+      "accessed_at": "2026-07-15T15:40:42.983Z",
+      "locator": "inputs/idea-brief.md, URL source snapshot U1",
+      "support": "SUPPORTS",
+      "freshness": "CURRENT",
+      "provider": "codex",
+      "source_id": "codex"
+    },
+    {
+      "id": "codex/E2",
+      "claim_supported": "The user proposes extending the installed CLI with `aiki serve`, a local browser interface for entering research requests and viewing orchestration and final output.",
+      "source_kind": "USER",
+      "url": "file:///Users/gaurav/Documents/Personal-Learning/AiKi/.aiki/runs/20260715-2110-idea-refinement-c289/inputs/idea-brief.md",
+      "locator": "inputs/idea-brief.md, opening request",
+      "support": "SUPPORTS",
+      "freshness": "UNKNOWN",
+      "provider": "codex",
+      "source_id": "codex"
+    },
+    {
+      "id": "codex/E3",
+      "claim_supported": "The user describes the hackathon as open innovation or general AI and proposes developers, technical teams, researchers, knowledge workers, and general users as possible audiences.",
+      "source_kind": "USER",
+      "url": "file:///Users/gaurav/Documents/Personal-Learning/AiKi/.aiki/runs/20260715-2110-idea-refinement-c289/inputs/idea-brief.md",
+      "locator": "inputs/idea-brief.md, Answers section",
+      "support": "CONTEXT_ONLY",
+      "freshness": "UNKNOWN",
+      "provider": "codex",
+      "source_id": "codex"
+    },
+    {
+      "id": "codex/E4",
+      "claim_supported": "The NamasteDev hackathon page could not be fetched because automated access returned HTTP 403, so its current rules and judging criteria were not independently established.",
+      "source_kind": "USER",
+      "url": "https://namastedev.com/hackathon",
+      "locator": "inputs/idea-brief.md, URL source snapshot U2",
+      "support": "SUPPORTS",
+      "freshness": "UNKNOWN",
+      "provider": "codex",
+      "source_id": "codex"
+    },
+    {
+      "id": "codex/E5",
+      "claim_supported": "The supplied decision contract identifies the deadline, implementation time, team capacity, provider concurrency and cancellation behavior, security boundary, and comparative quality evidence as missing.",
+      "source_kind": "USER",
+      "url": "file:///Users/gaurav/Documents/Personal-Learning/AiKi/.aiki/runs/20260715-2110-idea-refinement-c289/inputs/idea-brief.md",
+      "locator": "task contract in the current request, unknowns and missing_evidence",
+      "support": "SUPPORTS",
+      "freshness": "UNKNOWN",
+      "provider": "codex",
+      "source_id": "codex"
+    },
+    {
+      "id": "agy/ev_pty_complexity",
+      "claim_supported": "Wrapping interactive CLIs is brittle",
+      "source_kind": "MODEL_KNOWLEDGE",
+      "locator": "General software engineering knowledge regarding pseudo-terminals and stream multiplexing.",
+      "support": "SUPPORTS",
+      "freshness": "UNKNOWN",
+      "provider": "agy",
+      "source_id": "agy"
+    },
+    {
+      "id": "codex-coverage-fill/CFE1",
+      "claim_supported": "The supplied npm snapshot describes aiki-cli 0.3.1 as a local-first model council using installed Claude Code, Codex, and Gemini/Antigravity CLIs without API keys.",
+      "source_kind": "PRIMARY",
+      "url": "https://www.npmjs.com/package/aiki-cli",
+      "accessed_at": "2026-07-15T15:40:42.983Z",
+      "locator": "inputs/idea-brief.md, URL source snapshot U1",
+      "support": "SUPPORTS",
+      "freshness": "CURRENT",
+      "provider": "codex",
+      "source_id": "codex-coverage-fill"
+    },
+    {
+      "id": "codex-coverage-fill/CFE2",
+      "claim_supported": "The proposed extension launches a local browser interface through `aiki serve` for entering requests and viewing orchestration and final output.",
+      "source_kind": "USER",
+      "url": "file:///Users/gaurav/Documents/Personal-Learning/AiKi/.aiki/runs/20260715-2110-idea-refinement-c289/inputs/idea-brief.md",
+      "locator": "inputs/idea-brief.md, opening request",
+      "support": "SUPPORTS",
+      "freshness": "UNKNOWN",
+      "provider": "codex",
+      "source_id": "codex-coverage-fill"
+    },
+    {
+      "id": "codex-coverage-fill/CFE3",
+      "claim_supported": "The user identifies Open Innovation or General AI as the theme and proposes audiences ranging from technical teams to general users making difficult decisions.",
+      "source_kind": "USER",
+      "url": "file:///Users/gaurav/Documents/Personal-Learning/AiKi/.aiki/runs/20260715-2110-idea-refinement-c289/inputs/idea-brief.md",
+      "locator": "inputs/idea-brief.md, Answers section",
+      "support": "CONTEXT_ONLY",
+      "freshness": "UNKNOWN",
+      "provider": "codex",
+      "source_id": "codex-coverage-fill"
+    },
+    {
+      "id": "codex-coverage-fill/CFE4",
+      "claim_supported": "The supplied hackathon-page snapshot reports HTTP 403, leaving current rules, judging criteria, deadline, and submission restrictions unverified.",
+      "source_kind": "USER",
+      "url": "https://namastedev.com/hackathon",
+      "locator": "inputs/idea-brief.md, URL source snapshot U2",
+      "support": "SUPPORTS",
+      "freshness": "UNKNOWN",
+      "provider": "codex",
+      "source_id": "codex-coverage-fill"
+    },
+    {
+      "id": "codex-coverage-fill/CFE5",
+      "claim_supported": "The decision contract identifies team capacity, remaining time, provider concurrency, cancellation, failure handling, process-management behavior, security boundaries, and comparative output quality as missing evidence.",
+      "source_kind": "USER",
+      "url": "file:///Users/gaurav/Documents/Personal-Learning/AiKi/.aiki/runs/20260715-2110-idea-refinement-c289/inputs/idea-brief.md",
+      "locator": "inputs/idea-brief.md, Aiki decision contract",
+      "support": "CONTEXT_ONLY",
+      "freshness": "UNKNOWN",
+      "provider": "codex",
+      "source_id": "codex-coverage-fill"
+    }
+  ],
+  "calculations": [],
+  "calculation_checks": [],
+  "claims": [
+    {
+      "id": "G1",
+      "proposition": "Verdict: build `aiki serve` only as an optional, demo-focused visual companion to the existing CLI, not as a general-purpose web application.",
+      "position_ids": [
+        "codex/P1"
+      ],
+      "state": "UNIQUE",
+      "evidence_state": "SUPPORTED",
+      "load_bearing": true,
+      "if_false": "PIVOT",
+      "sensitivity": "DECISIVE"
+    },
+    {
+      "id": "G2",
+      "proposition": "Aiki should not target developers, researchers, knowledge workers, and general users simultaneously; the initial audience should be technical users who already operate multiple AI CLIs and need defensible decisions or reviews.",
+      "position_ids": [
+        "codex/P2"
+      ],
+      "state": "UNCERTAIN",
+      "evidence_state": "CONFLICTED",
+      "load_bearing": true,
+      "if_false": "PIVOT",
+      "sensitivity": "DECISIVE"
+    },
+    {
+      "id": "G3",
+      "proposition": "The existing CLI is the strongest status-quo alternative and should remain the primary execution surface; the browser must add comprehension that the CLI cannot provide efficiently.",
+      "position_ids": [
+        "codex/P3"
+      ],
+      "state": "UNCERTAIN",
+      "evidence_state": "UNVERIFIED",
+      "load_bearing": true,
+      "if_false": "CONDITION",
+      "sensitivity": "MATERIAL"
+    },
+    {
+      "id": "G4",
+      "proposition": "A browser UI is not meaningful differentiation; Aiki wins only if it visibly proves how disagreement, critique, and provenance changed the final result.",
+      "position_ids": [
+        "codex/P4"
+      ],
+      "state": "UNIQUE",
+      "evidence_state": "SUPPORTED",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "sensitivity": "DECISIVE"
+    },
+    {
+      "id": "G5",
+      "proposition": "Aiki's local-first npm distribution is suitable for a creator-controlled demo but creates substantial adoption friction for users who do not already have compatible provider CLIs installed and authenticated.",
+      "position_ids": [
+        "codex/P5"
+      ],
+      "state": "UNCERTAIN",
+      "evidence_state": "UNVERIFIED",
+      "load_bearing": false,
+      "if_false": "MINOR",
+      "sensitivity": "LOW"
+    },
+    {
+      "id": "G6",
+      "proposition": "An unconditional build decision is impossible until the submission deadline, judging rules, local-tool restrictions, and available implementation time are known.",
+      "position_ids": [
+        "codex/P6"
+      ],
+      "state": "UNCERTAIN",
+      "evidence_state": "UNVERIFIED",
+      "load_bearing": true,
+      "if_false": "CONDITION",
+      "sensitivity": "MATERIAL"
+    },
+    {
+      "id": "G7",
+      "proposition": "The team's capacity to deliver a reliable server, event protocol, frontend, cancellation path, and rehearsed demonstration within the hackathon window is unknown.",
+      "position_ids": [
+        "codex/P7"
+      ],
+      "state": "UNCERTAIN",
+      "evidence_state": "UNVERIFIED",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "sensitivity": "DECISIVE"
+    },
+    {
+      "id": "G8",
+      "proposition": "The essential visualization is a council argument map showing claims, model positions, critiques, resolved and unresolved disagreements, and the effect of each stage on the synthesis.",
+      "position_ids": [
+        "codex/P8"
+      ],
+      "state": "UNIQUE",
+      "evidence_state": "SUPPORTED",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "sensitivity": "DECISIVE"
+    },
+    {
+      "id": "G9",
+      "proposition": "An HTTP endpoint capable of launching arbitrary local CLI commands is unacceptable; the demo must use a loopback-only server, fixed internal workflows, bounded inputs, explicit cancellation, and process cleanup.",
+      "position_ids": [
+        "codex/P9"
+      ],
+      "state": "UNCERTAIN",
+      "evidence_state": "CONFLICTED",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "sensitivity": "DECISIVE"
+    },
+    {
+      "id": "G10",
+      "proposition": "Every final claim should link to the contributing model outputs, critiques, and resolution status; otherwise the synthesized answer remains an opaque additional model response.",
+      "position_ids": [
+        "codex/P10"
+      ],
+      "state": "UNIQUE",
+      "evidence_state": "SUPPORTED",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "sensitivity": "DECISIVE"
+    },
+    {
+      "id": "G11",
+      "proposition": "The proposed feature can be justified as a hackathon showcase, but there is no evidence yet for a scalable business model or broad product demand.",
+      "position_ids": [
+        "codex/P11"
+      ],
+      "state": "UNCERTAIN",
+      "evidence_state": "UNVERIFIED",
+      "load_bearing": false,
+      "if_false": "MINOR",
+      "sensitivity": "LOW"
+    },
+    {
+      "id": "G12",
+      "proposition": "Kill the web build if an early end-to-end spike cannot complete one council run, stream structured stage events, cancel safely, and recover from one provider failure without orphaned processes.",
+      "position_ids": [
+        "codex/P12"
+      ],
+      "state": "UNIQUE",
+      "evidence_state": "SUPPORTED",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "sensitivity": "DECISIVE"
+    },
+    {
+      "id": "G13",
+      "proposition": "Wrapping interactive CLIs in a local web server with real-time streaming is highly complex and brittle, risking failure during a live hackathon demo.",
+      "position_ids": [
+        "agy/pos_feat_feasibility"
+      ],
+      "state": "UNCERTAIN",
+      "evidence_state": "UNVERIFIED",
+      "load_bearing": true,
+      "if_false": "PIVOT",
+      "sensitivity": "DECISIVE"
+    },
+    {
+      "id": "G14",
+      "proposition": "A visual, real-time dashboard tracking multiple LLM agents is a high-ROI hackathon feature that directly appeals to judges seeking tangible, visual impact.",
+      "position_ids": [
+        "agy/pos_hackathon_strategy"
+      ],
+      "state": "UNCERTAIN",
+      "evidence_state": "UNVERIFIED",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "sensitivity": "DECISIVE"
+    },
+    {
+      "id": "G15",
+      "proposition": "Building a reliable local web server and a responsive frontend within a hackathon timeframe is too high effort for a solo developer or small team.",
+      "position_ids": [
+        "agy/pos_cost_effort"
+      ],
+      "state": "UNCERTAIN",
+      "evidence_state": "UNVERIFIED",
+      "load_bearing": true,
+      "if_false": "CONDITION",
+      "sensitivity": "MATERIAL"
+    },
+    {
+      "id": "G16",
+      "proposition": "Exposing local privileged CLI processes via an HTTP server introduces severe security and lifecycle management risks, even on localhost.",
+      "position_ids": [
+        "agy/pos_local_boundary"
+      ],
+      "state": "UNCERTAIN",
+      "evidence_state": "UNVERIFIED",
+      "load_bearing": false,
+      "if_false": "MINOR",
+      "sensitivity": "LOW"
+    },
+    {
+      "id": "G17",
+      "proposition": "The initial audience should be technical users making consequential reviews or decisions, not developers, researchers, knowledge workers, and general consumers simultaneously.",
+      "position_ids": [
+        "codex-coverage-fill/CF1"
+      ],
+      "state": "UNIQUE",
+      "evidence_state": "SUPPORTED",
+      "load_bearing": true,
+      "if_false": "PIVOT",
+      "sensitivity": "DECISIVE"
+    },
+    {
+      "id": "G18",
+      "proposition": "The primary alternatives are the existing Aiki CLI, running each provider CLI independently, and using a conventional single-model interface.",
+      "position_ids": [
+        "codex-coverage-fill/CF2"
+      ],
+      "state": "UNCERTAIN",
+      "evidence_state": "UNVERIFIED",
+      "load_bearing": true,
+      "if_false": "CONDITION",
+      "sensitivity": "MATERIAL"
+    },
+    {
+      "id": "G19",
+      "proposition": "Aiki's defensible differentiation is visible proof that disagreement and critique improved the result, not the existence of a browser UI or multiple response panels.",
+      "position_ids": [
+        "codex-coverage-fill/CF3"
+      ],
+      "state": "UNIQUE",
+      "evidence_state": "SUPPORTED",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "sensitivity": "DECISIVE"
+    },
+    {
+      "id": "G20",
+      "proposition": "A hackathon-sized `aiki serve` is technically viable only if it invokes the existing non-interactive orchestration path and streams structured stage events rather than introducing a new PTY-based execution system.",
+      "position_ids": [
+        "codex-coverage-fill/CF4"
+      ],
+      "state": "UNCERTAIN",
+      "evidence_state": "UNVERIFIED",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "sensitivity": "DECISIVE"
+    },
+    {
+      "id": "G21",
+      "proposition": "Kill the live web build if an early spike cannot complete one council run, emit structured progress, cancel cleanly, and survive one provider failure without orphaning processes.",
+      "position_ids": [
+        "codex-coverage-fill/CF5"
+      ],
+      "state": "UNCERTAIN",
+      "evidence_state": "UNVERIFIED",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "sensitivity": "DECISIVE"
+    },
+    {
+      "id": "G22",
+      "proposition": "Distribution should remain npm-first: install Aiki, authenticate supported provider CLIs, run `aiki serve`, and open the loopback URL.",
+      "position_ids": [
+        "codex-coverage-fill/CF6"
+      ],
+      "state": "UNCERTAIN",
+      "evidence_state": "UNVERIFIED",
+      "load_bearing": false,
+      "if_false": "PIVOT",
+      "sensitivity": "LOW"
+    },
+    {
+      "id": "G23",
+      "proposition": "Market timing cannot justify the build independently of the hackathon because the deadline, judging rules, and restrictions on localhost demonstrations remain unverified.",
+      "position_ids": [
+        "codex-coverage-fill/CF7"
+      ],
+      "state": "UNCERTAIN",
+      "evidence_state": "UNVERIFIED",
+      "load_bearing": true,
+      "if_false": "CONDITION",
+      "sensitivity": "MATERIAL"
+    },
+    {
+      "id": "G24",
+      "proposition": "The first assumptions to validate are non-interactive provider execution, reliable cancellation and cleanup, structured stage outputs, judge comprehension, and measurable improvement over a single-model answer.",
+      "position_ids": [
+        "codex-coverage-fill/CF8"
+      ],
+      "state": "UNIQUE",
+      "evidence_state": "SUPPORTED",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "sensitivity": "DECISIVE"
+    },
+    {
+      "id": "G25",
+      "proposition": "Execution capability is currently unknown because team size, frontend experience, remaining engineer-days, and ownership of demo reliability were not supplied.",
+      "position_ids": [
+        "codex-coverage-fill/CF9"
+      ],
+      "state": "UNCERTAIN",
+      "evidence_state": "UNVERIFIED",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "sensitivity": "DECISIVE"
+    },
+    {
+      "id": "G26",
+      "proposition": "The essential interface is a council argument map that connects claims, model positions, critiques, resolved disagreements, unresolved conflicts, and final conclusions.",
+      "position_ids": [
+        "codex-coverage-fill/CF10"
+      ],
+      "state": "UNIQUE",
+      "evidence_state": "SUPPORTED",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "sensitivity": "DECISIVE"
+    },
+    {
+      "id": "G27",
+      "proposition": "The server must bind to loopback, accept bounded workflow inputs, invoke only fixed Aiki operations, and provide cancellation and child-process cleanup; arbitrary command execution must not be exposed.",
+      "position_ids": [
+        "codex-coverage-fill/CF11"
+      ],
+      "state": "UNIQUE",
+      "evidence_state": "SUPPORTED",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "sensitivity": "DECISIVE"
+    },
+    {
+      "id": "G28",
+      "proposition": "Every synthesized claim should link to its contributing model outputs, critiques, evidence references, and resolution status.",
+      "position_ids": [
+        "codex-coverage-fill/CF12"
+      ],
+      "state": "UNIQUE",
+      "evidence_state": "SUPPORTED",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "sensitivity": "DECISIVE"
+    }
+  ],
+  "edges": [
+    {
+      "from": "G1",
+      "to": "G4",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "G1",
+      "to": "G6",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "G1",
+      "to": "G7",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "G1",
+      "to": "G12",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "codex/E1",
+      "to": "G1",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "codex/E2",
+      "to": "G1",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "codex/E3",
+      "to": "G1",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "codex/E4",
+      "to": "G1",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "codex/E5",
+      "to": "G1",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "codex/E1",
+      "to": "G2",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "codex/E3",
+      "to": "G2",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "G3",
+      "to": "G4",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "G3",
+      "to": "G8",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "G3",
+      "to": "G10",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "codex/E1",
+      "to": "G3",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "codex/E2",
+      "to": "G3",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "G4",
+      "to": "G8",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "G4",
+      "to": "G10",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "codex/E1",
+      "to": "G4",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "codex/E2",
+      "to": "G4",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "codex/E5",
+      "to": "G4",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "G5",
+      "to": "G2",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "codex/E1",
+      "to": "G5",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "codex/E4",
+      "to": "G6",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "codex/E5",
+      "to": "G6",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "G7",
+      "to": "G12",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "codex/E1",
+      "to": "G7",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "codex/E5",
+      "to": "G7",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "G8",
+      "to": "G4",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "codex/E1",
+      "to": "G8",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "codex/E2",
+      "to": "G8",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "G9",
+      "to": "G7",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "G9",
+      "to": "G12",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "codex/E1",
+      "to": "G9",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "codex/E2",
+      "to": "G9",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "codex/E5",
+      "to": "G9",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "G10",
+      "to": "G4",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "G10",
+      "to": "G8",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "codex/E1",
+      "to": "G10",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "codex/E2",
+      "to": "G10",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "codex/E5",
+      "to": "G10",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "G11",
+      "to": "G2",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "G11",
+      "to": "G5",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "codex/E1",
+      "to": "G11",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "codex/E5",
+      "to": "G11",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "G12",
+      "to": "G6",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "G12",
+      "to": "G7",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "G12",
+      "to": "G9",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "codex/E1",
+      "to": "G12",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "codex/E5",
+      "to": "G12",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "agy/ev_pty_complexity",
+      "to": "G13",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "G15",
+      "to": "G13",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "codex-coverage-fill/CFE1",
+      "to": "G17",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "codex-coverage-fill/CFE3",
+      "to": "G17",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "G18",
+      "to": "G17",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "codex-coverage-fill/CFE1",
+      "to": "G18",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "codex-coverage-fill/CFE2",
+      "to": "G18",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "G19",
+      "to": "G18",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "G19",
+      "to": "G26",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "G19",
+      "to": "G28",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "codex-coverage-fill/CFE1",
+      "to": "G19",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "codex-coverage-fill/CFE2",
+      "to": "G19",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "codex-coverage-fill/CFE1",
+      "to": "G20",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "codex-coverage-fill/CFE5",
+      "to": "G20",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "G21",
+      "to": "G20",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "G21",
+      "to": "G27",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "codex-coverage-fill/CFE5",
+      "to": "G21",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "G22",
+      "to": "G17",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "codex-coverage-fill/CFE1",
+      "to": "G22",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "codex-coverage-fill/CFE2",
+      "to": "G22",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "codex-coverage-fill/CFE3",
+      "to": "G23",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "codex-coverage-fill/CFE4",
+      "to": "G23",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "codex-coverage-fill/CFE5",
+      "to": "G23",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "G24",
+      "to": "G19",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "G24",
+      "to": "G20",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "G24",
+      "to": "G21",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "codex-coverage-fill/CFE4",
+      "to": "G24",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "codex-coverage-fill/CFE5",
+      "to": "G24",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "G25",
+      "to": "G20",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "G25",
+      "to": "G23",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "codex-coverage-fill/CFE5",
+      "to": "G25",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "G26",
+      "to": "G19",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "codex-coverage-fill/CFE2",
+      "to": "G26",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "codex-coverage-fill/CFE5",
+      "to": "G26",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "G27",
+      "to": "G20",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "codex-coverage-fill/CFE1",
+      "to": "G27",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "codex-coverage-fill/CFE5",
+      "to": "G27",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "G28",
+      "to": "G19",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "G28",
+      "to": "G26",
+      "type": "DEPENDS_ON"
+    },
+    {
+      "from": "codex-coverage-fill/CFE2",
+      "to": "G28",
+      "type": "SUPPORTS"
+    },
+    {
+      "from": "codex-coverage-fill/CFE5",
+      "to": "G28",
+      "type": "SUPPORTS"
+    }
+  ],
+  "holes": {
+    "coverage": [],
+    "evidence": [
+      {
+        "claim_id": "G2",
+        "reason": "load-bearing claim has conflicting evidence"
+      },
+      {
+        "claim_id": "G3",
+        "reason": "claim requires independently checkable evidence"
+      },
+      {
+        "claim_id": "G6",
+        "reason": "claim requires independently checkable evidence"
+      },
+      {
+        "claim_id": "G7",
+        "reason": "claim requires independently checkable evidence"
+      },
+      {
+        "claim_id": "G9",
+        "reason": "load-bearing claim has conflicting evidence"
+      },
+      {
+        "claim_id": "G13",
+        "reason": "claim requires independently checkable evidence"
+      },
+      {
+        "claim_id": "G14",
+        "reason": "claim requires independently checkable evidence"
+      },
+      {
+        "claim_id": "G15",
+        "reason": "claim requires independently checkable evidence"
+      },
+      {
+        "claim_id": "G18",
+        "reason": "claim requires independently checkable evidence"
+      },
+      {
+        "claim_id": "G20",
+        "reason": "claim requires independently checkable evidence"
+      },
+      {
+        "claim_id": "G21",
+        "reason": "claim requires independently checkable evidence"
+      },
+      {
+        "claim_id": "G23",
+        "reason": "claim requires independently checkable evidence"
+      },
+      {
+        "claim_id": "G25",
+        "reason": "claim requires independently checkable evidence"
+      }
+    ]
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "actions": [
+    {
+      "order": 1,
+      "action": "Pull the official NamasteDev hackathon rules and rubric and confirm in writing: (a) whether submissions may depend on locally-installed third-party CLIs (Claude Code, Codex, Antigravity), and (b) whether judging runs on the creator's machine or requires judges to install and authenticate those CLIs themselves.",
+      "why": "G6 and G23 make the build decision impossible until eligibility and demo constraints are known; a loopback tool that depends on unlisted third-party CLIs may be disqualified or simply unrunnable by judges.",
+      "validates": "G6",
+      "effort": "M",
+      "kill_signal": "The rules prohibit dependence on locally-installed third-party CLIs, or require judges to self-install and authenticate the provider CLIs — pivot to a pre-recorded or hosted/mocked demo instead of a live `aiki serve`."
+    },
+    {
+      "order": 2,
+      "action": "Count the engineer-days actually available before the submission deadline and name one person who owns demo reliability end to end (server, streaming, cancellation, rehearsal).",
+      "why": "G25 and G7 flag that team capacity and ownership of demo reliability are unknown; without a named owner and committed days the live build cannot be assessed.",
+      "validates": "G25",
+      "effort": "M",
+      "kill_signal": "No one will own demo reliability, or the team cannot commit the days the feasibility spike below needs — keep the CLI as the submission and drop the web build."
+    },
+    {
+      "order": 3,
+      "action": "Probe each provider adapter (claude, codex, agy) non-interactively: feed a fixed prompt via an fd redirect with no TTY, confirm it emits parseable incremental output, accepts a cancel/kill, and terminates its child processes cleanly.",
+      "why": "G20 holds that `aiki serve` is only viable on the existing non-interactive path; if a CLI needs an interactive TTY the whole streaming approach collapses before any UI work.",
+      "validates": "G20",
+      "effort": "M",
+      "kill_signal": "Any provider requires an interactive TTY, cannot emit incremental parseable output, or leaves orphaned child processes on kill — do not build live streaming; fall back to batch runs with post-hoc rendering."
+    },
+    {
+      "order": 4,
+      "action": "Run a time-boxed spike that drives one full council run through the existing non-interactive orchestration path, streams structured stage events to a loopback page, cancels mid-run on demand, and kills one provider mid-run to confirm no orphaned processes.",
+      "why": "G21 sets the explicit kill gate for the live build, and this single spike is the most decisive test of the G13 and G20 feasibility claims.",
+      "validates": "G21",
+      "effort": "M",
+      "kill_signal": "The spike cannot complete one council run, cannot emit structured progress, cannot cancel cleanly, or orphans processes after a provider failure — kill the live web build."
+    },
+    {
+      "order": 5,
+      "action": "On the chosen demo task, run a blinded comparison of Aiki's orchestrated output versus the strongest single provider's output, and have a neutral reviewer pick which caught a consequential issue or produced the better decision without knowing which is which.",
+      "why": "G2 and G3 require the browser to add comprehension the CLI or a single model cannot; if orchestration does not beat the best single provider, the project has no defensible edge for judges.",
+      "validates": "G2",
+      "effort": "M",
+      "kill_signal": "The blinded reviewer cannot tell Aiki apart from the strongest single provider, or prefers the single provider — the multi-model story is not compelling; narrow the pitch or reconsider the build."
+    },
+    {
+      "order": 6,
+      "action": "Confirm `aiki serve` can be pinned to loopback only, exposing a fixed set of orchestration operations with bounded inputs and reliable per-run cancellation — with no endpoint that launches arbitrary local commands.",
+      "why": "G9 rules an arbitrary-command HTTP endpoint unacceptable; the demo must be loopback-only with fixed workflows, bounded inputs, and clean process cleanup.",
+      "validates": "G9",
+      "effort": "M",
+      "kill_signal": "The server cannot be confined to loopback with fixed operations and reliable cancellation without exposing arbitrary command execution — redesign the surface before demoing; do not ship the open endpoint."
+    },
+    {
+      "order": 7,
+      "action": "Review recent NamasteDev winning projects and the rubric weighting to see whether visual, real-time UI actually scores higher than backend or CLI depth.",
+      "why": "G14 assumes a live visual dashboard is high-ROI for judges; precedent tells you whether to invest in visual polish or keep the CLI primary with only a thin comprehension layer.",
+      "validates": "G14",
+      "effort": "M",
+      "kill_signal": "Past winners and the rubric reward backend novelty or reliability over visual polish — cap dashboard effort and keep the CLI as the primary surface."
+    }
+  ],
+  "sequencing_note": "Cheapest, decision-killing checks come first: the rules read (1) and the capacity count (2) are near-zero-cost and can end the project before any engineering. The provider probe (3) is a cheap prerequisite that gates the full integration spike (4), which is the single most decisive feasibility gate and directly carries G21's kill criteria. Value (5), loopback security (6), and judge-appeal precedent (7) only matter if feasibility holds, and 7 shapes scope rather than go/no-go, so it comes last."
+}

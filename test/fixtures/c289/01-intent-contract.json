@@ -1,0 +1,113 @@
+{
+  "task": "The user wants help deciding whether to extend Aiki with a browser-based interface launched by `aiki serve`, and which standout features would make it a compelling hackathon project. AND ALSO: The user wants to decide whether building a local web server and UI for their existing AI orchestration CLI tool will improve their chances at a hackathon, and what standout features to include.",
+  "task_type": "idea-refinement",
+  "constraints": [
+    "Aiki currently orchestrates locally installed Claude Code, Codex, and Gemini/Antigravity CLIs.",
+    "The published package is local-first and does not require API keys.",
+    "The proposed interface should be launched from the installed CLI using `aiki serve` and accessed through a browser on a local port.",
+    "The result is intended for a NamasteDev hackathon showcase.",
+    "Must be completed within the hackathon timeframe",
+    "Must operate locally leveraging existing installed CLIs without requiring API keys",
+    "Must be an extension of the existing aiki-cli tool"
+  ],
+  "unknowns": [
+    "Hackathon rules, judging criteria, submission format, and restrictions.",
+    "Hackathon deadline and available implementation time.",
+    "Team size and technical capacity.",
+    "Evidence comparing Aiki's synthesized output with individual model outputs.",
+    "Provider CLI behavior under concurrent requests, cancellation, failures, and long-running sessions.",
+    "Security boundaries for exposing local CLI processes through an HTTP server.",
+    "The primary audience and demonstration use case.",
+    "The judging criteria and theme of the NamasteDev hackathon (site blocked)",
+    "Technical details on how Aiki currently spawns and manages the underlying CLI processes (e.g., handling interactive prompts)",
+    "The remaining time available for the hackathon"
+  ],
+  "success_criteria": [
+    "Reach a clear build-or-do-not-build verdict for the web interface.",
+    "Define an improved end-to-end user workflow.",
+    "Identify differentiated, high-impact features suitable for the hackathon.",
+    "Separate essential demo scope from ambitious extensions.",
+    "Address feasibility, reliability, and local execution risks.",
+    "Functional local server bridging the CLI tools to a web frontend",
+    "Real-time visual representation of multi-LLM research and output",
+    "Implementation of 'ultra-level' features that differentiate it from standard chat wrappers"
+  ],
+  "domain_dimensions": [
+    {
+      "id": "D1",
+      "label": "Model-council legibility",
+      "rationale": "The interface must make disagreement, critique, evidence, and synthesis understandable enough that judges can see value beyond parallel chat responses."
+    },
+    {
+      "id": "D2",
+      "label": "Process Orchestration Feasibility",
+      "rationale": "Wrapping interactive CLIs in a web server often requires complex pseudoterminal (pty) management and streaming (WebSockets) to maintain the 'live' feel, which can be brittle."
+    },
+    {
+      "id": "D3",
+      "label": "Local CLI execution boundary",
+      "rationale": "Launching privileged local processes from browser requests introduces security, permission, isolation, cancellation, and lifecycle concerns that may determine feasibility."
+    },
+    {
+      "id": "D4",
+      "label": "Hackathon Meta-Strategy",
+      "rationale": "Hackathons heavily weight visual appeal and live demoability; understanding if a dev-tool UI aligns with the specific hackathon's undisclosed theme is critical for ROI."
+    },
+    {
+      "id": "D5",
+      "label": "Synthesis provenance",
+      "rationale": "Showing which models contributed claims, critiques, and evidence can determine whether the final answer appears trustworthy rather than opaque."
+    }
+  ],
+  "alternatives": [
+    "CLI-only showcase",
+    "Local web control plane via `aiki serve`",
+    "Hybrid CLI with optional visual companion",
+    "Hosted collaborative web application",
+    "Build the `aiki serve` web UI with advanced real-time orchestration features",
+    "Keep the project CLI-only but add advanced terminal UI (TUI) features",
+    "Pivot to a different project for the hackathon"
+  ],
+  "success_bar": "A successful decision yields a hackathon-feasible experience that visibly demonstrates why multi-model orchestration produces more trustworthy or useful results than a conventional AI chat interface.",
+  "evidence_supplied": [
+    "The fetched npm registry snapshot identifies aiki-cli version 0.3.1.",
+    "The package describes Aiki as a local-first AI model council for code review and idea stress-testing.",
+    "The package currently uses Claude Code, Codex, and Gemini/Antigravity CLIs without API keys.",
+    "The hackathon page was supplied but could not be fetched because automated access returned HTTP 403.",
+    "Aiki is an existing npm package (aiki-cli v0.3.1)",
+    "Aiki orchestrates Claude Code, Codex, and Gemini/Antigravity CLIs locally without API keys",
+    "The target hackathon is at namastedev.com/hackathon"
+  ],
+  "missing_evidence": [
+    "Hackathon rules, judging criteria, submission format, and restrictions.",
+    "Hackathon deadline and available implementation time.",
+    "Team size and technical capacity.",
+    "Evidence comparing Aiki's synthesized output with individual model outputs.",
+    "Provider CLI behavior under concurrent requests, cancellation, failures, and long-running sessions.",
+    "Security boundaries for exposing local CLI processes through an HTTP server.",
+    "The primary audience and demonstration use case.",
+    "The judging criteria and theme of the NamasteDev hackathon (site blocked)",
+    "Technical details on how Aiki currently spawns and manages the underlying CLI processes (e.g., handling interactive prompts)",
+    "The remaining time available for the hackathon"
+  ],
+  "core_rubric": [
+    "target user / audience",
+    "existing alternatives / competition",
+    "differentiation / unique value",
+    "feasibility / technical viability",
+    "cost / effort / resources",
+    "policy / legal / compliance risk",
+    "kill criteria / failure conditions",
+    "business model / monetization",
+    "distribution / go-to-market",
+    "timing / market readiness",
+    "scalability / growth",
+    "key risks / assumptions to validate",
+    "team / execution capability"
+  ],
+  "user_confirmed": false,
+  "confirmation": "headless-defaulted",
+  "requested_outputs": [
+    "DECISION"
+  ]
+}

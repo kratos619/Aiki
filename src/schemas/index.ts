@@ -213,6 +213,7 @@ export const PreflightReading = z.object({
   missing_evidence: z.array(z.string().min(1)).max(8),
   domain_dimensions: z.array(DomainDimension).min(3).max(5),
   questions: z.array(RunBriefQuestion).max(4),
+  requested_outputs: z.array(RequestedOutputSchema).max(4).default([]),
 }).strict().superRefine((reading, ctx) => {
   checkQuestionIds(reading.questions, ctx);
   checkDomainDimensionIds(reading.domain_dimensions, ctx);
@@ -269,6 +270,7 @@ export const ClaimPosition = z
     dimension_id: z.string().min(1),
     stance: z.enum(['SUPPORT', 'OPPOSE', 'MIXED', 'UNKNOWN']),
     basis: z.enum(['EVIDENCE', 'INFERENCE', 'ASSUMPTION']),
+    nature: z.enum(['FACTUAL', 'JUDGMENT']).default('JUDGMENT'),
     load_bearing: z.boolean(),
     if_false: z.enum(['STOP', 'PIVOT', 'CONDITION', 'MINOR']),
     reasoning: z.string().min(1),
@@ -643,6 +645,7 @@ export const DecisionClaim = z.object({
   position_ids: z.array(z.string().min(1)).min(1),
   state: z.enum(['CONSENSUS', 'SHARED_CONCERN', 'DISAGREEMENT', 'UNIQUE', 'UNCERTAIN']),
   evidence_state: z.enum(['SUPPORTED', 'CONFLICTED', 'UNVERIFIED']),
+  nature: z.enum(['FACTUAL', 'JUDGMENT']).default('JUDGMENT'),
   load_bearing: z.boolean(),
   if_false: z.enum(['STOP', 'PIVOT', 'CONDITION', 'MINOR']),
   sensitivity: z.enum(['DECISIVE', 'MATERIAL', 'LOW']),
@@ -1096,6 +1099,7 @@ export const RunMeta = z.object({
   flags: z.array(z.enum([
     'synthesis_suspect',
     'low_diversity',
+    'weak_seat',
     'plan_skipped',
     'plan_fallback',
     'headless_intent',

@@ -223,7 +223,7 @@ describe('s9bPlan', () => {
         unresolved_questions: ['Which target user has this pain?'],
       },
     });
-    const section = report.slice(report.indexOf('## 2. Action plan'), report.indexOf('## 3.'));
+    const section = report.slice(report.indexOf('## 2. Deliverables and action plan'), report.indexOf('## 3.'));
 
     expect(section).toContain('plan_fallback');
     expect(section).toContain('Planner unavailable: planner_failed');

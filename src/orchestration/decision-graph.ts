@@ -166,6 +166,7 @@ export function compileDecisionGraph(
       position_ids: ids,
       state: evidence_state === 'UNVERIFIED' || evidence_state === 'CONFLICTED' ? 'UNCERTAIN' as const : baseState,
       evidence_state,
+      nature: members.some((member) => member.nature === 'FACTUAL') ? 'FACTUAL' as const : 'JUDGMENT' as const,
       load_bearing: members.some((member) => member.load_bearing),
       if_false: members.map((member) => member.if_false).sort((a, b) => ifFalseRank[a] - ifFalseRank[b])[0]!,
       sensitivity: sensitivity(members),
