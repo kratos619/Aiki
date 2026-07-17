@@ -313,6 +313,8 @@ describe('R7 decision dossier', () => {
       expect(hero).not.toContain(`${report.confidenceBreakdown.score}/100`);
       expect(hero).toContain('class="verdict-detail"');
       expect(hero.match(/Users will pay for this\./g) ?? []).toHaveLength(1);
+      expect(html).toContain('h1{font-family:var(--sans)');
+      expect(html).toContain('.mast h1{font-size:clamp(28px,4.6vw,42px);line-height:1.12');
       expect(html).toContain('.verdict-text{font-family:var(--sans)');
       expect(html).not.toContain('max-width:28ch');
       expect(html).toContain('class="feature-groups"');
