@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.2 — 2026-07-17
 
 ### Added
 - Public URL snapshots for idea prompts, including an npm registry adapter, private-network rejection,
