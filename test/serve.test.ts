@@ -205,6 +205,7 @@ const stubDeck = {
   bootstrap: vi.fn(async () => ({ ok: 'bootstrap' })),
   checkProviders: vi.fn(async () => [{ checked: true }]),
   settings: vi.fn(async () => ({ settings: true })),
+  updateSettings: vi.fn(async (patch) => ({ saved: patch })),
   thread: vi.fn(async (id: string) => (id === 'known' ? { id } : null)),
   send: vi.fn(async () => ({ threadId: 't1', runId: 'r1', status: 'gating' })),
   act: vi.fn(async () => undefined),
@@ -259,6 +260,21 @@ describe('server guards', () => {
     await done;
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(text())).toEqual({ ok: 'bootstrap' });
+  });
+
+  it('PATCH settings validates the deck token and persists the patch', async () => {
+    const patch = { models: { codex: 'gpt-5.6-sol' }, roles: { responder: 'agy' } };
+    const { req, res, done, text } = fakeReqRes(
+      'PATCH',
+      '/api/settings',
+      { host: 'localhost:4173', 'x-deck-token': 'secret' },
+      JSON.stringify(patch),
+    );
+    await handler()(req, res);
+    await done;
+    expect(res.statusCode).toBe(200);
+    expect(stubDeck.updateSettings).toHaveBeenCalledWith(patch);
+    expect(JSON.parse(text())).toEqual({ saved: patch });
   });
 
   it('unknown thread → 404', async () => {

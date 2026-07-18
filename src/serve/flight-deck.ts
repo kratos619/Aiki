@@ -2,12 +2,12 @@
 // Browser-facing values leave through the strict projections in this directory.
 
 import { randomUUID } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { runDoctorChecks, type ProviderRow } from '../cli/doctor.js';
 import { estimateRun } from '../cli/run.js';
 import { readSmokeCache, isFresh, entryToSmoke } from '../config/smoke-cache.js';
-import { loadLayeredConfig, type AikiConfig } from '../config/config.js';
+import { loadConfig, loadLayeredConfig, type AikiConfig } from '../config/config.js';
 import { run as runEngine, type RunOptions, type RunOutcome } from '../orchestration/engine.js';
 import { buildEvidencePack, EvidencePack, type EvidencePack as EvidencePackT } from '../orchestration/evidence-pack.js';
 import { buildReaderProjection, sanitizeReaderText } from '../orchestration/decision-dossier.js';
@@ -25,6 +25,7 @@ import { RunMeta, UrlSourceSet, type GrillAnswer, type RunBriefDraft, type UrlSo
 import {
   WorkspaceSnapshot,
   SettingsView,
+  SettingsPatch,
   ThreadDetail,
   SendInput,
   SendOutcome,
@@ -41,6 +42,7 @@ import {
   type SendOutcome as SendOutcomeT,
   type ReceiptView as ReceiptViewT,
   type ThreadListItemView,
+  type SettingsPatch as SettingsPatchT,
 } from './projections.js';
 import { appendThread, appendTurn, legacyThreads, legacyThreadDetail, readThreads, readTurns, type ThreadEntry } from './threads.js';
 import { allowanceKey, GateTable, type GateCardView, type GateDecision, type GateKind } from './gates.js';
@@ -104,25 +106,68 @@ export class FlightDeck {
   constructor(private readonly opts: FlightDeckOpts) {}
 
   async bootstrap(): Promise<WorkspaceSnapshot> {
-    const cfg = await loadLayeredConfig();
+    const [cfg, local] = await Promise.all([loadLayeredConfig(this.opts.runsRoot), loadConfig(this.opts.runsRoot)]);
     const providers = await this.providerViews(false, cfg);
     return WorkspaceSnapshot.parse({
       version: this.opts.version,
       providers,
       quorum: quorumView(providers),
       threads: await this.threadList(),
-      settings: this.settingsView(cfg),
+      settings: this.settingsView(cfg, local),
     });
   }
 
   async checkProviders(fresh: boolean): Promise<ProviderStatusView[]> {
-    const cfg = await loadLayeredConfig();
+    const cfg = await loadLayeredConfig(this.opts.runsRoot);
     const { rows } = await runDoctorChecks({ smoke: true, fresh });
     return orderProviders(rows.map((row) => providerStatusView(row, modelFor(row.det.id, cfg))));
   }
 
   async settings(): Promise<SettingsView> {
-    return this.settingsView(await loadLayeredConfig());
+    const [cfg, local] = await Promise.all([loadLayeredConfig(this.opts.runsRoot), loadConfig(this.opts.runsRoot)]);
+    return this.settingsView(cfg, local);
+  }
+
+  async updateSettings(raw: SettingsPatchT): Promise<SettingsView> {
+    const patch = SettingsPatch.parse(raw);
+    const root = this.opts.runsRoot === homeAikiRoot() ? homeAikiRoot() : this.opts.runsRoot;
+    await loadLayeredConfig(this.opts.runsRoot); // validate every active layer before touching either file
+    const next: AikiConfig = { ...(await loadConfig(root)) };
+
+    if (patch.models) {
+      const models: NonNullable<AikiConfig['models']> = { ...next.models };
+      for (const id of ['claude', 'codex', 'agy'] as const) {
+        const value = patch.models[id];
+        if (value === undefined) continue;
+        if (value === null) delete models[id];
+        else models[id] = value;
+      }
+      if (Object.keys(models).length) next.models = models;
+      else delete next.models;
+    }
+
+    if (patch.roles) {
+      const roles: NonNullable<AikiConfig['roles']> = { ...next.roles };
+      for (const role of ['analyst', 'judge', 'verifier', 'responder'] as const) {
+        const value = patch.roles[role];
+        if (value === undefined) continue;
+        if (value === null) delete roles[role];
+        else roles[role] = value;
+      }
+      if (patch.roles.s4 !== undefined) {
+        if (patch.roles.s4 === null) delete roles.s4;
+        else roles.s4 = patch.roles.s4;
+      }
+      if (Object.keys(roles).length) next.roles = roles;
+      else delete next.roles;
+    }
+
+    await mkdir(root, { recursive: true });
+    const path = join(root, 'config.json');
+    const tmp = join(root, `config.json.${randomUUID()}.tmp`);
+    await writeFile(tmp, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
+    await rename(tmp, path);
+    return this.settings();
   }
 
   async thread(id: string): Promise<ThreadDetail | null> {
@@ -173,7 +218,7 @@ export class FlightDeck {
       throw new DeckError(409, 'council already in session');
     }
 
-    const cfg = await loadLayeredConfig();
+    const cfg = await loadLayeredConfig(this.opts.runsRoot);
     const existing = input.threadId
       ? (await readThreads(this.opts.runsRoot)).find((item) => item.id === input.threadId)
       : undefined;
@@ -365,7 +410,7 @@ export class FlightDeck {
       urlSources = parsed.data;
     }
 
-    const cfg = await loadLayeredConfig();
+    const cfg = await loadLayeredConfig(this.opts.runsRoot);
     const mode = parsedMeta.data.mode === 'quick' ? 'quick' : 'council';
     return this.startDecision(
       { threadId: thread.id, text: input, mode, kind: 'decision', attachments: [] },
@@ -748,7 +793,7 @@ export class FlightDeck {
     return [...liveViews, ...legacy.filter((thread) => !liveIds.has(thread.id))].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
 
-  private settingsView(cfg: AikiConfig): SettingsView {
+  private settingsView(cfg: AikiConfig, local: AikiConfig): SettingsView {
     return SettingsView.parse({
       models: { claude: cfg.models?.claude ?? null, codex: cfg.models?.codex ?? null, agy: cfg.models?.agy ?? null },
       roles: {
@@ -757,6 +802,16 @@ export class FlightDeck {
         ...(cfg.roles?.verifier ? { verifier: cfg.roles.verifier } : {}),
         ...(cfg.roles?.s4 ? { s4: cfg.roles.s4 } : {}),
         ...(cfg.roles?.responder ? { responder: cfg.roles.responder } : {}),
+      },
+      overrides: {
+        models: { claude: local.models?.claude ?? null, codex: local.models?.codex ?? null, agy: local.models?.agy ?? null },
+        roles: {
+          ...(local.roles?.analyst ? { analyst: local.roles.analyst } : {}),
+          ...(local.roles?.judge ? { judge: local.roles.judge } : {}),
+          ...(local.roles?.verifier ? { verifier: local.roles.verifier } : {}),
+          ...(local.roles?.s4 ? { s4: local.roles.s4 } : {}),
+          ...(local.roles?.responder ? { responder: local.roles.responder } : {}),
+        },
       },
       scope: this.opts.runsRoot === homeAikiRoot() ? 'global (~/.aiki/config.json)' : 'project (.aiki/config.json)',
     });
