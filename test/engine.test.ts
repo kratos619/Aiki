@@ -293,6 +293,7 @@ describe('executeRun budget breach (§24 T5: aborts gracefully)', () => {
     const outcome = await executeRun(ctx, INPUT, runIdeaRefinement);
 
     expect(outcome.ok).toBe(false);
+    expect(outcome.aborted).toBe(false);
     expect(outcome.error?.code).toBe('BUDGET');
 
     const dir = ctx.writer.dir;
@@ -324,6 +325,7 @@ describe('Ctrl+C abort (§472/§603: leaves aborted:true meta)', () => {
     const outcome = await executeRun(ctx, INPUT, runIdeaRefinement);
 
     expect(outcome.ok).toBe(false);
+    expect(outcome.aborted).toBe(true);
     const meta = JSON.parse(await readFile(join(ctx.writer.dir, 'meta.json'), 'utf8'));
     expect(meta.exit_status).toBe('aborted');
     expect(meta.aborted).toBe(true);
@@ -345,6 +347,7 @@ describe('Ctrl+C abort (§472/§603: leaves aborted:true meta)', () => {
     const outcome = await executeRun(ctx, INPUT, runIdeaRefinement);
 
     expect(outcome.ok).toBe(false);
+    expect(outcome.aborted).toBe(true);
     const meta = JSON.parse(await readFile(join(ctx.writer.dir, 'meta.json'), 'utf8'));
     expect(meta.exit_status).toBe('aborted'); // ctx.aborted wins over the CRASH classification
     expect(meta.aborted).toBe(true);

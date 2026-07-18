@@ -1,0 +1,268 @@
+{
+  "schemaVersion": 1,
+  "kind": "recorded-run",
+  "label": "Recorded real run — no models are running.",
+  "canonical": true,
+  "session": {
+    "id": "20260718-1741-idea-refinement-a694",
+    "title": "Choose the right workspace for Aiki",
+    "workflow": "idea-refinement",
+    "mode": "council",
+    "status": "complete",
+    "startedAt": "2026-07-18T12:11:41.017Z",
+    "completedAt": "2026-07-18T12:21:53.497Z",
+    "resumed": true
+  },
+  "providers": [
+    {
+      "id": "claude",
+      "name": "Claude",
+      "roles": ["judge"]
+    },
+    {
+      "id": "codex",
+      "name": "Codex",
+      "roles": ["verifier", "scout"]
+    },
+    {
+      "id": "agy",
+      "name": "Gemini",
+      "roles": ["analyst", "scout"]
+    }
+  ],
+  "decision": {
+    "brief": "The user wants help choosing between an Electron desktop app and an `aiki serve` local web interface, then defining standout features and a practical development plan.",
+    "constraints": [
+      "Orchestrate locally installed Claude Code, Codex, and Gemini/Antigravity CLIs.",
+      "Require no API keys.",
+      "Make orchestration visible in a high-quality browser interface.",
+      "Choose one delivery approach and provide a practical hackathon plan."
+    ],
+    "successCriteria": [
+      "Select Electron or `aiki serve`.",
+      "Define standout features.",
+      "Explain the end-to-end workflow.",
+      "Provide priorities and milestones."
+    ],
+    "requestedOutputs": ["DECISION", "FEATURE_BACKLOG", "IMPLEMENTATION_PLAN"],
+    "confirmation": "headless-defaulted"
+  },
+  "warnings": [
+    {
+      "code": "headless_intent",
+      "level": "warning",
+      "message": "No person confirmed the interpreted request; documented defaults were used."
+    },
+    {
+      "code": "source_fallback_search",
+      "level": "info",
+      "message": "The supplied hackathon page blocked automated access with HTTP 403, so a source-investigation search was attempted."
+    },
+    {
+      "code": "research_ungrounded",
+      "level": "warning",
+      "message": "Source investigation did not produce a cited public source; treat current claims as ungrounded."
+    }
+  ],
+  "activity": [
+    {
+      "sequence": 1,
+      "stage": "preflight",
+      "label": "Two-view preflight",
+      "actor": "Codex + Gemini",
+      "status": "complete",
+      "durationMs": null,
+      "metadata": {"readings": 2, "selectedInterpretations": 1}
+    },
+    {
+      "sequence": 2,
+      "stage": "analysis",
+      "label": "Parallel analysis",
+      "actor": "Codex + Gemini",
+      "status": "complete",
+      "durationMs": null,
+      "metadata": {"seats": 2, "positions": 18, "evidenceCards": 8, "repairs": 2}
+    },
+    {
+      "sequence": 3,
+      "stage": "drift",
+      "label": "Drift check",
+      "actor": "Deterministic check",
+      "status": "complete",
+      "durationMs": null,
+      "metadata": {"kept": 2, "excluded": 0}
+    },
+    {
+      "sequence": 4,
+      "stage": "positions",
+      "label": "Position collection",
+      "actor": "Council process",
+      "status": "complete",
+      "durationMs": null,
+      "metadata": {"positions": 22, "evidenceCards": 10, "coverageFillPositions": 4}
+    },
+    {
+      "sequence": 5,
+      "stage": "graph",
+      "label": "Decision graph",
+      "actor": "Deterministic process",
+      "status": "complete",
+      "durationMs": null,
+      "metadata": {"claims": 22, "edges": 53, "evidenceHoles": 2, "storedDisagreements": 0}
+    },
+    {
+      "sequence": 6,
+      "stage": "verification",
+      "label": "Verifier loop",
+      "actor": "Codex",
+      "status": "complete",
+      "durationMs": null,
+      "metadata": {"verifications": 8, "semanticClaimGroups": 3}
+    },
+    {
+      "sequence": 7,
+      "stage": "rebuttal",
+      "label": "Selective rebuttal",
+      "actor": "Gemini",
+      "status": "complete",
+      "durationMs": null,
+      "metadata": {"events": 3, "narrowed": 2, "unresolved": 1}
+    },
+    {
+      "sequence": 8,
+      "stage": "judge",
+      "label": "Judge synthesis",
+      "actor": "Claude",
+      "status": "complete",
+      "durationMs": 167611,
+      "metadata": {"recommendation": "PROCEED_WITH_CONDITIONS", "conditions": 6}
+    },
+    {
+      "sequence": 9,
+      "stage": "plan",
+      "label": "Validation plan",
+      "actor": "Claude",
+      "status": "complete",
+      "durationMs": 139680,
+      "metadata": {"must": 3, "should": 3, "later": 1, "wont": 4, "milestones": 3}
+    },
+    {
+      "sequence": 10,
+      "stage": "report",
+      "label": "Report",
+      "actor": "Deterministic process",
+      "status": "complete",
+      "durationMs": null,
+      "metadata": {"status": "ACCEPTED_WITH_CONDITIONS", "confidence": 8}
+    }
+  ],
+  "result": {
+    "status": "ACCEPTED_WITH_CONDITIONS",
+    "confidence": {"score": 8, "label": "Low"},
+    "headline": "Build `aiki serve` — a local web cockpit that makes the model council visible, not an Electron app",
+    "bottomLine": "Ship `aiki serve`: a loopback web UI launched from the CLI you already publish. It reuses the existing orchestration runtime and npm distribution, so a judge runs one command and opens a browser — no desktop build, code-signing, auto-update, or main-to-renderer IPC to fight. Electron would add all of that packaging work for no user-visible payoff on a hackathon timeline. Your edge is not multi-model chat — it is making the council itself the product surface.",
+    "sections": [
+      {
+        "heading": "The call: `aiki serve` over Electron",
+        "summary": "Recommend the local web server because it stands on what already exists and removes an entire class of delivery work.",
+        "bullets": [
+          "Reuse the existing npm package and orchestration core; the browser talks to a Node server on loopback.",
+          "Avoid desktop signing, notarization, auto-update, and per-OS packaging.",
+          "Treat the event seam as the first technical gate, not an assumed capability."
+        ]
+      },
+      {
+        "heading": "What makes it stand out",
+        "summary": "The memorable moment is watching a bounded council become an auditable decision, not reading three answers.",
+        "bullets": [
+          "Flight Deck: structured stage, role, status, elapsed-time, and artifact metadata.",
+          "Disagreement Radar: agreement, contradiction, missing evidence, and judge resolution.",
+          "Provenance on final sections without exposing hidden chain-of-thought."
+        ]
+      },
+      {
+        "heading": "The golden path to build first",
+        "summary": "One vertical slice: compose evidence, watch the council, get a traceable answer.",
+        "bullets": [
+          "Keep scope to one existing workflow until structured events and a full live run are proven.",
+          "Use a clearly labelled deterministic replay when provider CLIs are unavailable."
+        ]
+      },
+      {
+        "heading": "Prove it before you polish",
+        "summary": "Three checks gate the build: structured events, a read-only loopback boundary, and a reliable full run on the demo machine.",
+        "bullets": [
+          "Never build the activity view by parsing terminal prose.",
+          "Expose fixed Aiki workflows only; no arbitrary shell endpoint.",
+          "Confirm that the inspectable council is more useful than the terminal workflow before broadening scope."
+        ]
+      }
+    ],
+    "features": {
+      "must": [
+        {"name": "Research Evidence Tray", "effort": "M"},
+        {"name": "Council Flight Deck", "effort": "M"},
+        {"name": "Provenance-linked final review", "effort": "M"}
+      ],
+      "should": [
+        {"name": "Disagreement Radar", "effort": "L"},
+        {"name": "Honest Judge Mode", "effort": "M"},
+        {"name": "Self-contained report export", "effort": "S"}
+      ],
+      "later": [
+        {"name": "Live model console", "effort": "S"}
+      ],
+      "wont": [
+        "User accounts, cloud sync, and multi-user collaboration",
+        "Plugin system and arbitrary user-defined workflows",
+        "Electron desktop packaging",
+        "Monetization and billing"
+      ]
+    },
+    "milestones": [
+      {
+        "order": 1,
+        "timebox": "Gate phase",
+        "outcome": "A safe working vertical slice that proves the structured-event seam and read-only loopback boundary."
+      },
+      {
+        "order": 2,
+        "timebox": "Core build phase",
+        "outcome": "The decision cockpit with evidence input, structured activity, provenance, and one report export."
+      },
+      {
+        "order": 3,
+        "timebox": "Hardening phase",
+        "outcome": "A resilient showcase with preflight, explicit failure states, recorded replay, accessibility, and responsive layout."
+      }
+    ],
+    "nextStep": "Run a focused spike that renders a live stage graph for one existing workflow directly from structured orchestration events; if it needs terminal-text parsing, redesign the seam before building UI.",
+    "caveats": [
+      "The hackathon deadline, rules, and judging criteria were not verified because the supplied page returned HTTP 403.",
+      "Whether the core exposes every required structured event is not yet proven.",
+      "The claim that an inspectable council beats the existing terminal workflow remains unverified."
+    ]
+  },
+  "audit": {
+    "positions": 22,
+    "claims": 22,
+    "storedDisagreements": 0,
+    "semanticClaimGroups": 3,
+    "verifications": 8,
+    "rebuttalEvents": 3,
+    "verificationCoverage": 0,
+    "independentConvergence": 0.13636363636363635,
+    "evidenceQuality": 0,
+    "stability": 1,
+    "criticalRiskPenalty": 10,
+    "summary": "No genuine disagreements were stored. Convergence with weak verification lowers confidence; it does not raise it."
+  },
+  "receipt": {
+    "calls": 2,
+    "budget": 12,
+    "byProvider": {"Claude": 2},
+    "modelTimeMs": 307291,
+    "categories": {"discovery": 0, "verification": 1, "repair": 0, "planning": 1},
+    "note": "This completed run resumed an earlier partial run; this receipt contains only the two new calls recorded in the canonical run."
+  }
+}
