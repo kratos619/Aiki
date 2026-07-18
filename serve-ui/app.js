@@ -51,6 +51,7 @@ function renderProviders(providers) {
 
 function renderQuorum(q) {
   $('.lamp', $('#quorum')).dataset.tone = q.tone;
+  $('.lamp', $('#deck-toggle')).dataset.tone = q.tone;
   $('.quorum__label', $('#quorum')).textContent = q.label;
 }
 
@@ -100,6 +101,7 @@ async function openThread(id, btn) {
     state.threadId = detail.legacy ? null : detail.id;
     state.runId = detail.resumeRunId;
     renderThreadView(detail);
+    closePanels(false);
   } catch (error) { toast(`Could not open decision (${error.message})`); }
 }
 
@@ -455,6 +457,7 @@ $('#new-decision').addEventListener('click', () => {
   state.threadId = null; state.runId = null;
   state.canFollowup = false; state.runKind = 'decision'; updateComposer();
   $('#thread-view').hidden = true; $('#thread-view').replaceChildren(); $('#empty-state').hidden = false;
+  closePanels(false);
   $('#decision-text').focus();
 });
 
@@ -480,24 +483,109 @@ $('#check-connections').addEventListener('click', async (event) => {
 
 function renderSettings(settings) {
   const body = $('#settings-body'); body.replaceChildren();
-  const models = el('div', 'settings-group'); models.append(el('h3', null, 'Models'));
+  const form = el('form', 'settings-form');
+  const scope = settings.scope.startsWith('project') ? 'project config (.aiki/config.json)' : 'global config (~/.aiki/config.json)';
+  form.append(el('p', 'settings-scope', `Saving to ${scope}. Changes apply to the next run.`));
+
+  const local = settings.overrides ?? { models: settings.models, roles: settings.roles };
+  const models = el('fieldset', 'settings-group'); models.append(el('legend', null, 'Models'));
   for (const id of ['claude', 'codex', 'agy']) {
-    const row = el('div', 'settings-row'); row.append(el('span', null, DISPLAY[id]), el('span', null, settings.models[id] ?? 'CLI default')); models.append(row);
+    const label = el('label', 'settings-field');
+    label.append(el('span', null, DISPLAY[id]));
+    const input = el('input', 'settings-input'); input.name = `model-${id}`; input.autocomplete = 'off'; input.spellcheck = false;
+    input.value = local.models[id] ?? '';
+    input.placeholder = settings.models[id] ? `Inherited: ${settings.models[id]}` : 'CLI default';
+    label.append(input); models.append(label);
   }
-  body.append(models);
-  const roles = el('div', 'settings-group'); roles.append(el('h3', null, 'Roles'));
-  for (const role of ['judge', 'verifier', 'analyst', 'responder']) {
-    const row = el('div', 'settings-row'); row.append(el('span', null, role), el('span', null, settings.roles?.[role] ? DISPLAY[settings.roles[role]] : 'default')); roles.append(row);
-  }
-  body.append(roles, el('p', 'settings-scope', `Saving to ${settings.scope} · editing lands in HD5`));
+  form.append(models);
+
+  const roles = el('fieldset', 'settings-group'); roles.append(el('legend', null, 'Roles'));
+  const roleFields = [['judge', 'Judge'], ['verifier', 'Verifier'], ['analyst', 'Analyst'], ['responder', 'Follow-up responder']];
+  for (const [key, label] of roleFields) roles.append(roleField(key, label, local.roles?.[key], settings.roles?.[key]));
+  const seats = local.roles?.s4 ?? [];
+  roles.append(roleField('s4-0', 'Council seat 1', seats[0], settings.roles?.s4?.[0]));
+  roles.append(roleField('s4-1', 'Council seat 2', seats[1], settings.roles?.s4?.[1]));
+  roles.append(el('p', 'settings-note', 'Claude is recommended for the judge role as the strongest default.'));
+  form.append(roles, el('p', 'settings-note', 'Clear an override to fall back to the global or CLI default. No credentials are stored here.'));
+
+  const actions = el('div', 'settings-actions');
+  const save = el('button', 'btn btn--primary', 'Save settings'); save.type = 'submit'; actions.append(save); form.append(actions);
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const data = new FormData(form);
+    const seat1 = String(data.get('role-s4-0') ?? '');
+    const seat2 = String(data.get('role-s4-1') ?? '');
+    if (Boolean(seat1) !== Boolean(seat2)) return toast('Choose both council seats, or leave both on Default.');
+    const value = (name) => String(data.get(name) ?? '').trim() || null;
+    const patch = {
+      models: { claude: value('model-claude'), codex: value('model-codex'), agy: value('model-agy') },
+      roles: {
+        judge: value('role-judge'), verifier: value('role-verifier'), analyst: value('role-analyst'),
+        responder: value('role-responder'), s4: seat1 && seat2 ? [seat1, seat2] : null,
+      },
+    };
+    save.setAttribute('aria-busy', 'true'); save.disabled = true;
+    try {
+      state.settings = await api('/api/settings', { method: 'PATCH', body: JSON.stringify(patch) });
+      renderSettings(state.settings); renderRoster(state.providers); toast('Settings saved for the next run.');
+    } catch (error) { toast(`Could not save settings (${error.message})`); }
+    finally { save.removeAttribute('aria-busy'); save.disabled = false; }
+  });
+  body.append(form);
 }
 
-$('#settings-open').addEventListener('click', async () => {
-  try { state.settings = await api('/api/settings'); renderSettings(state.settings); $('#settings-sheet').hidden = false; }
-  catch (error) { toast(`Could not load settings (${error.message})`); }
+function roleField(key, labelText, selected, inherited) {
+  const label = el('label', 'settings-field'); label.append(el('span', null, labelText));
+  const select = el('select', 'settings-select'); select.name = `role-${key}`;
+  const fallback = el('option', null, inherited ? `Default (${DISPLAY[inherited]})` : 'Default'); fallback.value = ''; select.append(fallback);
+  for (const id of ['claude', 'codex', 'agy']) {
+    const option = el('option', null, DISPLAY[id]); option.value = id; option.selected = selected === id; select.append(option);
+  }
+  label.append(select); return label;
+}
+
+let settingsFocus;
+async function openSettings() {
+  settingsFocus = document.activeElement;
+  const sheet = $('#settings-sheet'); sheet.hidden = false;
+  $('#settings-body').replaceChildren(el('p', 'settings-empty', 'Loading settings…'));
+  try {
+    state.settings = await api('/api/settings'); renderSettings(state.settings);
+    $('.settings-input, .settings-select', sheet)?.focus();
+  } catch (error) {
+    const message = el('p', 'settings-error', `Could not load settings. ${error.message}`); message.setAttribute('role', 'alert');
+    $('#settings-body').replaceChildren(message);
+  }
+}
+function closeSettings() {
+  $('#settings-sheet').hidden = true;
+  settingsFocus?.focus?.();
+}
+$('#settings-open').addEventListener('click', openSettings);
+document.querySelectorAll('#settings-sheet [data-close]').forEach((node) => node.addEventListener('click', closeSettings));
+
+// ── responsive rails and drawers ────────────────────────────────────────────────
+
+function setPanel(name, open) {
+  document.body.classList.toggle(`${name}-open`, open);
+  $(`#${name}-toggle`)?.setAttribute('aria-expanded', String(open));
+  $('#drawer-backdrop').hidden = !document.body.classList.contains('rail-open') && !document.body.classList.contains('deck-open');
+  if (open) $(`#${name === 'rail' ? 'sessions-rail' : 'council-deck'} button`)?.focus();
+}
+function closePanels(restoreFocus = true) {
+  const open = document.body.classList.contains('rail-open') ? 'rail' : document.body.classList.contains('deck-open') ? 'deck' : null;
+  setPanel('rail', false); setPanel('deck', false);
+  if (restoreFocus && open) $(`#${open}-toggle`)?.focus();
+}
+$('#rail-toggle').addEventListener('click', () => setPanel('rail', !document.body.classList.contains('rail-open')));
+$('#deck-toggle').addEventListener('click', () => setPanel('deck', !document.body.classList.contains('deck-open')));
+$('#drawer-backdrop').addEventListener('click', closePanels);
+document.querySelectorAll('[data-close-panel]').forEach((node) => node.addEventListener('click', closePanels));
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape') return;
+  if (!$('#settings-sheet').hidden) closeSettings();
+  else closePanels();
 });
-document.querySelectorAll('#settings-sheet [data-close]').forEach((node) => node.addEventListener('click', () => { $('#settings-sheet').hidden = true; }));
-document.addEventListener('keydown', (event) => { if (event.key === 'Escape') $('#settings-sheet').hidden = true; });
 
 // ── helpers + boot ──────────────────────────────────────────────────────────────────
 
@@ -527,6 +615,10 @@ async function boot() {
     state.settings = snapshot.settings;
     $('#version').textContent = `v${snapshot.version}`;
     renderProviders(snapshot.providers); renderQuorum(snapshot.quorum); renderRoster(snapshot.providers); renderThreads(snapshot.threads);
-  } catch (error) { toast(`Failed to load workspace (${error.message})`); }
+  } catch (error) {
+    $('.empty__title').textContent = 'The workspace could not load.';
+    $('.empty__lede').textContent = error.message;
+    toast(`Failed to load workspace (${error.message})`);
+  }
 }
 boot();

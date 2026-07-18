@@ -175,10 +175,44 @@ export const SettingsView = z
         responder: ProviderIdView.optional(),
       })
       .strict(),
+    overrides: z
+      .object({
+        models: z.object({ claude: z.string().nullable(), codex: z.string().nullable(), agy: z.string().nullable() }).strict(),
+        roles: z
+          .object({
+            analyst: ProviderIdView.optional(),
+            judge: ProviderIdView.optional(),
+            verifier: ProviderIdView.optional(),
+            s4: z.array(ProviderIdView).optional(),
+            responder: ProviderIdView.optional(),
+          })
+          .strict(),
+      })
+      .strict(),
     scope: z.string(), // "project (.aiki/config.json)" | "global (~/.aiki/config.json)" — no absolute path
   })
   .strict();
 export type SettingsView = z.infer<typeof SettingsView>;
+
+const SettingModel = z.string().trim().min(1).nullable();
+const SettingRole = ProviderIdView.nullable();
+
+export const SettingsPatch = z
+  .object({
+    models: z.object({ claude: SettingModel.optional(), codex: SettingModel.optional(), agy: SettingModel.optional() }).strict().optional(),
+    roles: z
+      .object({
+        analyst: SettingRole.optional(),
+        judge: SettingRole.optional(),
+        verifier: SettingRole.optional(),
+        s4: z.array(ProviderIdView).length(2).nullable().optional(),
+        responder: SettingRole.optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+export type SettingsPatch = z.infer<typeof SettingsPatch>;
 
 // ── Live run requests + reader-safe answer ───────────────────────────────────────────
 

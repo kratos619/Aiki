@@ -12,13 +12,16 @@
 
   <div class="workspace" role="application" aria-label="aiki decision workspace">
     <!-- Left — Sessions rail (the reading room) -->
-    <aside class="rail" aria-label="Sessions and provider status">
+    <aside id="sessions-rail" class="rail" aria-label="Sessions and provider status">
       <header class="rail__head">
         <span class="wordmark">aiki</span>
-        <button id="quorum" class="quorum" type="button" aria-live="polite" title="Council readiness">
-          <span class="lamp" data-tone="neutral"></span>
-          <span class="quorum__label">checking…</span>
-        </button>
+        <div class="rail__controls">
+          <button id="quorum" class="quorum" type="button" aria-live="polite" title="Council readiness">
+            <span class="lamp" data-tone="neutral"></span>
+            <span class="quorum__label">checking…</span>
+          </button>
+          <button class="btn btn--icon rail__close" type="button" data-close-panel aria-label="Close sessions">✕</button>
+        </div>
       </header>
 
       <section class="providers" aria-label="Provider status">
@@ -44,6 +47,13 @@
 
     <!-- Center — Conversation -->
     <main id="conversation" class="center" aria-label="Conversation">
+      <header class="workspace-bar">
+        <button id="rail-toggle" class="btn btn--icon" type="button" aria-controls="sessions-rail" aria-expanded="false">☰ Sessions</button>
+        <span class="wordmark">aiki</span>
+        <button id="deck-toggle" class="btn btn--icon" type="button" aria-controls="council-deck" aria-expanded="false">
+          Deck <span class="lamp" data-tone="neutral"></span>
+        </button>
+      </header>
       <div id="center-scroll" class="center__scroll">
         <section id="empty-state" class="empty">
           <img class="empty__art" src="/Five.png" alt="" aria-hidden="true" />
@@ -82,10 +92,13 @@
     </main>
 
     <!-- Right — Council Deck (the engine room) -->
-    <aside class="deck" aria-label="Council deck">
+    <aside id="council-deck" class="deck" aria-label="Council deck">
       <header class="deck__head">
         <span class="deck__eyebrow">Council deck</span>
-        <span id="deck-state" class="deck__state">idle</span>
+        <span class="deck__head-end">
+          <span id="deck-state" class="deck__state">idle</span>
+          <button class="btn btn--icon deck__close" type="button" data-close-panel aria-label="Close council deck">✕</button>
+        </span>
       </header>
       <div id="deck-body" class="deck__body">
         <h3 class="deck__section">Seat roster</h3>
@@ -95,7 +108,9 @@
     </aside>
   </div>
 
-  <!-- Settings sheet (read-only in HD2) -->
+  <button id="drawer-backdrop" class="drawer-backdrop" type="button" aria-label="Close open panel" hidden></button>
+
+  <!-- Settings sheet -->
   <div id="settings-sheet" class="sheet" hidden>
     <div class="sheet__backdrop" data-close></div>
     <div class="sheet__panel" role="dialog" aria-modal="true" aria-label="Settings">

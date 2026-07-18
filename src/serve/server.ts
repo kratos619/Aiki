@@ -11,7 +11,8 @@ import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { z, ZodError } from 'zod';
-import { DeckAction, SendInput } from './projections.js';
+import { ConfigError } from '../config/config.js';
+import { DeckAction, SendInput, SettingsPatch } from './projections.js';
 import { DeckError, type FlightDeck } from './flight-deck.js';
 import { encodeSse } from './frames.js';
 
@@ -67,6 +68,9 @@ export function createHandler(opts: { flightDeck: FlightDeck; staticDir: string;
       if (method === 'GET' && path === '/api/settings') {
         return send(res, 200, await flightDeck.settings());
       }
+      if (method === 'PATCH' && path === '/api/settings') {
+        return send(res, 200, await flightDeck.updateSettings(SettingsPatch.parse(await readJson(req))));
+      }
       if (method === 'GET' && path.startsWith('/api/threads/')) {
         const id = decodeURIComponent(path.slice('/api/threads/'.length));
         const detail = await flightDeck.thread(id);
@@ -98,6 +102,7 @@ export function createHandler(opts: { flightDeck: FlightDeck; staticDir: string;
       return send(res, 405, { error: 'method not allowed' });
     } catch (e) {
       if (e instanceof DeckError) return send(res, e.status, { error: e.message });
+      if (e instanceof ConfigError) return send(res, 409, { error: 'Existing config is invalid. Fix it before saving settings.' });
       if (e instanceof ZodError) return send(res, 400, { error: 'invalid request' });
       send(res, 500, { error: 'internal error' });
     }
