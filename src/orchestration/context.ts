@@ -80,7 +80,7 @@ export const DEFAULT_DEADLINE_MS = 20 * 60 * 1000; // wall-clock cap
 // (2026-07-13) after the spawn timeout became actually enforced and killed a LEGITIMATE deep call: codex's
 // S4 analysis of a hard build case ran ~10 min to a valid output (run 20260713-1341, 13:44→13:54). 900s
 // per attempt covers observed deep work; the wall-clock deadline above remains the outer bound.
-const DEFAULT_CALL_TIMEOUT_MS = 900_000;
+export const DEFAULT_CALL_TIMEOUT_MS = 900_000;
 
 export class BudgetExceeded extends Error {
   constructor(limit: number) {

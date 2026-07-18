@@ -288,6 +288,20 @@ describe('server guards', () => {
     expect(text()).toContain('council already in session');
   });
 
+  it('returns the fresh run id produced by a resume action', async () => {
+    stubDeck.act.mockResolvedValueOnce({ threadId: 't1', runId: 'r2', status: 'gating' });
+    const { req, res, done, text } = fakeReqRes(
+      'POST',
+      '/api/runs/r1/actions',
+      { host: 'localhost:4173', 'x-deck-token': 'secret' },
+      JSON.stringify({ t: 'resume' }),
+    );
+    await handler()(req, res);
+    await done;
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(text())).toEqual({ threadId: 't1', runId: 'r2', status: 'gating' });
+  });
+
   it('unknown SSE run fails as 404 before event-stream headers are sent', async () => {
     const { req, res, done, text } = fakeReqRes('GET', '/api/runs/unknown/events', { host: 'localhost:4173' });
     await handler()(req, res);

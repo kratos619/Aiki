@@ -2,7 +2,8 @@
 // Browser-facing values leave through the strict projections in this directory.
 
 import { randomUUID } from 'node:crypto';
-import { basename } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { basename, join } from 'node:path';
 import { runDoctorChecks, type ProviderRow } from '../cli/doctor.js';
 import { estimateRun } from '../cli/run.js';
 import { readSmokeCache, isFresh, entryToSmoke } from '../config/smoke-cache.js';
@@ -17,9 +18,10 @@ import { makeRunId, StageError, type ClarifyChoice, type RunEvents } from '../or
 import type { DecisionReportJson } from '../orchestration/stages/s10-render.js';
 import { IDEA_STAGES } from '../workflows/idea-refinement.js';
 import { homeAikiRoot } from '../storage/paths.js';
+import { buildReplayCache } from '../storage/replay.js';
 import { readJsonArtifact, runDir } from '../storage/runs-read.js';
 import { DISPLAY_NAME, type ProviderId } from '../providers/types.js';
-import type { GrillAnswer, RunBriefDraft, UrlSourceSet } from '../schemas/index.js';
+import { RunMeta, UrlSourceSet, type GrillAnswer, type RunBriefDraft, type UrlSourceSet as UrlSourceSetT } from '../schemas/index.js';
 import {
   WorkspaceSnapshot,
   SettingsView,
@@ -43,6 +45,7 @@ import {
 import { appendThread, appendTurn, legacyThreads, legacyThreadDetail, readThreads, readTurns, type ThreadEntry } from './threads.js';
 import { allowanceKey, GateTable, type GateCardView, type GateDecision, type GateKind } from './gates.js';
 import { FrameBus, type DeckFrame, type HelloFrame, type StageRow } from './frames.js';
+import { runFollowup, type FollowupRunner } from './followup.js';
 
 type Runner = (workflow: 'idea-refinement', input: string, opts?: RunOptions) => Promise<RunOutcome>;
 
@@ -53,6 +56,7 @@ export interface FlightDeckOpts {
   buildPack?: typeof buildEvidencePack;
   snapshotUrls?: typeof snapshotUrlSources;
   validateUrl?: typeof validatePublicUrl;
+  followupRunner?: FollowupRunner;
   now?: () => Date;
 }
 
@@ -78,7 +82,16 @@ interface ActiveRun {
   callMs: Partial<Record<ProviderId, number>>;
   callCount: Partial<Record<ProviderId, number>>;
   inflight: Map<string, { category: CallCategory; replayed: boolean }>;
+  resume?: ResumeInput;
   worker?: Promise<void>;
+}
+
+interface ResumeInput {
+  fromRunId: string;
+  replay: Map<string, string>;
+  evidencePack?: EvidencePackT;
+  urlSources?: UrlSourceSetT;
+  allowBlockedSources: boolean;
 }
 
 export class FlightDeck {
@@ -131,18 +144,31 @@ export class FlightDeck {
           turns.push({ kind: 'note', text: 'This council run has not produced a final answer yet.' });
         }
       } else if (turn.kind === 'followup') {
-        turns.push({ kind: 'note', text: `${DISPLAY_NAME[turn.provider as ProviderId] ?? turn.provider}: ${sanitizeLocalPaths(turn.answer)}` });
+        const provider = turn.provider as ProviderId;
+        const providerName = DISPLAY_NAME[provider] ?? turn.provider;
+        turns.push({ kind: 'user_message', text: sanitizeLocalPaths(turn.question), attachments: [], mode: 'followup' });
+        turns.push({
+          kind: 'followup', question: sanitizeLocalPaths(turn.question), answer: sanitizeLocalPaths(turn.answer),
+          provider, providerName, label: `follow-up · ${providerName} · 1 call · no council`, callMs: turn.call_ms,
+        });
       } else if (turn.kind === 'error') {
         turns.push({ kind: 'note', text: sanitizeLocalPaths(turn.message) });
       }
     }
-    return ThreadDetail.parse({ id: entry.id, title: entry.title, legacy: false, turns });
+    let resumeRunId: string | null = null;
+    const latestRunId = entry.run_ids.at(-1);
+    if ((entry.status === 'failed' || entry.status === 'cancelled') && latestRunId) {
+      const meta = RunMeta.safeParse(await readJsonArtifact(runDir(latestRunId, this.opts.runsRoot), 'meta.json'));
+      if (meta.success && meta.data.workflow === 'idea-refinement' && (await buildReplayCache(runDir(latestRunId, this.opts.runsRoot))).size) {
+        resumeRunId = latestRunId;
+      }
+    }
+    return ThreadDetail.parse({ id: entry.id, title: entry.title, legacy: false, resumeRunId, turns });
   }
 
   /** Start a decision worker and return immediately; gates and progress arrive over frames(). */
   async send(raw: SendInputT): Promise<SendOutcomeT> {
     const input = SendInput.parse(raw);
-    if (input.kind === 'followup') throw new DeckError(400, 'Follow-up turns arrive in HD4; convene a decision for now.');
     if (this.activeRunId && !this.runs.get(this.activeRunId)?.bus.done) {
       throw new DeckError(409, 'council already in session');
     }
@@ -153,6 +179,12 @@ export class FlightDeck {
       : undefined;
     if (input.threadId && !existing) throw new DeckError(404, 'no such thread');
 
+    return input.kind === 'followup'
+      ? this.startFollowup(input, cfg, existing)
+      : this.startDecision(input, cfg, existing);
+  }
+
+  private async startDecision(input: SendInputT, cfg: AikiConfig, existing?: ThreadEntry, resume?: ResumeInput): Promise<SendOutcomeT> {
     const now = (this.opts.now?.() ?? new Date()).toISOString();
     const threadId = existing?.id ?? `thread-${randomUUID()}`;
     const runId = makeRunId('idea-refinement', this.opts.now?.() ?? new Date());
@@ -166,25 +198,29 @@ export class FlightDeck {
       run_ids: [...(existing?.run_ids ?? []), runId],
     };
     await appendThread(this.opts.runsRoot, thread);
-    await appendTurn(this.opts.runsRoot, threadId, {
-      kind: 'user_message', text: input.text,
-      attachments: input.attachments.map((item) => item.kind === 'file' ? item.path : item.url),
-      mode: input.mode,
-    });
+    if (!resume) {
+      await appendTurn(this.opts.runsRoot, threadId, {
+        kind: 'user_message', text: input.text,
+        attachments: input.attachments.map((item) => item.kind === 'file' ? item.path : item.url),
+        mode: input.mode,
+      });
+    }
 
     const stages: StageRow[] = IDEA_STAGES.map((stage) => ({ id: stage.id, label: stage.label, status: 'pending', seat: null }));
     const active: ActiveRun = {
-      id: runId, threadId, input, thread, budget,
+      id: runId, threadId, input, thread, budget, resume,
       bus: new FrameBus(runId, input.mode, stages, budget),
       abort: new AbortController(), startedAt: Date.now(), calls: 0, replays: 0, repairs: 0,
       callMs: {}, callCount: {}, inflight: new Map(),
     };
     this.runs.set(runId, active);
     this.activeRunId = runId;
-    active.bus.emit({
-      t: 'turn',
-      turn: { kind: 'user_message', text: sanitizeLocalPaths(input.text), attachments: input.attachments.map(attachmentLabel), mode: input.mode },
-    });
+    if (!resume) {
+      active.bus.emit({
+        t: 'turn',
+        turn: { kind: 'user_message', text: sanitizeLocalPaths(input.text), attachments: input.attachments.map(attachmentLabel), mode: input.mode },
+      });
+    }
     const worker = this.executeDecision(active, cfg).finally(() => {
       this.workers.delete(worker);
       if (this.activeRunId === runId) this.activeRunId = undefined;
@@ -192,6 +228,46 @@ export class FlightDeck {
     active.worker = worker;
     this.workers.add(worker);
     return SendOutcome.parse({ threadId, runId, status: 'gating' });
+  }
+
+  private async startFollowup(input: SendInputT, cfg: AikiConfig, existing?: ThreadEntry): Promise<SendOutcomeT> {
+    if (!existing) throw new DeckError(400, 'Convene a decision first, then ask a follow-up about its answer.');
+    if (input.attachments.length) throw new DeckError(400, 'Attachments need a new council decision; use Re-convene instead.');
+
+    let report: SafeReportProjectionT | undefined;
+    for (const runId of [...existing.run_ids].reverse()) {
+      try {
+        report = await this.report(runId);
+        break;
+      } catch {
+        // A partial run has no report; keep looking for the latest completed decision in the thread.
+      }
+    }
+    if (!report) throw new DeckError(400, 'Convene a decision first, then ask a follow-up about its answer.');
+
+    const now = (this.opts.now?.() ?? new Date()).toISOString();
+    const runId = `followup-${randomUUID()}`;
+    const thread: ThreadEntry = { ...existing, updated_at: now, status: 'running' };
+    await appendThread(this.opts.runsRoot, thread);
+    const active: ActiveRun = {
+      id: runId, threadId: thread.id, input, thread, budget: 1,
+      bus: new FrameBus(runId, 'followup', [], 1),
+      abort: new AbortController(), startedAt: Date.now(), calls: 0, replays: 0, repairs: 0,
+      callMs: {}, callCount: {}, inflight: new Map(),
+    };
+    this.runs.set(runId, active);
+    this.activeRunId = runId;
+    active.bus.emit({
+      t: 'turn',
+      turn: { kind: 'user_message', text: sanitizeLocalPaths(input.text), attachments: [], mode: 'followup' },
+    });
+    const worker = this.executeFollowup(active, cfg, report).finally(() => {
+      this.workers.delete(worker);
+      if (this.activeRunId === runId) this.activeRunId = undefined;
+    });
+    active.worker = worker;
+    this.workers.add(worker);
+    return SendOutcome.parse({ threadId: thread.id, runId, status: 'gating' });
   }
 
   /** Reconnect-safe frame source: hello at the requested cursor, then ordered buffered/live frames. */
@@ -227,10 +303,10 @@ export class FlightDeck {
     }
   }
 
-  async act(runId: string, action: DeckAction): Promise<void> {
+  async act(runId: string, action: DeckAction): Promise<SendOutcomeT | void> {
+    if (action.t === 'resume') return this.resume(runId);
     const active = this.runs.get(runId);
     if (!active) throw new DeckError(404, 'no such run');
-    if (action.t === 'resume') throw new DeckError(400, 'Resume actions arrive in HD4.');
     if (action.t === 'cancel') {
       active.abort.abort();
       this.gates.denyAll();
@@ -248,6 +324,61 @@ export class FlightDeck {
     await appendTurn(this.opts.runsRoot, active.threadId, {
       kind: 'gate_receipt', gate_kind: gate.kind, summary, decision: action.t === 'gate' ? action.decision : 'answered',
     });
+  }
+
+  private async resume(oldRunId: string): Promise<SendOutcomeT> {
+    if (this.activeRunId && !this.runs.get(this.activeRunId)?.bus.done) {
+      throw new DeckError(409, 'council already in session');
+    }
+    const thread = (await readThreads(this.opts.runsRoot)).find((entry) => entry.run_ids.includes(oldRunId));
+    if (!thread) throw new DeckError(404, 'no resumable decision found');
+    if (thread.status !== 'failed' && thread.status !== 'cancelled') {
+      throw new DeckError(400, 'Only a failed or cancelled council run can be resumed.');
+    }
+
+    const oldDir = runDir(oldRunId, this.opts.runsRoot);
+    const parsedMeta = RunMeta.safeParse(await readJsonArtifact(oldDir, 'meta.json'));
+    if (!parsedMeta.success || parsedMeta.data.workflow !== 'idea-refinement') {
+      throw new DeckError(400, 'This run does not have valid decision metadata to resume.');
+    }
+    let input: string;
+    try {
+      input = await readFile(join(oldDir, 'inputs', 'idea.md'), 'utf8');
+    } catch {
+      throw new DeckError(400, 'This run does not have its original decision input to resume.');
+    }
+    const replay = await buildReplayCache(oldDir);
+    if (!replay.size) throw new DeckError(400, 'No completed calls were cached; convene a fresh decision instead.');
+
+    let evidencePack: EvidencePackT | undefined;
+    const savedPack = await readJsonArtifact(oldDir, 'inputs/evidence-pack.json');
+    if (savedPack) {
+      const parsed = EvidencePack.safeParse(savedPack);
+      if (!parsed.success) throw new DeckError(400, 'The saved evidence manifest is invalid; resume was refused.');
+      evidencePack = parsed.data;
+    }
+    let urlSources: UrlSourceSetT | undefined;
+    const savedSources = await readJsonArtifact(oldDir, '00a-url-sources.json');
+    if (savedSources) {
+      const parsed = UrlSourceSet.safeParse(savedSources);
+      if (!parsed.success) throw new DeckError(400, 'The saved URL snapshot is invalid; resume was refused.');
+      urlSources = parsed.data;
+    }
+
+    const cfg = await loadLayeredConfig();
+    const mode = parsedMeta.data.mode === 'quick' ? 'quick' : 'council';
+    return this.startDecision(
+      { threadId: thread.id, text: input, mode, kind: 'decision', attachments: [] },
+      cfg,
+      thread,
+      {
+        fromRunId: oldRunId,
+        replay,
+        evidencePack,
+        urlSources,
+        allowBlockedSources: urlSources?.sources.some((source) => source.status !== 'FETCHED') ?? false,
+      },
+    );
   }
 
   async report(runId: string): Promise<SafeReportProjectionT> {
@@ -316,44 +447,55 @@ export class FlightDeck {
 
   private async executeDecision(active: ActiveRun, cfg: AikiConfig): Promise<void> {
     try {
-      let evidencePack: EvidencePackT | undefined;
-      const packs: EvidencePackT[] = [];
-      for (const attachment of active.input.attachments) {
-        if (attachment.kind !== 'file') continue;
-        const pack = await (this.opts.buildPack ?? buildEvidencePack)(attachment.path);
-        const detail = pack.files.map((file) => `${file.path} · sha256 ${file.sha256.slice(0, 12)}`);
-        const decision = await this.permission(active, 'file', 'Read attached material?', detail, allowanceKey('file', `${pack.root}:${pack.files.map((file) => file.sha256).join(',')}`));
-        if (decision === 'deny') return this.finishCancelled(active, 'File access denied. No provider calls were made.');
-        packs.push(pack);
-      }
-      if (packs.length) evidencePack = EvidencePack.parse({
-        root: packs.length === 1 ? packs[0]!.root : 'multiple attached files',
-        files: packs.flatMap((pack) => pack.files),
-      });
-
-      const urlInput = [active.input.text, ...active.input.attachments.filter((item) => item.kind === 'url').map((item) => item.url)].join('\n');
-      const urls = extractPublicUrls(urlInput);
-      for (const rawUrl of urls) {
-        const url = await (this.opts.validateUrl ?? validatePublicUrl)(rawUrl);
-        const decision = await this.permission(active, 'url', 'Fetch attached page?', [url, 'public http(s) URL · guarded fetch · max 500 KB'], allowanceKey('url', url));
-        if (decision === 'deny') return this.finishCancelled(active, 'URL access denied. No provider calls were made.');
-      }
-      const urlSources: UrlSourceSet = await (this.opts.snapshotUrls ?? snapshotUrlSources)(urlInput);
-      const unreadable = urlSources.sources.filter((source) => source.status !== 'FETCHED');
-      let allowBlockedSources = false;
-      if (unreadable.length) {
-        const decision = await this.permission(active, 'blocked', 'Run without an unreadable page?', unreadable.map((source) => `${source.url} · ${source.error ?? source.status}`), allowanceKey('blocked', unreadable.map((source) => source.url).join('|')));
-        if (decision === 'deny') return this.finishCancelled(active, 'Blocked source was not waived. No provider calls were made.');
-        allowBlockedSources = true;
-      }
-
       const estimate = estimateRun('idea-refinement', { mode: active.input.mode });
-      const calls = estimate.minCalls && estimate.minCalls !== estimate.calls ? `${estimate.minCalls}–${estimate.calls}` : `${estimate.calls}`;
-      const spend = await this.permission(active, 'spend', 'Convene the council?', [
-        `${active.input.mode === 'quick' ? 'Quick' : 'Full Council'} · about ${calls} provider calls`,
-        `budget cap ${active.budget} · about ${estimate.opus} Claude/Opus`,
-      ], allowanceKey('spend', `${active.input.mode}:${active.budget}:${calls}`));
-      if (spend === 'deny') return this.finishCancelled(active, 'Spend denied. No provider calls were made.');
+      let evidencePack = active.resume?.evidencePack;
+      let urlSources: UrlSourceSetT = active.resume?.urlSources ?? { sources: [] };
+      let allowBlockedSources = active.resume?.allowBlockedSources ?? false;
+
+      if (active.resume) {
+        const estimatedNew = Math.max(1, estimate.calls - active.resume.replay.size);
+        const decision = await this.permission(active, 'resume', 'Resume this council?', [
+          `${active.resume.replay.size} completed call${active.resume.replay.size === 1 ? '' : 's'} cached and replayed free`,
+          `estimated new spend: up to ${estimatedNew} provider call${estimatedNew === 1 ? '' : 's'} · budget cap ${active.budget}`,
+        ], allowanceKey('resume', active.resume.fromRunId));
+        if (decision === 'deny') return this.finishCancelled(active, 'Resume denied. No provider calls were made.');
+      } else {
+        const packs: EvidencePackT[] = [];
+        for (const attachment of active.input.attachments) {
+          if (attachment.kind !== 'file') continue;
+          const pack = await (this.opts.buildPack ?? buildEvidencePack)(attachment.path);
+          const detail = pack.files.map((file) => `${file.path} · sha256 ${file.sha256.slice(0, 12)}`);
+          const decision = await this.permission(active, 'file', 'Read attached material?', detail, allowanceKey('file', `${pack.root}:${pack.files.map((file) => file.sha256).join(',')}`));
+          if (decision === 'deny') return this.finishCancelled(active, 'File access denied. No provider calls were made.');
+          packs.push(pack);
+        }
+        if (packs.length) evidencePack = EvidencePack.parse({
+          root: packs.length === 1 ? packs[0]!.root : 'multiple attached files',
+          files: packs.flatMap((pack) => pack.files),
+        });
+
+        const urlInput = [active.input.text, ...active.input.attachments.filter((item) => item.kind === 'url').map((item) => item.url)].join('\n');
+        const urls = extractPublicUrls(urlInput);
+        for (const rawUrl of urls) {
+          const url = await (this.opts.validateUrl ?? validatePublicUrl)(rawUrl);
+          const decision = await this.permission(active, 'url', 'Fetch attached page?', [url, 'public http(s) URL · guarded fetch · max 500 KB'], allowanceKey('url', url));
+          if (decision === 'deny') return this.finishCancelled(active, 'URL access denied. No provider calls were made.');
+        }
+        urlSources = await (this.opts.snapshotUrls ?? snapshotUrlSources)(urlInput);
+        const unreadable = urlSources.sources.filter((source) => source.status !== 'FETCHED');
+        if (unreadable.length) {
+          const decision = await this.permission(active, 'blocked', 'Run without an unreadable page?', unreadable.map((source) => `${source.url} · ${source.error ?? source.status}`), allowanceKey('blocked', unreadable.map((source) => source.url).join('|')));
+          if (decision === 'deny') return this.finishCancelled(active, 'Blocked source was not waived. No provider calls were made.');
+          allowBlockedSources = true;
+        }
+
+        const calls = estimate.minCalls && estimate.minCalls !== estimate.calls ? `${estimate.minCalls}–${estimate.calls}` : `${estimate.calls}`;
+        const spend = await this.permission(active, 'spend', 'Convene the council?', [
+          `${active.input.mode === 'quick' ? 'Quick' : 'Full Council'} · about ${calls} provider calls`,
+          `budget cap ${active.budget} · about ${estimate.opus} Claude/Opus`,
+        ], allowanceKey('spend', `${active.input.mode}:${active.budget}:${calls}`));
+        if (spend === 'deny') return this.finishCancelled(active, 'Spend denied. No provider calls were made.');
+      }
 
       active.bus.setLifecycle('running');
       await appendTurn(this.opts.runsRoot, active.threadId, { kind: 'run_ref', run_id: active.id, mode: active.input.mode });
@@ -369,6 +511,8 @@ export class FlightDeck {
         evidencePack,
         urlSources,
         allowBlockedSources,
+        replay: active.resume?.replay,
+        resumedFrom: active.resume?.fromRunId,
         events: this.runEvents(active),
       });
       await this.refreshCounters(active);
@@ -386,6 +530,62 @@ export class FlightDeck {
     } catch (error) {
       if (active.abort.signal.aborted) await this.finishCancelled(active, 'Council cancelled. Partial artifacts were kept.');
       else await this.finishFailed(active, error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  private async executeFollowup(active: ActiveRun, cfg: AikiConfig, report: SafeReportProjectionT): Promise<void> {
+    try {
+      const spend = await this.permission(active, 'spend', 'Answer this follow-up?', [
+        '1 provider call · no council',
+        'Uses the completed council report as context',
+      ], allowanceKey('spend', 'followup:1'));
+      if (spend === 'deny') return this.finishFollowupCancelled(active);
+
+      active.bus.setLifecycle('running');
+      let ended = false;
+      const onCallStart = (provider: ProviderId) => {
+        active.bus.emit({ t: 'call', provider, stage: 'followup', phase: 'start', category: 'planning', replayed: false });
+      };
+      const onCallEnd = (provider: ProviderId, ms: number, ok: boolean) => {
+        ended = true;
+        active.calls++;
+        active.callCount[provider] = (active.callCount[provider] ?? 0) + 1;
+        active.callMs[provider] = (active.callMs[provider] ?? 0) + ms;
+        active.bus.emit({ t: 'call', provider, stage: 'followup', phase: 'end', ms, ok, category: 'planning', replayed: false });
+      };
+      const result = await (this.opts.followupRunner ?? runFollowup)({
+        question: active.input.text,
+        report,
+        config: cfg,
+        signal: active.abort.signal,
+        onCallStart,
+        onCallEnd,
+      });
+      if (!ended) {
+        onCallStart(result.provider);
+        onCallEnd(result.provider, result.callMs, true);
+      }
+      const answer = sanitizeLocalPaths(result.answer);
+      const providerName = DISPLAY_NAME[result.provider];
+      const turn = {
+        kind: 'followup' as const,
+        question: sanitizeLocalPaths(active.input.text),
+        answer,
+        provider: result.provider,
+        providerName,
+        label: `follow-up · ${providerName} · 1 call · no council`,
+        callMs: result.callMs,
+      };
+      await appendTurn(this.opts.runsRoot, active.threadId, {
+        kind: 'followup', question: active.input.text, provider: result.provider, answer, call_ms: result.callMs,
+      });
+      active.bus.emit({ t: 'turn', turn });
+      active.bus.emit({ t: 'receipt', receipt: this.receipt(active) });
+      await this.finishThread(active, 'idle');
+      active.bus.emit({ t: 'done', status: 'ok', flags: [] });
+    } catch (error) {
+      if (active.abort.signal.aborted) await this.finishFollowupCancelled(active);
+      else await this.finishFollowupFailed(active, error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -459,7 +659,9 @@ export class FlightDeck {
 
   private receipt(active: ActiveRun, warnings: string[] = []): ReceiptViewT {
     return ReceiptView.parse({
-      mode: active.input.mode === 'quick' ? 'Quick' : 'Full Council',
+      mode: active.input.kind === 'followup'
+        ? 'Follow-up · single call · no council'
+        : active.input.mode === 'quick' ? 'Quick' : 'Full Council',
       calls: active.calls,
       budget: active.budget,
       replays: active.replays,
@@ -478,6 +680,25 @@ export class FlightDeck {
     if (!active.bus.done) {
       active.bus.emit({ t: 'receipt', receipt: this.receipt(active) });
       active.bus.emit({ t: 'done', status: 'aborted', flags: [] });
+    }
+  }
+
+  private async finishFollowupCancelled(active: ActiveRun): Promise<void> {
+    await this.finishThread(active, 'idle');
+    if (!active.bus.done) {
+      active.bus.emit({ t: 'receipt', receipt: this.receipt(active) });
+      active.bus.emit({ t: 'done', status: 'aborted', flags: [] });
+    }
+  }
+
+  private async finishFollowupFailed(active: ActiveRun, raw: string): Promise<void> {
+    const message = sanitizeLocalPaths(raw);
+    await this.finishThread(active, 'idle');
+    await appendTurn(this.opts.runsRoot, active.threadId, { kind: 'error', message });
+    if (!active.bus.done) {
+      active.bus.emit({ t: 'gate', gate: { id: this.gates.gateId('attention'), kind: 'attention', title: 'Follow-up needs attention', lines: [message], fix: recoveryText(message) } });
+      active.bus.emit({ t: 'receipt', receipt: this.receipt(active, [message]) });
+      active.bus.emit({ t: 'done', status: 'failed', flags: [message] });
     }
   }
 
@@ -535,6 +756,7 @@ export class FlightDeck {
         ...(cfg.roles?.judge ? { judge: cfg.roles.judge } : {}),
         ...(cfg.roles?.verifier ? { verifier: cfg.roles.verifier } : {}),
         ...(cfg.roles?.s4 ? { s4: cfg.roles.s4 } : {}),
+        ...(cfg.roles?.responder ? { responder: cfg.roles.responder } : {}),
       },
       scope: this.opts.runsRoot === homeAikiRoot() ? 'global (~/.aiki/config.json)' : 'project (.aiki/config.json)',
     });

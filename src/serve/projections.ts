@@ -172,6 +172,7 @@ export const SettingsView = z
         judge: ProviderIdView.optional(),
         verifier: ProviderIdView.optional(),
         s4: z.array(ProviderIdView).optional(),
+        responder: ProviderIdView.optional(),
       })
       .strict(),
     scope: z.string(), // "project (.aiki/config.json)" | "global (~/.aiki/config.json)" — no absolute path
@@ -265,12 +266,17 @@ export const ThreadDetail = z
     id: z.string(),
     title: z.string(),
     legacy: z.boolean(),
+    resumeRunId: z.string().nullable(),
     turns: z.array(
       z.discriminatedUnion('kind', [
         z.object({ kind: z.literal('report_md'), markdown: z.string() }).strict(),
         z.object({ kind: z.literal('note'), text: z.string() }).strict(),
         z.object({ kind: z.literal('user_message'), text: z.string(), attachments: z.array(z.string()), mode: z.string() }).strict(),
         z.object({ kind: z.literal('report'), report: SafeReportProjection }).strict(),
+        z.object({
+          kind: z.literal('followup'), question: z.string(), answer: z.string(), provider: ProviderIdView,
+          providerName: z.string(), label: z.string(), callMs: z.number().nonnegative(),
+        }).strict(),
       ]),
     ),
   })

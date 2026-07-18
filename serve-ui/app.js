@@ -28,7 +28,7 @@ const STATUS_GLYPH = { running: '●', complete: '✓', failed: '⚠', cancelled
 const state = {
   settings: null, providers: [], threadId: null, runId: null, events: null,
   attachments: [], gates: new Map(), turnKeys: new Set(), helloLastSeq: 0,
-  calls: 0, budget: 1, active: false,
+  calls: 0, budget: 1, active: false, canFollowup: false, runKind: 'decision',
 };
 
 // ── shell reads ───────────────────────────────────────────────────────────────
@@ -74,6 +74,7 @@ function roleFor(id, pinned) {
   if (pinned.judge === id) roles.push('judge');
   if (pinned.verifier === id) roles.push('verifier');
   if (pinned.analyst === id) roles.push('analyst');
+  if (pinned.responder === id) roles.push('responder');
   if (Array.isArray(pinned.s4) && pinned.s4.includes(id)) roles.push('seat');
   return roles.length ? roles.join(' · ') : DEFAULT_ROLE[id] ?? 'seat';
 }
@@ -97,11 +98,13 @@ async function openThread(id, btn) {
   try {
     const detail = await api(`/api/threads/${encodeURIComponent(id)}`);
     state.threadId = detail.legacy ? null : detail.id;
+    state.runId = detail.resumeRunId;
     renderThreadView(detail);
   } catch (error) { toast(`Could not open decision (${error.message})`); }
 }
 
 function renderThreadView(detail) {
+  state.canFollowup = !detail.legacy && detail.turns.some((turn) => turn.kind === 'report');
   const view = conversation(true);
   view.append(el('h1', 'thread-view__title', detail.title));
   view.append(el('p', 'thread-view__meta', detail.legacy ? 'Recorded run · read-only history' : 'Decision thread'));
@@ -110,7 +113,10 @@ function renderThreadView(detail) {
     else if (turn.kind === 'note') view.append(el('p', 'empty__lede', turn.text));
     else if (turn.kind === 'user_message') appendUserTurn(turn, view);
     else if (turn.kind === 'report') renderVerdict(turn.report, view);
+    else if (turn.kind === 'followup') renderFollowup(turn, view);
   }
+  if (detail.resumeRunId) renderResumeCard(detail.resumeRunId, view);
+  updateComposer();
   $('#center-scroll').scrollTop = 0;
 }
 
@@ -144,13 +150,15 @@ function renderSnapshot(snapshot) {
   state.calls = snapshot.calls.used;
   state.budget = snapshot.calls.budget;
   state.active = snapshot.status === 'gating' || snapshot.status === 'running';
+  state.runKind = snapshot.mode === 'followup' ? 'followup' : 'decision';
   showSession(state.active, snapshot.status === 'gating' ? 'awaiting approval' : 'working');
   renderDeck(snapshot);
   snapshot.gates.forEach(renderGate);
 }
 
 function applyFrame(frame, historical) {
-  if (frame.t === 'turn') appendUserTurn(frame.turn);
+  if (frame.t === 'turn' && frame.turn.kind === 'user_message') appendUserTurn(frame.turn);
+  else if (frame.t === 'turn') renderFollowup(frame.turn);
   else if (frame.t === 'gate') renderGate(frame.gate);
   else if (frame.t === 'gate_resolved') resolveGate(frame.gateId, frame.summary);
   else if (frame.t === 'stage') updateStage(frame);
@@ -172,7 +180,7 @@ function appendUserTurn(turn, root = conversation()) {
     turn.attachments.forEach((item) => chips.append(el('span', 'turn__chip', item)));
     card.append(chips);
   }
-  card.append(el('p', 'turn__meta', turn.mode === 'quick' ? 'Quick council' : 'Full council'));
+  card.append(el('p', 'turn__meta', turn.mode === 'followup' ? 'Follow-up' : turn.mode === 'quick' ? 'Quick council' : 'Full council'));
   root.append(card); scrollConversation();
 }
 
@@ -201,7 +209,13 @@ function renderGate(gate) {
     });
     card.append(actions, answerInput(gate.id));
   } else if (gate.kind === 'grill') card.append(answerInput(gate.id));
-  else if (gate.fix) card.append(el('p', 'gate-card__line', gate.fix));
+  else if (gate.fix) {
+    card.append(el('p', 'gate-card__line', gate.fix));
+    if (gate.kind === 'attention' && state.runKind === 'decision') {
+      const resume = el('button', 'btn', 'Resume from cached calls'); resume.type = 'button';
+      resume.addEventListener('click', () => resumeRun(state.runId)); card.append(resume);
+    }
+  }
 
   state.gates.set(gate.id, card);
   conversation().append(card); scrollConversation();
@@ -220,7 +234,7 @@ function answerInput(gateId) {
 
 async function answerGate(gateId, action) {
   try {
-    await api(`/api/runs/${encodeURIComponent(state.runId)}/actions`, { method: 'POST', body: JSON.stringify(action) });
+    return await api(`/api/runs/${encodeURIComponent(state.runId)}/actions`, { method: 'POST', body: JSON.stringify(action) });
   } catch (error) { toast(error.message); }
 }
 
@@ -305,6 +319,35 @@ function renderVerdict(report, root = conversation()) {
   const next = el('p', 'verdict-card__next'); next.append(el('strong', null, 'Next step · '), document.createTextNode(report.nextStep)); body.append(next);
   const receipt = el('footer', 'verdict-card__receipt', receiptLine(report.receipt));
   card.append(banner, body, receipt); root.append(card); scrollConversation();
+  if (state.threadId) { state.canFollowup = true; updateComposer(); }
+}
+
+function renderFollowup(turn, root = conversation()) {
+  const card = el('article', 'followup-card');
+  card.append(el('p', 'followup-card__answer', turn.answer), el('p', 'followup-card__meta', turn.label));
+  const reconvene = el('button', 'btn btn--icon', 'Re-convene council'); reconvene.type = 'button';
+  reconvene.addEventListener('click', () => sendMessage(turn.question, 'decision'));
+  card.append(reconvene); root.append(card); scrollConversation();
+  state.canFollowup = true; updateComposer();
+}
+
+function renderResumeCard(runId, root = conversation()) {
+  const card = el('article', 'gate-card'); card.dataset.kind = 'resume';
+  card.append(el('div', 'gate-card__eyebrow', 'Interrupted council'), el('h3', null, 'Resume from cached calls?'));
+  card.append(el('p', 'gate-card__line', 'Aiki will replay completed calls free and ask before any new spend.'));
+  const button = el('button', 'btn btn--primary', 'Review resume cost'); button.type = 'button';
+  button.addEventListener('click', () => resumeRun(runId)); card.append(button); root.append(card);
+}
+
+async function resumeRun(runId) {
+  if (!runId) return;
+  try {
+    state.runId = runId;
+    const outcome = await answerGate('', { t: 'resume' });
+    if (!outcome?.runId) return;
+    state.runId = outcome.runId; state.runKind = 'decision';
+    showSession(true, 'awaiting resume approval'); connectEvents(outcome.runId);
+  } catch (error) { toast(error.message); }
 }
 
 function disclosure(title, summary, bullets) {
@@ -331,16 +374,21 @@ function finishRun(frame) {
   state.active = false; showSession(false);
   $('#deck-state').textContent = frame.status === 'ok' ? 'complete' : frame.status;
   state.events?.close();
+  if (frame.status === 'ok') state.canFollowup = true;
+  updateComposer();
   api('/api/bootstrap').then((snap) => renderThreads(snap.threads)).catch(() => {});
-  if (frame.status === 'aborted') toast('Council cancelled. Partial artifacts were kept.');
-  else if (frame.status === 'failed') toast('Council needs attention. See the card in the conversation.');
+  if (frame.status === 'aborted') toast(state.runKind === 'followup' ? 'Follow-up cancelled.' : 'Council cancelled. Partial artifacts were kept.');
+  else if (frame.status === 'failed') toast(`${state.runKind === 'followup' ? 'Follow-up' : 'Council'} needs attention. See the card in the conversation.`);
 }
 
 function showSession(active, stage = 'awaiting approval') {
   state.active = active;
   $('#composer').hidden = active;
   $('#live-session').hidden = !active;
-  if (active) $('#live-stage').textContent = stage;
+  if (active) {
+    $('#session-label').textContent = state.runKind === 'followup' ? 'Follow-up in progress' : 'Council in session';
+    $('#live-stage').textContent = stage;
+  }
 }
 
 // ── composer + interactions ───────────────────────────────────────────────────────
@@ -348,18 +396,36 @@ function showSession(active, stage = 'awaiting approval') {
 $('#composer').addEventListener('submit', async (event) => {
   event.preventDefault();
   const text = $('#decision-text').value.trim(); if (!text) return;
+  await sendMessage(text, state.threadId && state.canFollowup ? 'followup' : 'decision');
+});
+
+async function sendMessage(text, kind) {
   const mode = $('#mode').value;
   try {
     const newThread = !state.threadId;
     const outcome = await api('/api/messages', { method: 'POST', body: JSON.stringify({
-      ...(state.threadId ? { threadId: state.threadId } : {}), text, mode, kind: 'decision', attachments: state.attachments,
+      ...(state.threadId ? { threadId: state.threadId } : {}), text, mode, kind,
+      attachments: kind === 'followup' ? [] : state.attachments,
     }) });
     state.threadId = outcome.threadId; state.runId = outcome.runId;
+    state.runKind = kind; state.canFollowup = kind === 'followup';
     conversation(newThread);
     showSession(true); connectEvents(outcome.runId);
     $('#decision-text').value = ''; state.attachments = []; renderAttachments();
+    updateComposer();
   } catch (error) { toast(error.message); }
-});
+}
+
+function updateComposer() {
+  const followup = Boolean(state.threadId && state.canFollowup);
+  $('#decision-text').placeholder = followup
+    ? 'Ask a follow-up about this council answer…'
+    : 'Describe the decision, constraints, and what a good answer must include…';
+  $('#composer-send').textContent = followup ? 'Ask' : 'Convene';
+  $('#attach').hidden = followup;
+  $('.mode-select').hidden = followup;
+  $('#estimate').textContent = followup ? '1 call · no council' : $('#mode').value === 'quick' ? '~3 calls · single-pass council' : '8–10 calls · council of installed models';
+}
 
 $('#attach').addEventListener('click', () => {
   const value = prompt('Paste a local file path or a public http(s) URL:')?.trim();
@@ -387,6 +453,7 @@ $('#cancel-run').addEventListener('click', () => answerGate('', { t: 'cancel' })
 $('#new-decision').addEventListener('click', () => {
   if (state.active) return toast('A council is already in session.');
   state.threadId = null; state.runId = null;
+  state.canFollowup = false; state.runKind = 'decision'; updateComposer();
   $('#thread-view').hidden = true; $('#thread-view').replaceChildren(); $('#empty-state').hidden = false;
   $('#decision-text').focus();
 });
@@ -419,7 +486,7 @@ function renderSettings(settings) {
   }
   body.append(models);
   const roles = el('div', 'settings-group'); roles.append(el('h3', null, 'Roles'));
-  for (const role of ['judge', 'verifier', 'analyst']) {
+  for (const role of ['judge', 'verifier', 'analyst', 'responder']) {
     const row = el('div', 'settings-row'); row.append(el('span', null, role), el('span', null, settings.roles?.[role] ? DISPLAY[settings.roles[role]] : 'default')); roles.append(row);
   }
   body.append(roles, el('p', 'settings-scope', `Saving to ${settings.scope} · editing lands in HD5`));

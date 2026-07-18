@@ -85,8 +85,8 @@ export function createHandler(opts: { flightDeck: FlightDeck; staticDir: string;
         const route = runRoute[2]!;
         if (method === 'GET' && route === 'events') return await sendEvents(req, res, flightDeck, runId);
         if (method === 'POST' && route === 'actions') {
-          await flightDeck.act(runId, DeckAction.parse(await readJson(req)));
-          return send(res, 200, { ok: true });
+          const outcome = await flightDeck.act(runId, DeckAction.parse(await readJson(req)));
+          return send(res, 200, outcome ?? { ok: true });
         }
         if (method === 'GET' && route === 'report') return send(res, 200, await flightDeck.report(runId));
         return send(res, 405, { error: 'method not allowed' });

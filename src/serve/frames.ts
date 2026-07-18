@@ -45,7 +45,9 @@ export type DeckFrameBody =
   | { t: 'counters'; positions?: number; evidence?: number; disagreements?: number; repairs?: number }
   | { t: 'gate'; gate: GateCardView }
   | { t: 'gate_resolved'; gateId: string; summary: string }
-  | { t: 'turn'; turn: { kind: 'user_message'; text: string; attachments: string[]; mode: string } }
+  | { t: 'turn'; turn:
+      | { kind: 'user_message'; text: string; attachments: string[]; mode: string }
+      | { kind: 'followup'; question: string; answer: string; provider: ProviderId; providerName: string; label: string; callMs: number } }
   | { t: 'report_ready'; runId: string }
   | { t: 'receipt'; receipt: ReceiptViewT }
   | { t: 'done'; status: 'ok' | 'failed' | 'aborted'; flags: string[] };
@@ -71,7 +73,13 @@ const DeckFrameBodySchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('counters'), positions: z.number().int().nonnegative().optional(), evidence: z.number().int().nonnegative().optional(), disagreements: z.number().int().nonnegative().optional(), repairs: z.number().int().nonnegative().optional() }).strict(),
   z.object({ t: z.literal('gate'), gate: GateCardViewSchema }).strict(),
   z.object({ t: z.literal('gate_resolved'), gateId: z.string(), summary: z.string() }).strict(),
-  z.object({ t: z.literal('turn'), turn: z.object({ kind: z.literal('user_message'), text: z.string(), attachments: z.array(z.string()), mode: z.string() }).strict() }).strict(),
+  z.object({ t: z.literal('turn'), turn: z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('user_message'), text: z.string(), attachments: z.array(z.string()), mode: z.string() }).strict(),
+    z.object({
+      kind: z.literal('followup'), question: z.string(), answer: z.string(), provider: Provider,
+      providerName: z.string(), label: z.string(), callMs: z.number().nonnegative(),
+    }).strict(),
+  ]) }).strict(),
   z.object({ t: z.literal('report_ready'), runId: z.string() }).strict(),
   z.object({ t: z.literal('receipt'), receipt: ReceiptView }).strict(),
   z.object({ t: z.literal('done'), status: z.enum(['ok', 'failed', 'aborted']), flags: z.array(z.string()) }).strict(),
