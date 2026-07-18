@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="deck-token" content="__DECK_TOKEN__" />
+  <title>aiki — decision workspace</title>
+  <link rel="stylesheet" href="/workspace.css" />
+</head>
+<body>
+  <a class="skip-link" href="#conversation">Skip to conversation</a>
+
+  <div class="workspace" role="application" aria-label="aiki decision workspace">
+    <!-- Left — Sessions rail (the reading room) -->
+    <aside class="rail" aria-label="Sessions and provider status">
+      <header class="rail__head">
+        <span class="wordmark">aiki</span>
+        <button id="quorum" class="quorum" type="button" aria-live="polite" title="Council readiness">
+          <span class="lamp" data-tone="neutral"></span>
+          <span class="quorum__label">checking…</span>
+        </button>
+      </header>
+
+      <section class="providers" aria-label="Provider status">
+        <ul id="provider-list" class="providers__list"></ul>
+        <button id="check-connections" class="btn btn--ghost" type="button">
+          Check connections
+          <span class="btn__note">may make up to 3 tiny provider calls</span>
+        </button>
+      </section>
+
+      <button id="new-decision" class="btn btn--primary" type="button">＋ New decision</button>
+
+      <nav class="threads" aria-label="Decision history">
+        <h2 class="eyebrow">History</h2>
+        <ul id="thread-list" class="threads__list"></ul>
+      </nav>
+
+      <footer class="rail__foot">
+        <button id="settings-open" class="btn btn--icon" type="button" aria-label="Settings">⚙ Settings</button>
+        <span id="version" class="version"></span>
+      </footer>
+    </aside>
+
+    <!-- Center — Conversation -->
+    <main id="conversation" class="center" aria-label="Conversation">
+      <div id="center-scroll" class="center__scroll">
+        <section id="empty-state" class="empty">
+          <img class="empty__art" src="/Five.png" alt="" aria-hidden="true" />
+          <h1 class="empty__title">A council, on call.</h1>
+          <p class="empty__lede">
+            Describe a decision and aiki convenes your installed models — they investigate,
+            disagree, and hand back a verdict you can audit. Pick a past decision from the left,
+            or start a new one.
+          </p>
+        </section>
+        <article id="thread-view" class="thread-view" hidden aria-live="polite"></article>
+      </div>
+      <div class="composer-shell">
+        <form id="composer" class="composer">
+          <textarea id="decision-text" rows="3" maxlength="100000" required placeholder="Describe the decision, constraints, and what a good answer must include…"></textarea>
+          <div id="attachment-chips" class="attachment-chips" aria-label="Attachments"></div>
+          <div class="composer__tools">
+            <button id="attach" class="btn btn--icon" type="button">＋ Attach</button>
+            <label class="mode-select">
+              <span class="sr-only">Council mode</span>
+              <select id="mode">
+                <option value="quick">Quick · ~3 calls</option>
+                <option value="council" selected>Full Council · ~8–10 calls</option>
+              </select>
+            </label>
+            <span id="estimate" class="composer__estimate">8–10 calls · council of installed models</span>
+            <button class="btn btn--primary composer__send" type="submit">Convene</button>
+          </div>
+        </form>
+        <div id="live-session" class="live-session" hidden>
+          <span><span class="lamp" data-tone="amber"></span> Council in session · <strong id="live-stage">awaiting approval</strong></span>
+          <button id="cancel-run" class="btn btn--danger" type="button">Cancel</button>
+        </div>
+      </div>
+      <div id="announcer" class="sr-only" aria-live="polite"></div>
+    </main>
+
+    <!-- Right — Council Deck (the engine room) -->
+    <aside class="deck" aria-label="Council deck">
+      <header class="deck__head">
+        <span class="deck__eyebrow">Council deck</span>
+        <span id="deck-state" class="deck__state">idle</span>
+      </header>
+      <div id="deck-body" class="deck__body">
+        <h3 class="deck__section">Seat roster</h3>
+        <ul id="seat-roster" class="roster"></ul>
+        <p class="deck__hint">The deck lights up when a decision is convened — stages, seats, and a live call budget.</p>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Settings sheet (read-only in HD2) -->
+  <div id="settings-sheet" class="sheet" hidden>
+    <div class="sheet__backdrop" data-close></div>
+    <div class="sheet__panel" role="dialog" aria-modal="true" aria-label="Settings">
+      <header class="sheet__head">
+        <h2>Settings</h2>
+        <button class="btn btn--icon" type="button" data-close aria-label="Close settings">✕</button>
+      </header>
+      <div id="settings-body" class="sheet__body"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

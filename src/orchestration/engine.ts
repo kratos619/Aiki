@@ -22,6 +22,7 @@ const WORKFLOWS: Record<WorkflowId, WorkflowFn> = {
 
 export interface RunOutcome {
   ok: boolean;
+  aborted: boolean;
   runId: string;
   dir: string;
   callCount: number;
@@ -46,7 +47,7 @@ export async function executeRun(ctx: RunCtx, input: string, fn: WorkflowFn): Pr
   try {
     await fn(ctx, input);
     await ctx.writer.writeMeta(ctx.buildMeta('ok', false));
-    return { ok: true, ...base, callCount: ctx.calls.length };
+    return { ok: true, aborted: false, ...base, callCount: ctx.calls.length };
   } catch (e) {
     const classified = classifyError(e);
     // A fired abort signal wins: record `aborted` even if the surfacing error was e.g. a killed
@@ -54,11 +55,12 @@ export async function executeRun(ctx: RunCtx, input: string, fn: WorkflowFn): Pr
     const aborted = ctx.aborted || classified.aborted;
     // Best-effort finalize: never let a meta-write failure mask the original error.
     await ctx.writer.writeMeta(ctx.buildMeta(aborted ? 'aborted' : 'failed', aborted)).catch(() => {});
-    return { ok: false, ...base, callCount: ctx.calls.length, error: { code: classified.code, message: e instanceof Error ? e.message : String(e) } };
+    return { ok: false, aborted, ...base, callCount: ctx.calls.length, error: { code: classified.code, message: e instanceof Error ? e.message : String(e) } };
   }
 }
 
 export interface RunOptions {
+  runId?: string; // caller-supplied id (serve: SSE + thread + report all key off it). Default = generated.
   mode?: IdeaMode; // idea-refinement protocol; default council
   budget?: number;
   deadlineMs?: number;
@@ -86,6 +88,7 @@ export async function run(workflow: WorkflowId, input: string, opts: RunOptions 
   if (handles.length < requiredProviders) {
     return {
       ok: false,
+      aborted: false,
       runId: '(none)',
       dir: '',
       callCount: 0,
@@ -93,7 +96,7 @@ export async function run(workflow: WorkflowId, input: string, opts: RunOptions 
     };
   }
 
-  const runId = makeRunId(workflow);
+  const runId = opts.runId ?? makeRunId(workflow);
   const roles = resolveRoles(workflow, handles.map((h) => h.id), opts.roleOverrides);
   const writer = new RunWriter(runId, opts.runsRoot);
   const ctx = new RunCtx({
@@ -126,6 +129,6 @@ export async function run(workflow: WorkflowId, input: string, opts: RunOptions 
     ...(opts.resumedFrom ? { resumedFrom: opts.resumedFrom } : {}),
   });
   const outcome = await executeRun(ctx, input, WORKFLOWS[workflow]);
-  await updateSessionStatus(runId, outcome.ok ? 'ok' : 'failed');
+  await updateSessionStatus(runId, outcome.ok ? 'ok' : outcome.aborted ? 'aborted' : 'failed');
   return outcome;
 }

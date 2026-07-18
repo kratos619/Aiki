@@ -20,7 +20,7 @@ import { probeFlags } from '../providers/probe.js';
 import type { RunWriter } from '../storage/runs.js';
 import { replayKey } from '../storage/replay.js';
 import type { EvidencePack } from './evidence-pack.js';
-import { callCategory, defaultBudgetFor, defaultDeadlineFor, IDEA_MODE_PLANS, isOptionalStage, LEGACY_DEFAULT_BUDGET } from './modes.js';
+import { callCategory, defaultBudgetFor, defaultDeadlineFor, IDEA_MODE_PLANS, isOptionalStage, LEGACY_DEFAULT_BUDGET, type CallCategory } from './modes.js';
 
 export type WorkflowId = 'idea-refinement' | 'code-review';
 
@@ -39,6 +39,10 @@ export interface RunEvents {
   onStart?(runId: string, dir: string): void;
   onStageStart?(id: string): void;
   onStageEnd?(id: string, status: 'done' | 'failed' | 'skipped'): void;
+  /** Fired around every budgeted provider call (serve deck telemetry). Additive: headless/TUI runs
+   *  pass neither, so nothing changes for them. `replayed` calls are free resume-cache hits. */
+  onCallStart?(provider: ProviderId, stage: string, category: CallCategory, replayed: boolean): void;
+  onCallEnd?(provider: ProviderId, stage: string, ms: number, ok: boolean, replayed: boolean): void;
   /** Ask the user to answer the merged contextual questions before the expensive stages run. */
   grill?(brief: RunBriefDraft): Promise<GrillAnswer[]>;
   /** Ask the user to resolve diverging preflight interpretations. */
@@ -250,11 +254,14 @@ export class RunCtx {
     // Resume (V6.3): if this exact (provider, prompt) already succeeded in the run we're resuming,
     // replay its output — no real call, no budget spend. Only never-completed calls hit the model.
     const cachedOut = this.replay?.get(replayKey(handle.id, req.prompt));
+    const category = callCategory(stage);
+    const replayed = cachedOut !== undefined;
+    if (!replayed && this.budget.used + 1 > this.budget.limit) throw new BudgetExceeded(this.budget.limit);
+    this.events?.onCallStart?.(handle.id, stage, category, replayed);
     let res: RunResultAdapter;
     if (cachedOut !== undefined) {
       res = { ok: true, text: cachedOut, json: req.expectJson ? extractJson(cachedOut) : undefined, durationMs: 0 };
     } else {
-      if (this.budget.used + 1 > this.budget.limit) throw new BudgetExceeded(this.budget.limit);
       this.budget.used++;
       res = await handle.adapter.run(
         {
@@ -283,6 +290,7 @@ export class RunCtx {
       `${stage}-${handle.id}-${seq}.out`,
       res.ok ? res.text : `[${res.error}]\n${res.stderrTail}`,
     );
+    this.events?.onCallEnd?.(handle.id, stage, res.durationMs, res.ok, replayed);
     return res;
   }
 

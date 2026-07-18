@@ -13,6 +13,7 @@ import { sessionsCommand } from './sessions.js';
 import { config } from './config.js';
 import { modelsCommand } from './models.js';
 import { benchCommand } from './bench.js';
+import { serveCommand } from './serve.js';
 import { VERSION } from './version.js';
 import { ConfigError, loadLayeredConfig } from '../config/config.js';
 import { resolveRunsRoot } from '../storage/paths.js';
@@ -135,6 +136,15 @@ program
       publishResults: opts.publishResults,
       campaign: opts.campaign,
     }));
+  });
+
+program
+  .command('serve')
+  .description('Open the chat workspace in the browser (localhost only; no paid calls until you convene a run).')
+  .option('--port <n>', 'port to bind (default: first free in 4173–4183)', (v) => parseInt(v, 10))
+  .option('--no-open', 'do not open the browser automatically')
+  .action(async (opts: { port?: number; open?: boolean }) => {
+    process.exit(await serveCommand({ port: opts.port, open: opts.open }));
   });
 
 program
