@@ -10,7 +10,7 @@ import { jsonCall } from '../jsonStage.js';
 import { claimShortLabel } from '../decision-dossier.js';
 import { loadSkill } from '../skills.js';
 import type { RubricItem } from './s7-decision-graph.js';
-import { claimVerificationRefIssues, selectVerificationEscalations } from './s8-verify.js';
+import { claimVerificationRefIssues } from './s8-verify.js';
 
 type Adjudication = JudgeReportT['adjudications'][number];
 
@@ -150,10 +150,14 @@ export function adjudicationEvidenceViolations(
     if (!item.evidence_ids?.length) return [`${item.id}: missing evidence_ids`];
     const allowed = new Set(verification.evidence_ids);
     const bad = item.evidence_ids.filter((id) => !allowed.has(id));
-    const unsettled = (verification.status === 'PARTIAL' || verification.status === 'UNVERIFIABLE') && item.ruling !== 'UNRESOLVED';
+    // v6: PARTIAL/UNVERIFIABLE no longer forces UNRESOLVED — the chair may rule on judgment with
+    // the caveat carried in its reasoning (run f740 lost 5 nuanced HOLDS rulings and a 125s Opus
+    // repair to the old rule). The one indefensible combination stays fatal: ruling HOLDS on
+    // positively CONTRADICTED evidence.
+    const contradicted = verification.status === 'CONTRADICTED' && (item.ruling === 'HOLDS' || item.ruling === 'UPHOLD');
     return [
       ...(bad.length ? [`${item.id}: invalid evidence ids ${bad.join(', ')}`] : []),
-      ...(unsettled ? [`${item.id}: ${verification.status} verification requires UNRESOLVED`] : []),
+      ...(contradicted ? [`${item.id}: CONTRADICTED verification cannot rule HOLDS`] : []),
     ];
   });
 }
@@ -239,7 +243,10 @@ function judgeInput(
   ])];
   const evidenceRefs = new Map(citedEvidence.map((id, index) => [`E${index + 1}`, id]));
   const aliasByEvidence = new Map([...evidenceRefs].map(([alias, id]) => [id, alias]));
-  const selectedIds = selectVerificationEscalations(graph).map((item) => item.claim_id);
+  // Chair scope = the claims S8 actually verified (see s9Judge) — recomputing the escalation
+  // selection here on the overlaid graph would ask the chair to rule on claims that have no
+  // verifier record, which adjudicationEvidenceViolations then rejects after a paid call.
+  const selectedIds = verifications.verifications.map((item) => item.claim_id);
   const eligibleIds = judgeProvider ? adjudicableClaimIds(graph, selectedIds, judgeProvider) : selectedIds;
   const escalationIds = new Set(eligibleIds);
   const escalations = graph.claims.filter((claim) => escalationIds.has(claim.id)).map((claim) => {
@@ -296,7 +303,15 @@ export async function s9Judge(
   rubric: RubricItem[],
   rebuttals: RebuttalEventSet = EMPTY_REBUTTALS,
 ): Promise<JudgeReportT> {
-  const selectedIds = selectVerificationEscalations(graph).map((item) => item.claim_id);
+  // The chair adjudicates what S8 ACTUALLY verified (persisted in 08, replay-safe) — never a
+  // re-ranked selection. S8 picks targets from the pre-overlay graph and validates its own output
+  // against them; overlayClaimGroups (built from S8's OWN claim_groups) then shifts claim states,
+  // so re-running selectVerificationEscalations on the joined graph can disagree with a selection
+  // S8 could not have predicted. Run e1ce (2026-07-18): the re-selection dropped G2 / added G7 and
+  // rejected a fully-compliant verification set. The chair also structurally requires a
+  // verification per adjudicated claim (adjudicationEvidenceViolations), so the verified set IS
+  // the chair's scope; dangling/duplicate/evidence-linkage guards below still apply.
+  const selectedIds = verifications.verifications.map((item) => item.claim_id);
   const verificationIssues = claimVerificationRefIssues(graph, verifications, selectedIds);
   if (verificationIssues.length) throw new StageError('S9', 'BAD_OUTPUT', `invalid verification references: ${verificationIssues.join('; ')}`);
   const ids = adjudicableClaimIds(graph, selectedIds, ctx.roles.judge);

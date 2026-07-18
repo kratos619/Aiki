@@ -12,6 +12,7 @@ import { overlap, tokenize } from '../cluster.js';
 import type { SeatOutput } from './s4-analyze.js';
 import type { RubricItem } from './s7-decision-graph.js';
 import { interpretClaimOutcome, type DecisionGraph } from '../decision-graph.js';
+import { evidenceOrigin } from '../evidence-origin.js';
 import { buildReaderProjection, renderDecisionDossierMarkdown, sanitizeReaderText } from '../decision-dossier.js';
 import { callCategory } from '../modes.js';
 
@@ -141,8 +142,10 @@ export function computeConfidence(graph: DecisionGraph, flags: ReadonlySet<strin
     ? verificationClaims.filter((claim) => claim.evidence_state === 'SUPPORTED').length / verificationClaims.length : 0;
   const independentConvergence = graph.claims.length
     ? graph.claims.filter((claim) => claim.state === 'CONSENSUS' || claim.state === 'SHARED_CONCERN').length / graph.claims.length : 0;
+  // v6: only independent EXTERNAL evidence counts as quality — the user's own material restated
+  // as cards inflated f740's coverage to theater (8 of 12 cards were the user's idea-brief).
   const evidenceQuality = graph.evidence.length
-    ? graph.evidence.filter((card) => card.source_kind !== 'MODEL_KNOWLEDGE').length / graph.evidence.length : 0;
+    ? graph.evidence.filter((card) => evidenceOrigin(card) === 'EXTERNAL').length / graph.evidence.length : 0;
   const stability = Math.max(0, 1 - 0.25 * DEGRADATION_FLAGS.filter((flag) => flags.has(flag)).length);
   const criticalRiskPenalty = Math.min(20, 5 * loadBearing.filter(
     (claim) => claim.if_false === 'STOP' && claim.evidence_state !== 'SUPPORTED').length);

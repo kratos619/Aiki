@@ -311,7 +311,9 @@ describe('s9bPlan', () => {
       judgeReport: judge,
       actionPlan: plan,
     });
-    expect(rendered.split('## Council audit')[0]).not.toMatch(/\bUNVERIFIED\b/i);
+    // v6: only UPPERCASE leaked enums are banned from reader text; plain-English "Unverified
+    // decisive assumption…" (the criticalWarning frame) is deliberate reader language.
+    expect(rendered.split('## Council audit')[0]).not.toMatch(/\bUNVERIFIED\b/);
   });
 
   it('keeps calendar timeboxes when the request supplies a real schedule', async () => {
@@ -430,18 +432,16 @@ describe('s9bPlan', () => {
     expect(ctx.calls.map((call) => call.stage)).toEqual(['S9b-plan']);
   });
 
-  it('rejects only graph ids that exist in this run', async () => {
+  it('keeps a reader brief that cites a known claim id — no repair; the renderer substitutes labels', async () => {
     const knownId = graph.claims[0]!.id;
-    const prompts: string[] = [];
-    const ctx = makeCtx((prompt) => {
-      prompts.push(prompt);
-      return ok(prompt.includes('previous response had invalid anchors')
-        ? goodPlan
-        : { ...goodPlan, reader_brief: { ...goodPlan.reader_brief, bottom_line: `Internal claim ${knownId} decides this.` } });
-    });
+    const ctx = makeCtx(() => ok({
+      ...goodPlan,
+      reader_brief: { ...goodPlan.reader_brief, bottom_line: `Internal claim ${knownId} decides this.` },
+    }));
 
-    await s9bPlan(ctx, decisionContract, seats, graph, judge);
-    expect(ctx.calls).toHaveLength(2);
+    const plan = await s9bPlan(ctx, decisionContract, seats, graph, judge);
+    expect(ctx.calls).toHaveLength(1);
+    expect(plan).toMatchObject({ reader_brief: { bottom_line: `Internal claim ${knownId} decides this.` } });
 
     const ordinary = makeCtx(() => ok({
       ...goodPlan,
@@ -449,6 +449,33 @@ describe('s9bPlan', () => {
     }));
     await s9bPlan(ordinary, decisionContract, seats, graph, judge);
     expect(ordinary.calls).toHaveLength(1);
+  });
+
+  it('repairs once to obtain a missing requested deliverable when budget allows', async () => {
+    const backlog = {
+      must: [{ feature: 'Council run view', user_value: 'See the debate live', rationale: 'Core demo moment', effort: 'S' }],
+      should: [], later: [], wont: [],
+    };
+    const wantsBacklog = { ...decisionContract, requested_outputs: ['DECISION', 'FEATURE_BACKLOG'] as const };
+    const ctx = makeCtx((prompt) => ok(prompt.includes('previous response had invalid anchors')
+      ? { ...goodPlan, feature_backlog: backlog }
+      : goodPlan));
+
+    const plan = await s9bPlan(ctx, wantsBacklog as never, seats, graph, judge);
+    expect(ctx.calls.map((call) => call.stage)).toEqual(['S9b-plan', 'S9b-anchor-repair']);
+    expect(plan).toMatchObject({ feature_backlog: backlog });
+    expect(ctx.flags.has('plan_partial')).toBe(false);
+  });
+
+  it('accepts a partial plan with plan_partial when a deliverable is missing and no budget remains', async () => {
+    const wantsBacklog = { ...decisionContract, requested_outputs: ['DECISION', 'FEATURE_BACKLOG'] as const };
+    const ctx = makeCtx(() => ok(goodPlan), 1);
+
+    const plan = await s9bPlan(ctx, wantsBacklog as never, seats, graph, judge);
+    expect(ctx.calls).toHaveLength(1);
+    expect(ctx.flags.has('plan_partial')).toBe(true);
+    expect(plan).toMatchObject({ reader_brief: goodPlan.reader_brief });
+    expect((plan as { kind?: string }).kind).toBeUndefined();
   });
 
   it('uses the one reserved planner call without requiring repair headroom', async () => {

@@ -4,6 +4,7 @@ import { DISPLAY_NAME, type ProviderId } from '../providers/types.js';
 import type { WorkflowId } from '../orchestration/context.js';
 import { RoleOutput as RoleOutputSchema, type ActionPlanArtifact, type AnnotatedFinding, type DecisionGraph, type DisagreementMap, type IdeaMode, type JudgeReport, type Recommendation, type ReviewMap, type RoleOutput, type RunMeta } from '../schemas/index.js';
 import { deriveAudit, deriveScorecard, mergeOpenQuestions, type AuditRow, type DecisionReportJson, type ScorecardRow } from '../orchestration/stages/s10-render.js';
+import { sanitizeLocalPaths } from '../orchestration/sanitize-paths.js';
 import { buildReaderProjection, claimLookup, readerClaimLabel, readerClaimRefs, renderDecisionDossierMarkdown, stripReaderClaimIds } from '../orchestration/decision-dossier.js';
 import type { SeatOutput } from '../orchestration/stages/s4-analyze.js';
 import { IDEA_RUBRIC } from '../workflows/idea-refinement.js';
@@ -464,7 +465,7 @@ function renderDossierIdeaBody(report: DecisionReportJson): string {
   const decisiveNumbers = snapshot ? `<div class="decision-numbers">
       <span class="section-eyebrow">Decisive numbers</span>
       <div class="table-wrap"><table class="snapshot-table decisive-table"><thead><tr><th>Metric</th><th>Value</th><th>What it means</th></tr></thead><tbody>${snapshot.decisiveNumbers.map((item) => `<tr><td>${escapeHtml(item.label)}</td><td class="number-value">${escapeHtml(item.value)}</td><td>${escapeHtml(item.meaning)}</td></tr>`).join('')}</tbody></table></div>
-      ${snapshot.payback ? `<div class="payback-result"><span>Payback · ${escapeHtml(snapshot.payback.status.replaceAll('_', ' '))}</span><strong>${escapeHtml(snapshot.payback.result)}</strong><p>${escapeHtml(snapshot.payback.basis)}</p></div>` : ''}
+      ${snapshot.payback && snapshot.payback.status !== 'NOT_COMPUTABLE' ? `<div class="payback-result"><span>Payback · ${escapeHtml(snapshot.payback.status.replaceAll('_', ' '))}</span><strong>${escapeHtml(snapshot.payback.result)}</strong><p>${escapeHtml(snapshot.payback.basis)}</p></div>` : ''}
     </div>` : '';
   const optionComparison = snapshot ? `<div class="option-comparison">
       <span class="section-eyebrow">Options at a glance</span>
@@ -623,7 +624,7 @@ function renderReaderBriefIdeaBody(report: DecisionReportJson): string {
   const snapshot = projection.snapshot ? section('', 'Decision numbers', `${dossierTable(
     ['Metric', 'Value', 'What it means'],
     projection.snapshot.decisiveNumbers.map((item) => [item.label, item.value, item.meaning]),
-  )}${projection.snapshot.payback ? `<div class="action-callout"><span>Payback · ${escapeHtml(projection.snapshot.payback.status.replaceAll('_', ' '))}</span><p>${escapeHtml(projection.snapshot.payback.result)} — ${escapeHtml(projection.snapshot.payback.basis)}</p></div>` : ''}<h3>Options at a glance</h3>${dossierTable(
+  )}${projection.snapshot.payback && projection.snapshot.payback.status !== 'NOT_COMPUTABLE' ? `<div class="action-callout"><span>Payback · ${escapeHtml(projection.snapshot.payback.status.replaceAll('_', ' '))}</span><p>${escapeHtml(projection.snapshot.payback.result)} — ${escapeHtml(projection.snapshot.payback.basis)}</p></div>` : ''}<h3>Options at a glance</h3>${dossierTable(
     ['Path', 'Commitment', 'Basis', 'Trade-off'],
     projection.snapshot.options.map((item) => [item.label, item.commitment, item.commitmentKind.replace('_', ' '), item.tradeoff]),
   )}${projection.snapshot.tripwire ? `<div class="action-callout"><span>Go/no-go tripwire</span><p><strong>${escapeHtml(projection.snapshot.tripwire.metric)}: ${escapeHtml(projection.snapshot.tripwire.threshold)}</strong> — ${escapeHtml(projection.snapshot.tripwire.decisionRule)}</p></div>` : ''}`, 80) : '';
@@ -1070,7 +1071,8 @@ export function renderCouncilHtml(view: CouncilView): string {
   // Embed the report as Markdown for the Copy button. Escape "<" so a "</script>" in content can't break out.
   const md = JSON.stringify(councilMarkdown(view)).replace(/</g, '\\u003c');
 
-  return `<!doctype html>
+  // v6: the whole rendered page is path-sanitized — no local usernames in any artifact (T8).
+  return sanitizeLocalPaths(`<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -1353,7 +1355,7 @@ async function copyReport(btn){
 document.getElementById('copy-report').addEventListener('click',function(){ copyReport(this); });
 </script>
 </body>
-</html>`;
+</html>`);
 }
 
 export async function writeCouncilHtml(runId: string, dir: string): Promise<string | null> {

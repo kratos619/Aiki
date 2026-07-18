@@ -1,0 +1,49 @@
+{
+  "_source": "run 20260718-1536-idea-refinement-626e (2026-07-18): REAL S5 false-positive QUORUM kill — both on-task seats excluded at task-only similarity 0.294/0.250 < 0.3",
+  "contract": {
+    "task": "The user wants help choosing between an Electron desktop app and an `aiki serve` local web interface, then defining standout features and a practical development plan.",
+    "task_type": "idea-refinement",
+    "constraints": [
+      "Aiki must orchestrate locally installed Claude Code, Codex, and Gemini/Antigravity CLIs.",
+      "The product should not require API keys.",
+      "The interface must visually represent orchestration and support browser-based research input and final-output review.",
+      "The result must be impressive for the NamasteDev hackathon while remaining genuinely useful.",
+      "One delivery approach must be selected rather than presenting both as equal recommendations.",
+      "Must integrate with the existing Aiki CLI package",
+      "Must provide high-quality UI/UX",
+      "Must showcase orchestration of Claude, Gemini, and Codex CLIs"
+    ],
+    "unknowns": [
+      "Hackathon deadline, judging criteria, submission format, and technical restrictions.",
+      "Available development time, team size, and demo environment.",
+      "Current Aiki architecture and whether it exposes reusable orchestration events or structured stage outputs.",
+      "Primary audience and highest-value workflow beyond the broad research example.",
+      "Security requirements for browser-triggered local CLI processes.",
+      "Supported operating systems and distribution expectations.",
+      "The specific timeline and deadline for the NamasteDev hackathon",
+      "The judging criteria or specific themes of the hackathon"
+    ],
+    "success_criteria": [
+      "Evaluate Electron against `aiki serve` and select one.",
+      "Improve and validate the proposed product concept.",
+      "Define standout features appropriate for the chosen approach.",
+      "Explain the end-to-end user workflow and demo experience.",
+      "Provide a concrete development plan with priorities or milestones.",
+      "Selection of the best architecture",
+      "Definition of standout 'ultra level' features",
+      "A clear development and delivery plan"
+    ]
+  },
+  "seats": [
+    {
+      "provider": "codex",
+      "task_echo": "Choose one delivery architecture for Aiki, strengthen and pressure-test the concept, and define differentiated features plus a practical implementation plan. The recommendation must integrate the existing local CLI orchestration without API keys.",
+      "position_count": 12
+    },
+    {
+      "provider": "agy",
+      "task_echo": "Evaluate Electron vs aiki serve for a local AI orchestration tool in a hackathon context, focusing on delivery, technical feasibility, and onboarding.",
+      "position_count": 6
+    }
+  ]
+}

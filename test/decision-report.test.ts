@@ -249,7 +249,7 @@ describe('R7 decision dossier', () => {
     expect(md).toContain('**Recommendation:** Proceed with the focused version.');
     expect(md).toContain('### Decisive numbers');
     expect(md.indexOf('### Decisive numbers')).toBeLessThan(md.indexOf('**Recommendation:**'));
-    expect(md).toContain('Payback — NOT COMPUTABLE');
+    expect(md).not.toContain('Payback — NOT COMPUTABLE'); // v6: irrelevant payback is omitted
     expect(md).toContain('### Options at a glance');
     expect(md).toContain('TARGET CAP');
     expect(md).toContain('### Go/no-go tripwire');
@@ -299,7 +299,7 @@ describe('R7 decision dossier', () => {
       expect(html.indexOf('Decision')).toBeLessThan(html.indexOf('Action plan'));
       expect(html).toContain('Council recommendation');
       expect(html).toContain('Decisive numbers');
-      expect(html).toContain('Payback · NOT COMPUTABLE');
+      expect(html).not.toContain('Payback · NOT COMPUTABLE'); // v6: irrelevant payback is omitted
       expect(html).toContain('Options at a glance');
       expect(html).toContain('TARGET CAP');
       expect(html).toContain('Go/no-go tripwire');

@@ -59,6 +59,7 @@ program
   .option('--diff <file>', 'code-review: review a patch file instead of computing a git diff')
   .option('--evidence <path>', 'idea-refinement: local source file/directory (stores paths + hashes, not copies)')
   .option('--mode <mode>', 'idea-refinement: quick | council (research is an alias for council)')
+  .option('--allow-blocked-sources', 'idea-refinement: proceed even when a supplied URL cannot be read (default: stop and ask)')
   .option('--cheap', 'code-review: Gemini+Codex review, Claude judges only disputes (~⅓ the Opus; experimental)')
   .option('--yes', 'skip the run-cost confirmation prompt')
   .action(async (workflow: string, input: string | undefined, opts: { budget?: number; base?: string; head?: string; diff?: string; evidence?: string; mode?: string; cheap?: boolean; yes?: boolean }) => {

@@ -86,7 +86,7 @@ export function positionId(provider: ProviderId, localId: string, sourceId: stri
   return `${sourceId}/${localId}`;
 }
 
-function classify(positions: GraphPosition[]): ClaimState {
+export function classifyClaimState(positions: GraphPosition[]): ClaimState {
   const providers = new Set(positions.map((position) => position.provider));
   const stances = new Set(positions.map((position) => position.stance));
   const supporters = positions.filter((position) => position.stance === 'SUPPORT').map((position) => position.provider);
@@ -194,7 +194,7 @@ export function compileDecisionGraph(
           : 'load-bearing claim has no settling evidence';
       evidenceHoles.push({ claim_id: id, reason });
     }
-    const baseState = classify(members);
+    const baseState = classifyClaimState(members);
     return {
       id,
       proposition: members[0]!.proposition,

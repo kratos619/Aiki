@@ -1,5 +1,43 @@
 # Changelog
 
+## Unreleased — v6 council integrity
+
+Root-cause pass driven by exact replay of run `20260717-1219` (`plan/AIKI-v6-council-integrity-plan.md`);
+every fix is pinned by tests on the real payloads that failed live (`test/fixtures/f740-*`).
+
+### Fixed
+- **A parseable plan is never discarded again.** The planner's complete feature backlog and
+  implementation plan were replaced by "deliverables unavailable" over a 13-character headline
+  overflow with no repair budget. `jsonCall` now applies deterministic salvage before failing when
+  repair is unavailable; lossy coercion clips over-max strings at a word boundary; empty optional
+  strings are dropped losslessly (they carry no information). Partial planner answers are kept and
+  flagged `plan_partial` instead of vanishing.
+- **The chair's judgment is no longer overruled by code.** The `PARTIAL/UNVERIFIABLE ⇒ must be
+  UNRESOLVED` rule (which flattened 5 nuanced rulings and forced a 125s Opus repair) is deleted;
+  ruling HOLDS against positively CONTRADICTED evidence remains fatal.
+- **S4 schema-ceremony repairs are free now.** Empty rationale strings validate via lossless
+  coercion (was a 267s paid repair); genuinely lossy defects salvage without a call when the budget
+  is tight (repairs stay gated behind a 3-call reserved tail: chair + planner + one tail repair).
+- Chair prose is no longer regex-mangled ("confirmed-unverified" stays the chair's own words);
+  enum rewrites apply to UPPERCASE leaks only. A `NOT_COMPUTABLE` payback block is omitted instead
+  of announced. Rendered Markdown/HTML never contain local filesystem usernames.
+
+### Added
+- **Semantic claim join at zero extra calls:** the S8 verifier may emit `claim_groups` over an
+  anonymous all-claims index; validated groups (unknown ids and single-provider groups dropped)
+  overlay CONSENSUS/DISAGREEMENT states through the existing state machine. Cross-provider
+  paraphrases — the reason every report said "0 consensus · 0 disputes" — now join.
+- **Evidence origin honesty:** every card is classified EXTERNAL / USER_MATERIAL / MODEL_KNOWLEDGE;
+  confidence's evidence-quality term counts external only; the user's own material renders as
+  "consistent with your materials (not independently checked)", never VERIFIED; the Sources section
+  states how many independent external sources the run actually had.
+- **Blocked-source permission prompt:** when a supplied URL cannot be read, an interactive run now
+  asks right in the terminal before any paid call — `Proceed without it? [y/N]` — the same
+  allow/deny pattern provider CLIs use for internet or file access. Deny prints how to proceed
+  (paste the page text into the prompt, or `--allow-blocked-sources`); headless runs fail fast
+  with the same instructions. (The previous behavior burned a full council budget around a 403'd
+  page.)
+
 ## 0.3.2 — 2026-07-17
 
 ### Added

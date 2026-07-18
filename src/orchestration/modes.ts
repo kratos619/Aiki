@@ -14,7 +14,9 @@ const FULL_COUNCIL_PLAN: IdeaModePlan = {
   baseCalls: 6,
   optionalCalls: 4,
   maxCalls: 10,
-  reservedCalls: 2,
+  // v6: chair + planner + ONE tail repair. Run f740 proved 2 was not enough — upstream repairs
+  // drained the cushion and the planner's complete deliverables died unrepairables at 12/12.
+  reservedCalls: 3,
   defaultBudget: 12,
   deadlineMs: 45 * MINUTE,
 };

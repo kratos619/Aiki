@@ -11,7 +11,7 @@ import { recordSession, updateSessionStatus } from '../storage/sessions.js';
 import { runIdeaRefinement } from '../workflows/idea-refinement.js';
 import { runCodeReview } from '../workflows/code-review.js';
 import type { EvidencePack } from './evidence-pack.js';
-import type { IdeaMode } from '../schemas/index.js';
+import type { IdeaMode, UrlSourceSet } from '../schemas/index.js';
 
 export type WorkflowFn = (ctx: RunCtx, input: string) => Promise<void>;
 
@@ -71,6 +71,8 @@ export interface RunOptions {
   resumedFrom?: string; // resume: the run id this one continues (recorded in the session registry).
   providerModels?: Partial<Record<ProviderId, string>>; // V8: per-provider model → CLI `--model <id>`.
   evidencePack?: EvidencePack; // idea-refinement: user-scoped source paths + sha256 manifest
+  allowBlockedSources?: boolean; // v6 T10: proceed past an unreadable supplied URL (default: stop and ask)
+  urlSources?: UrlSourceSet; // v6 T10b: snapshot already taken (and user-approved) by the CLI — don't refetch
 }
 
 /**
@@ -108,6 +110,8 @@ export async function run(workflow: WorkflowId, input: string, opts: RunOptions 
     events: opts.events,
     replay: opts.replay,
     evidencePack: opts.evidencePack,
+    allowBlockedSources: opts.allowBlockedSources,
+    urlSources: opts.urlSources,
   });
 
   // Register the session (V6.3) so `aiki sessions`/`resume` can find it from anywhere. run() is a

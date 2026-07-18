@@ -4,7 +4,7 @@ import { estimateRun } from '../src/cli/run.js';
 
 describe('estimateRun', () => {
   it('idea-refinement gives council and its research alias the same 8-10 call plan', () => {
-    const fullCouncil = { calls: 10, minCalls: 8, opus: 2, reserved: 2 };
+    const fullCouncil = { calls: 10, minCalls: 7, opus: 2, reserved: 3 }; // v6: 3-call tail reserve
     expect(estimateRun('idea-refinement')).toEqual(fullCouncil);
     expect(estimateRun('idea-refinement', { mode: 'quick' })).toEqual({ calls: 3, minCalls: 3, opus: 1, reserved: 0 });
     expect(estimateRun('idea-refinement', { mode: 'council' })).toEqual(fullCouncil);

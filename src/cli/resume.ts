@@ -11,7 +11,7 @@ import { resolveRunsRoot } from '../storage/paths.js';
 import { buildReplayCache } from '../storage/replay.js';
 import { findSession } from '../storage/sessions.js';
 import { readJsonArtifact, resolveRunId, runDir } from '../storage/runs-read.js';
-import type { RunMeta } from '../schemas/index.js';
+import { UrlSourceSet, type RunMeta, type UrlSourceSet as UrlSourceSetT } from '../schemas/index.js';
 import { EvidencePack, type EvidencePack as EvidencePackT } from '../orchestration/evidence-pack.js';
 
 export async function resumeCommand(runArg: string | undefined, opts: { root?: string } = {}): Promise<number> {
@@ -77,6 +77,23 @@ export async function resumeCommand(runArg: string | undefined, opts: { root?: s
     evidencePack = parsed.data;
   }
 
+  // v6 T10: the URL snapshot + the user's proceed-past-blocked decision are run inputs, like
+  // inputs/idea.md and evidence-pack.json. Reusing the ORIGINAL snapshot keeps every prompt that
+  // embeds it byte-identical (replay cache hits, no refetch); and a non-empty replay cache proves
+  // the old run cleared the S0 gate, so a blocked source in the snapshot means consent was given
+  // (interactive `y` or --allow-blocked-sources) — restore that decision instead of re-asking.
+  // (Real failure: resume c46e of 626e died SOURCE_UNREADABLE re-gating a consented run.)
+  let urlSources: UrlSourceSetT | undefined;
+  const savedUrlSources = await readJsonArtifact(oldDir, '00a-url-sources.json');
+  if (savedUrlSources) {
+    const parsedSources = UrlSourceSet.safeParse(savedUrlSources);
+    if (!parsedSources.success) {
+      process.stderr.write(`cannot validate 00a-url-sources.json for ${oldId} — nothing to resume.\n`);
+      return 1;
+    }
+    urlSources = parsedSources.data;
+  }
+
   const replay = await buildReplayCache(oldDir);
   if (replay.size === 0) {
     process.stderr.write(`no completed calls found for ${oldId} — start a fresh run instead.\n`);
@@ -106,6 +123,8 @@ export async function resumeCommand(runArg: string | undefined, opts: { root?: s
     resumedFrom: oldId,
     providerModels: cfg.models,
     evidencePack,
+    urlSources,
+    allowBlockedSources: urlSources?.sources.some((s) => s.status !== 'FETCHED') ?? false,
   });
 
   if (outcome.ok) {

@@ -9,6 +9,7 @@ import { s5Drift } from '../orchestration/stages/s5-drift.js';
 import { s6Positions } from '../orchestration/stages/s6-positions.js';
 import { s7DecisionGraph, type RubricItem } from '../orchestration/stages/s7-decision-graph.js';
 import { s8Verify } from '../orchestration/stages/s8-verify.js';
+import { overlayClaimGroups } from '../orchestration/claim-groups.js';
 import { s8bRebuttal } from '../orchestration/stages/s8b-rebuttal.js';
 import { s9Judge } from '../orchestration/stages/s9-judge.js';
 import { s9bPlan } from '../orchestration/stages/s9b-plan.js';
@@ -18,7 +19,7 @@ import { buildLanePrompts } from '../orchestration/idea-lanes.js';
 import type { DecisionContract, DomainDimension, IdeaMode } from '../schemas/index.js';
 import { preflight, renderDecisionInput } from '../orchestration/preflight.js';
 import { buildQuickPrompt, quickActionPlan, quickJudgeReport, s4QuickAnalyze } from '../orchestration/quick-analysis.js';
-import { snapshotUrlSources } from '../orchestration/url-sources.js';
+import { blockedSourceStop, snapshotUrlSources } from '../orchestration/url-sources.js';
 
 /** Idea-vetting core rubric: 13 mandatory coverage items. S0 adds 3-5 domain dimensions per run.
  *  Inlined here (like the S4 template) while the skill/`rubric.json` loader (§11)
@@ -154,21 +155,16 @@ export function recordIdeaOutcomeFlags(ctx: RunCtx, contract: DecisionContract, 
  *  `runStage` so the TUI timeline (T8) gets start/end events; headless, that's a no-op. */
 export async function runIdeaRefinement(ctx: RunCtx, input: string): Promise<void> {
   if (ctx.evidencePack) await ctx.writer.writeInput('evidence-pack.json', JSON.stringify(ctx.evidencePack, null, 2));
-  const urlSources = await snapshotUrlSources(input);
+  // v6 T10b: the CLI may have already snapshotted (and interactively cleared) the sources.
+  const urlSources = ctx.urlSources ?? await snapshotUrlSources(input);
   await ctx.writer.writeJson('url-sources', urlSources);
   const unreadableSources = urlSources.sources.filter((source) => source.status !== 'FETCHED');
   const needsSourceFallback = ctx.mode !== 'quick' && unreadableSources.length > 0;
-  const hasReadableResearch = Boolean(ctx.evidencePack?.files.length)
-    || urlSources.sources.some((source) => source.status === 'FETCHED');
-  const canSearch = ctx.roles.s4.includes('codex');
-  if (needsSourceFallback && !canSearch && !hasReadableResearch) {
-    const details = unreadableSources.map((source) => `${source.url} (${source.status}: ${source.error})`).join('; ');
-    throw new StageError(
-      'S0',
-      'SOURCE_UNREADABLE',
-      `source investigation stopped before model calls because no source was readable and Codex search is unavailable${details ? `: ${details}` : ''}. Paste the relevant text, provide a public export, or enable Codex, then rerun.`,
-    );
-  }
+  // v6 T10: ANY unreadable supplied source stops the run before paid calls unless the user
+  // explicitly proceeds (--allow-blocked-sources). Codex search no longer silences the ask —
+  // it runs in addition, once the user has chosen to proceed.
+  const stop = blockedSourceStop(urlSources, ctx.mode, ctx.allowBlockedSources ?? false);
+  if (stop) throw new StageError('S0', 'SOURCE_UNREADABLE', `source investigation stopped before model calls: ${stop}`);
   const { contract, brief } = await runStage(ctx, 'S0', () =>
     preflight(ctx, input, IDEA_RUBRIC.map((item) => item.label), urlSources));
   const grilledInput = renderDecisionInput(input, brief, urlSources);
@@ -222,8 +218,11 @@ export async function runIdeaRefinement(ctx: RunCtx, input: string): Promise<voi
   const positions = await runStage(ctx, 'S6', () => s6Positions(ctx, kept));
   const graph = await runStage(ctx, 'S7', () => s7DecisionGraph(ctx, positions, rubric, contract.task));
   const verifications = await runStage(ctx, 'S8', () => s8Verify(ctx, graph));
-  const rebuttals = await runStage(ctx, 'S8b', () => s8bRebuttal(ctx, graph, verifications, ctx.mode));
-  const judgeReport = await runStage(ctx, 'S9', () => s9Judge(ctx, contract, graph, verifications, rubric, rebuttals));
-  const actionPlan = await runStage(ctx, 'S9b', () => s9bPlan(ctx, contract, kept, graph, judgeReport, input));
-  await runStage(ctx, 'S10', () => s10Render(ctx, { contract, seats: kept, graph, verifications, rebuttals, judgeReport, actionPlan, rubric, original: input }));
+  // v6 semantic join: S8's validated claim_groups upgrade cross-provider paraphrase states
+  // (UNIQUE → CONSENSUS/DISAGREEMENT/…) on a derived copy; the stored 07 artifact stays original.
+  const joined = overlayClaimGroups(graph, verifications.claim_groups);
+  const rebuttals = await runStage(ctx, 'S8b', () => s8bRebuttal(ctx, joined, verifications, ctx.mode));
+  const judgeReport = await runStage(ctx, 'S9', () => s9Judge(ctx, contract, joined, verifications, rubric, rebuttals));
+  const actionPlan = await runStage(ctx, 'S9b', () => s9bPlan(ctx, contract, kept, joined, judgeReport, input));
+  await runStage(ctx, 'S10', () => s10Render(ctx, { contract, seats: kept, graph: joined, verifications, rebuttals, judgeReport, actionPlan, rubric, original: input }));
 }

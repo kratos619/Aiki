@@ -16,3 +16,6 @@ graphify-out/*
 bench/*
 !bench/sets/
 !bench/sets/**
+# Big live-run dumps under test/fixtures stay local; small sanitized regression fixtures
+# (s4-repair-*, s9-*, c289/, f740-*) are committed — the suite depends on them (§14 replays).
+test/fixtures/63e7/

@@ -3,10 +3,10 @@
 // deterministic; if the planner fails or produces unanchored actions, we write flagged unavailability.
 
 import type { ActionPlan as ActionPlanT, ActionPlanArtifact, DeliverableProposal, IntentContract, JudgeReport, PlannerUnavailable, RequestedOutput } from '../../schemas/index.js';
-import { ActionPlan, FeatureBacklog, ImplementationPlan, ReaderBrief, readerBriefIssues } from '../../schemas/index.js';
+import { ActionPlan, FeatureBacklog, ImplementationPlan, ReaderBrief } from '../../schemas/index.js';
 import { z } from 'zod';
 import { BudgetExceeded, isFatal, type RunCtx } from '../context.js';
-import { jsonCall } from '../jsonStage.js';
+import { coerceToSchema, jsonCall } from '../jsonStage.js';
 import { loadSkill } from '../skills.js';
 import type { SeatOutput } from './s4-analyze.js';
 import { mergeOpenQuestions } from './s10-render.js';
@@ -282,20 +282,27 @@ function normalizeSourceIds(ids: string[], allowed: string[]): string[] {
   return [...new Set(normalized)];
 }
 
+/** v6: requested deliverables the accepted plan still lacks — the caller decides whether that is
+ *  worth a repair call or an honest `plan_partial` flag. Never a reason to discard the plan. */
+export function missingDeliverables(plan: ActionPlanT, requestedOutputs: RequestedOutput[]): RequestedOutput[] {
+  return requestedOutputs.filter((output) =>
+    (output === 'FEATURE_BACKLOG' && !plan.feature_backlog)
+    || (output === 'IMPLEMENTATION_PLAN' && !plan.implementation_plan));
+}
+
 export function anchoredActionPlan(
   plan: ActionPlanT,
   anchors: PlanAnchors,
   requestedOutputs: RequestedOutput[] = [],
   requireReaderBrief = false,
 ): ActionPlanT | null {
-  if (requestedOutputs.includes('FEATURE_BACKLOG') && !plan.feature_backlog) return null;
-  if (requestedOutputs.includes('IMPLEMENTATION_PLAN') && !plan.implementation_plan) return null;
   if (requireReaderBrief && !plan.reader_brief) return null;
+  // v6: a reader brief citing known claim ids is KEPT — sanitizeReaderText already substitutes
+  // labels at render time; rejecting here cost run f740 a paid repair for zero reader benefit.
   const readerBrief = plan.reader_brief ? {
     ...plan.reader_brief,
     source_ids: normalizeSourceIds(plan.reader_brief.source_ids, anchors.sourceIds),
   } : undefined;
-  if (readerBrief && readerBriefIssues(readerBrief, anchors.knownReaderIds ?? anchors.claimIds).length) return null;
   const actions = plan.actions
     .filter((a) => validAnchor(a.validates, anchors))
     .sort((a, b) => a.order - b.order)
@@ -337,7 +344,7 @@ function hasExplicitSchedule(context: ReturnType<typeof buildAnswerContext>): bo
 }
 
 export function normalizePlannerOutput(plan: PlannerOutput, calendarAllowed = true): ActionPlanT {
-  return ActionPlan.parse({
+  const built = {
     actions: plan.actions.map((action, i) => ({
       ...action,
       order: i + 1,
@@ -352,7 +359,14 @@ export function normalizePlannerOutput(plan: PlannerOutput, calendarAllowed = tr
       })),
     } } : {}),
     ...(plan.reader_brief ? { reader_brief: plan.reader_brief } : {}),
-  });
+  };
+  const parsed = ActionPlan.safeParse(built);
+  if (parsed.success) return parsed.data;
+  // v6 deterministic floor for offline/replay callers (jsonCall applies the same floor live):
+  // clip over-cap strings, truncate over-cap arrays — never discard a complete plan over cosmetics.
+  const eased = ActionPlan.safeParse(coerceToSchema(ActionPlan, built, true));
+  if (eased.success) return eased.data;
+  return ActionPlan.parse(built);
 }
 
 function unavailablePlan(
@@ -407,18 +421,31 @@ export async function s9bPlan(
   const prompt = buildActionPlannerPrompt(answerContext, loadSkill('idea-refinement', 'planner'));
   const calendarAllowed = hasExplicitSchedule(answerContext);
 
+  // v6: a plan the model actually produced is never replaced by PlannerUnavailable. Complete →
+  // accept; missing a requested deliverable → one repair when budget allows, else accept partial
+  // with an honest `plan_partial` flag. PlannerUnavailable is reserved for nothing-parseable.
+  const accept = async (plan: ActionPlanT): Promise<ActionPlanT> => {
+    if (missingDeliverables(plan, requestedOutputs).length) ctx.addFlag('plan_partial');
+    await ctx.writer.writeJson('action-plan', plan);
+    return plan;
+  };
+
+  let anchored: ActionPlanT | null = null;
   try {
     const first = normalizePlannerOutput(await jsonCall(ctx, ctx.handle(ctx.roles.judge), 'S9b-plan', prompt, PlannerOutput, {
       repair: ctx.budget.limit - ctx.budget.used >= 2,
     }), calendarAllowed);
-    const anchored = anchoredActionPlan(first, anchors, requestedOutputs, requireReaderBrief);
-    if (anchored) {
+    anchored = anchoredActionPlan(first, anchors, requestedOutputs, requireReaderBrief);
+    if (anchored && missingDeliverables(anchored, requestedOutputs).length === 0) {
       await ctx.writer.writeJson('action-plan', anchored);
       return anchored;
     }
-    if (ctx.budget.limit - ctx.budget.used < 1) return fallback('plan_fallback');
+    if (ctx.budget.limit - ctx.budget.used < 1) {
+      if (anchored) return accept(anchored);
+      return fallback('plan_fallback');
+    }
     const repair =
-      `${prompt}\n\n---\nYour previous response had invalid anchors, omitted a requested deliverable or reader_brief, used internal audit language, or cited an unknown source id.\n` +
+      `${prompt}\n\n---\nYour previous response had invalid anchors, omitted a requested deliverable or reader_brief, or cited an unknown source id.\n` +
       `Valid graph claim ids: ${anchors.claimIds.join(', ') || '(none)'}\n` +
       `Valid blind spots: ${anchors.blindSpots.join(' | ') || '(none)'}\n` +
       `Valid open questions: ${anchors.openQuestions.join(' | ') || '(none)'}\n` +
@@ -427,13 +454,16 @@ export async function s9bPlan(
       `Output ONLY corrected JSON with every action anchored, reader_brief present, and every requested deliverable present.`;
     const repaired = normalizePlannerOutput(await jsonCall(ctx, ctx.handle(ctx.roles.judge), 'S9b-anchor-repair', repair, PlannerOutput, { repair: false }), calendarAllowed);
     const repairedAnchored = anchoredActionPlan(repaired, anchors, requestedOutputs, requireReaderBrief);
-    if (repairedAnchored) {
+    if (repairedAnchored && missingDeliverables(repairedAnchored, requestedOutputs).length === 0) {
       await ctx.writer.writeJson('action-plan', repairedAnchored);
       return repairedAnchored;
     }
+    const best = repairedAnchored ?? anchored;
+    if (best) return accept(best);
     return fallback('plan_fallback');
   } catch (e) {
     if (isFatal(e) && !(e instanceof BudgetExceeded)) throw e;
+    if (anchored) return accept(anchored);
     return fallback('plan_fallback');
   }
 }

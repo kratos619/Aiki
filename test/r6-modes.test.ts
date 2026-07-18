@@ -76,7 +76,7 @@ afterEach(async () => {
 describe('R6 mode call plans', () => {
   it('keeps quick cheap and makes council/research exact aliases', () => {
     const fullCouncil = {
-      baseCalls: 6, optionalCalls: 4, maxCalls: 10, reservedCalls: 2,
+      baseCalls: 6, optionalCalls: 4, maxCalls: 10, reservedCalls: 3, // v6: chair + planner + one tail repair
       defaultBudget: 12, deadlineMs: 45 * 60 * 1000,
     };
     expect(IDEA_MODE_PLANS.quick).toMatchObject({ baseCalls: 3, optionalCalls: 0, maxCalls: 3, reservedCalls: 0 });
@@ -174,6 +174,29 @@ describe('R6 mode call plans', () => {
 
     expect(ctx.optionalCallsRemaining()).toBe(0);
     expect(ctx.receipt()).toEqual({ discovery: 4, verification: 0, repair: 0, planning: 0 });
+  });
+
+  it('v6: optional calls leave a 3-call tail — chair, planner, and one tail repair', async () => {
+    const writer = new RunWriter('20260717-1400-idea-refinement-t4aa', root);
+    await writer.init();
+    const ctx = new RunCtx({
+      runId: writer.runId,
+      workflow: 'idea-refinement',
+      mode: 'council',
+      handles: ['agy', 'codex', 'claude'].map((id) => handle(id as ProviderId)),
+      roles: { analyst: 'agy', judge: 'claude', verifier: 'codex', s4: ['agy', 'codex'] },
+      writer,
+      cwd: writer.dir,
+      budget: 12,
+    });
+
+    for (let i = 0; i < 8; i++) {
+      await ctx.call(ctx.handle('agy'), { prompt: `base ${i}`, expectJson: true }, `S4-base-${i}`);
+    }
+    expect(ctx.optionalCallsRemaining()).toBe(1); // 12 - 8 - 3 reserved
+
+    await ctx.call(ctx.handle('agy'), { prompt: 'base 8', expectJson: true }, 'S4-base-8');
+    expect(ctx.optionalCallsRemaining()).toBe(0); // 12 - 9 - 3 reserved
   });
 });
 

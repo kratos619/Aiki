@@ -1,0 +1,104 @@
+{
+  "task": "The user wants help choosing between an Electron app and an `aiki serve` web interface, refining the concept, selecting standout features, and planning its development for a useful and impressive hackathon submission. AND ALSO: The user wants to decide whether to build a local web server ('aiki serve') or an Electron app to provide a stunning graphical interface for their Aiki CLI multi-LLM orchestration tool for an upcoming hackathon.",
+  "task_type": "idea-refinement",
+  "constraints": [
+    "Aiki is currently a CLI tool.",
+    "The application must orchestrate installed Claude Code, Codex, and Gemini/Antigravity CLIs.",
+    "The product should remain local-first and require no API keys.",
+    "Users should be able to conduct research from a visual interface and receive a synthesized final output.",
+    "The result should impress hackathon judges while remaining genuinely useful.",
+    "Must leverage the existing aiki-cli tool",
+    "Must have premium UI/UX to impress judges",
+    "Must be genuinely useful for developers"
+  ],
+  "unknowns": [
+    "Hackathon judging criteria, rules, required technologies, submission format, and deadline.",
+    "Available implementation time, team size, and technical strengths.",
+    "Evidence from existing users showing which Aiki workflow provides the strongest value.",
+    "Compatibility and security requirements for invoking local provider CLIs from a visual application.",
+    "Expected demo environment and whether judges can install all required provider CLIs.",
+    "Specific hackathon tracks, themes, or judging criteria (namastedev.com/hackathon access was blocked)"
+  ],
+  "success_criteria": [
+    "Select either Electron or `aiki serve` with a defensible rationale.",
+    "Improve and validate the proposed product concept.",
+    "Define standout features that demonstrate Aiki's unique value.",
+    "Explain the end-to-end user and orchestration workflow.",
+    "Provide a practical development plan suitable for the hackathon.",
+    "Selection of the best architecture (serve vs electron)",
+    "Identification of ultra-level standout features",
+    "A clear, actionable development plan"
+  ],
+  "domain_dimensions": [
+    {
+      "id": "D1",
+      "label": "Local CLI execution boundary",
+      "rationale": "Electron and a browser-based local server expose installed model processes differently, affecting security, permissions, streaming, cancellation, and reliability."
+    },
+    {
+      "id": "D2",
+      "label": "Hackathon Wow Factor",
+      "rationale": "Visualizing complex multi-agent orchestration dynamically (e.g., showing Claude and Gemini debating in real-time) can heavily influence hackathon judging."
+    },
+    {
+      "id": "D3",
+      "label": "Council observability",
+      "rationale": "The interface must make parallel model reasoning, disagreement, judging, and synthesis understandable or the product may look like an ordinary chat wrapper."
+    },
+    {
+      "id": "D4",
+      "label": "Distribution Friction",
+      "rationale": "Adding 'aiki serve' to an existing npm CLI is frictionless for current users, whereas an Electron app requires a separate, heavy download."
+    },
+    {
+      "id": "D5",
+      "label": "Demo-environment portability",
+      "rationale": "The verdict changes if judges cannot install or authenticate every provider CLI needed for a live demonstration."
+    }
+  ],
+  "alternatives": [
+    "Electron desktop application",
+    "Local web application launched by `aiki serve`",
+    "Local Web Server UI ('aiki serve')",
+    "Electron App"
+  ],
+  "success_bar": "A working, polished demonstration that makes multi-model orchestration visually understandable, delivers a clearly better synthesized result, is easy to run, and has credible value beyond the hackathon.",
+  "evidence_supplied": [
+    "The published `aiki-cli` package is at version 0.3.2.",
+    "Aiki is described as a local-first AI model council for code review and idea stress-testing.",
+    "The package currently uses Claude Code, Codex, and Gemini/Antigravity CLIs without API keys.",
+    "The hackathon page was supplied but could not be fetched because automated access returned HTTP 403.",
+    "Aiki is an npm package (aiki-cli)",
+    "It orchestrates installed LLM CLIs (Claude Code, Gemini/Antigravity, Codex) locally without API keys"
+  ],
+  "missing_evidence": [
+    "Hackathon judging criteria, rules, required technologies, submission format, and deadline.",
+    "Available implementation time, team size, and technical strengths.",
+    "Evidence from existing users showing which Aiki workflow provides the strongest value.",
+    "Compatibility and security requirements for invoking local provider CLIs from a visual application.",
+    "Expected demo environment and whether judges can install all required provider CLIs.",
+    "Specific hackathon tracks, themes, or judging criteria (namastedev.com/hackathon access was blocked)"
+  ],
+  "core_rubric": [
+    "target user / audience",
+    "existing alternatives / competition",
+    "differentiation / unique value",
+    "feasibility / technical viability",
+    "cost / effort / resources",
+    "policy / legal / compliance risk",
+    "kill criteria / failure conditions",
+    "business model / monetization",
+    "distribution / go-to-market",
+    "timing / market readiness",
+    "scalability / growth",
+    "key risks / assumptions to validate",
+    "team / execution capability"
+  ],
+  "user_confirmed": true,
+  "confirmation": "user-confirmed",
+  "requested_outputs": [
+    "DECISION",
+    "FEATURE_BACKLOG",
+    "IMPLEMENTATION_PLAN"
+  ]
+}
