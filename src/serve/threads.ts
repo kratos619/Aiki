@@ -28,11 +28,11 @@ export const ThreadEntry = z
   .strict();
 export type ThreadEntry = z.infer<typeof ThreadEntry>;
 
-/** Per-thread turn log (append-only). HD3 fills the run/gate/followup variants; HD2 only reads. */
+/** Per-thread turn log (append-only). */
 export const ThreadTurn = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('user_message'), text: z.string(), attachments: z.array(z.string()), mode: z.string() }).strict(),
   z.object({ kind: z.literal('run_ref'), run_id: z.string(), mode: z.string() }).strict(),
-  z.object({ kind: z.literal('followup'), question: z.string(), provider: z.string(), answer: z.string(), call_ms: z.number() }).strict(),
+  z.object({ kind: z.literal('followup'), question: z.string(), provider: z.enum(['claude', 'codex', 'agy']), answer: z.string(), call_ms: z.number().nonnegative() }).strict(),
   z.object({ kind: z.literal('gate_receipt'), gate_kind: z.string(), summary: z.string(), decision: z.string() }).strict(),
   z.object({ kind: z.literal('error'), message: z.string() }).strict(),
 ]);
@@ -144,6 +144,7 @@ export async function legacyThreadDetail(id: string): Promise<ThreadDetail | nul
     id: s.id,
     title,
     legacy: true,
+    resumeRunId: null,
     turns: report
       ? [{ kind: 'report_md', markdown: sanitizeLocalPaths(report) }]
       : [{ kind: 'note', text: 'This run left no final report (it did not complete).' }],

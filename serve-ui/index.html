@@ -70,11 +70,11 @@
               </select>
             </label>
             <span id="estimate" class="composer__estimate">8–10 calls · council of installed models</span>
-            <button class="btn btn--primary composer__send" type="submit">Convene</button>
+            <button id="composer-send" class="btn btn--primary composer__send" type="submit">Convene</button>
           </div>
         </form>
         <div id="live-session" class="live-session" hidden>
-          <span><span class="lamp" data-tone="amber"></span> Council in session · <strong id="live-stage">awaiting approval</strong></span>
+          <span><span class="lamp" data-tone="amber"></span> <span id="session-label">Council in session</span> · <strong id="live-stage">awaiting approval</strong></span>
           <button id="cancel-run" class="btn btn--danger" type="button">Cancel</button>
         </div>
       </div>

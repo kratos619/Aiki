@@ -24,6 +24,7 @@ const ConfigRoles = z
     judge: ProviderIdSchema.optional(),
     verifier: ProviderIdSchema.optional(),
     s4: z.array(ProviderIdSchema).min(1).optional(),
+    responder: ProviderIdSchema.optional(),
   })
   .strict();
 
