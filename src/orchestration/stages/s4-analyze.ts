@@ -28,7 +28,13 @@ export interface SeatOutput {
 /** Run one analyst seat → validated `RoleOutput`, persisted to 04-role-outputs/<label>.json.
  *  `label` doubles as the artifact filename, so a resample uses a distinct label. */
 async function runSeat(ctx: RunCtx, seat: ProviderId, label: string, lane: IdeaLane, prompt: string): Promise<SeatOutput> {
-  const model = await jsonCall(ctx, ctx.handle(seat), `S4-${label}`, prompt, IdeaRoleOutputModel, { salvage: salvageIdeaRoleOutputModel });
+  // v6 tail guard: an S4 repair may spend only when the worst case (both seats repairing) still
+  // leaves the reserved tail — 2 seat calls + 2 repairs + 3 (chair, planner, one tail repair).
+  // When disallowed, jsonCall's salvage floor keeps the seat alive (proven on the f740 payloads).
+  const model = await jsonCall(ctx, ctx.handle(seat), `S4-${label}`, prompt, IdeaRoleOutputModel, {
+    salvage: salvageIdeaRoleOutputModel,
+    repair: ctx.budget.limit - ctx.budget.used >= 7,
+  });
   const output: IdeaRoleOutput = { workflow: 'idea-refinement', ...model };
   await ctx.writer.writeRoleOutput(label, output);
   return { provider: seat, sample: label, lane, output };

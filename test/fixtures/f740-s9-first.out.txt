@@ -1,0 +1,116 @@
+{
+  "adjudications": [
+    {
+      "claim_id": "G3",
+      "ruling": "UNRESOLVED",
+      "reasoning": "The verification is UNVERIFIABLE: E1/E3/E5 establish an npm product, a tight solo schedule, and host-mediated CLI spawning, but supply no comparative effort estimate proving `aiki serve` beats Electron. The conclusion is nonetheless carried by settled claims (G18, G14), so the selection direction stands even though this specific comparison is unproven.",
+      "evidence_ids": ["E1", "E3", "E5"],
+      "effect_on_decision": "The 'serve over Electron' choice rests on settled G14/G18, not on this claim; treat G3's effort delta as asserted, not measured.",
+      "what_would_change_it": "A comparative prototype or effort estimate for `aiki serve` vs a signed, packaged Electron build within the schedule."
+    },
+    {
+      "claim_id": "G4",
+      "ruling": "HOLDS",
+      "reasoning": "E1/E6 support a council-oriented synthesized experience, and settled G17 independently confirms the defensible differentiation is inspectable multi-model decision provenance rather than a chat wrapper. What is not yet established is that the specific inspectable-trace features (claims, disagreement, rulings, provenance) are actually built.",
+      "evidence_ids": ["E1", "E6"],
+      "effect_on_decision": "Anchors the UI direction: standout views must surface disagreement→ruling→synthesis provenance, which is the product's distinct value."
+    },
+    {
+      "claim_id": "G6",
+      "ruling": "HOLDS",
+      "reasoning": "Ruling on the narrowed proposition accepted in rebuttal: a trusted local host must mediate execution because browser pages cannot spawn arbitrary CLIs (E1, E5 via settled G18). The stronger claim that Node *exclusively* must own streaming, cancellation, and permission enforcement is not proven — but for this stack Node is the existing host, so the narrowed form governs.",
+      "evidence_ids": ["E1", "E2"],
+      "effect_on_decision": "Fixes the security boundary: the Node host owns spawning/streaming/cancellation/permission; browser is presentation only, no arbitrary shell endpoint."
+    },
+    {
+      "claim_id": "G7",
+      "ruling": "HOLDS",
+      "reasoning": "E1/E3 support reuse and the explicit solo sub-week constraint, and settled G20 confirms premium frontend delivery is unproven and demands a narrow vertical slice. The precise 'three-or-four views' count is a planning heuristic, not a verified threshold; the directional scope discipline (one workflow, no Electron/accounts/collab/chat) holds.",
+      "evidence_ids": ["E1", "E3"],
+      "effect_on_decision": "Bounds scope: build one end-to-end workflow plus a small set of inspectable views and explicitly exclude the named heavy features."
+    },
+    {
+      "claim_id": "G8",
+      "ruling": "HOLDS",
+      "reasoning": "E1/E5 and settled G14 support npm as the lowest-friction path for existing users versus a separate desktop app. However this is necessary, not sufficient: settled G19 records a public-hosted-URL submission requirement that `aiki serve` alone does not satisfy.",
+      "evidence_ids": ["E1", "E5"],
+      "effect_on_decision": "Keep npm as the primary distribution channel, but it must be paired with a shareable public replay artifact to meet the submission constraint."
+    },
+    {
+      "claim_id": "G9",
+      "ruling": "HOLDS",
+      "reasoning": "Verification is VERIFIED: E4 records the hackathon page was blocked and E3 shows the rules and demo environment were never independently inspected. This is the load-bearing open risk of the whole decision.",
+      "evidence_ids": ["E3", "E4"],
+      "effect_on_decision": "Forces a gating condition: confirm submission technology, the public-URL rule, and the demo environment before committing the architecture."
+    },
+    {
+      "claim_id": "G12",
+      "ruling": "HOLDS",
+      "reasoning": "E1/E2/E3 support existing orchestration plus schedule pressure, and settled G20 confirms frontend/live-boundary delivery is unproven — justifying a kill gate with a static fallback. The exact 48-hour figure is a planning knob, not a verified threshold, but a time-boxed go/no-go with a polished static replay fallback is sound risk management.",
+      "evidence_ids": ["E1", "E3", "E2"],
+      "effect_on_decision": "Adopt an early time-boxed check: if the engine cannot stream, safely cancel, and deterministically replay in-browser, ship the static Flight Deck instead."
+    },
+    {
+      "claim_id": "G13",
+      "ruling": "UNRESOLVED",
+      "reasoning": "Verification is UNVERIFIABLE: E7 only establishes that Aiki is an npm package and provides no measurement comparing a local server to Electron packaging, signing, and distribution. The substantive conclusion is independently carried by settled G18 (serve is viable and lower-risk) and G14, so the decision does not depend on resolving this claim's missing measurements.",
+      "evidence_ids": ["E7"],
+      "effect_on_decision": "No effect on the verdict; the serve-over-Electron choice is anchored by settled G18/G14 rather than by this unmeasured comparison.",
+      "what_would_change_it": "Concrete implementation estimates or a prototype quantifying Electron packaging/signing overhead against `aiki serve` for the target submission."
+    }
+  ],
+  "verdict": "Build `aiki serve` (a loopback local web layer over the existing Node orchestration), not Electron: the reuse and lower-risk case is settled (G18) and Electron's heavy download plus OS security warnings are a real distribution penalty (G14), while its differentiation as an inspectable multi-model decision system is defensible (G17). Proceed with conditions, because the single load-bearing risk is verified-open: the hackathon rules and demo environment were never inspected (G9) and a recorded public-hosted-URL requirement means a local-only interface does not by itself satisfy submission (G19). The winning move is a narrow vertical slice that reuses the engine, plus a sanitized static public replay of a run where visible model disagreement changes the recommendation (G21) — which simultaneously mitigates the demo-machine install risk (G16) and provides the public artifact.",
+  "recommendation": "PROCEED_WITH_CONDITIONS",
+  "conditions": [
+    "Confirm official hackathon rules before committing the architecture: required submission technology, the public-hosted-URL requirement, and the demo environment (G9, G19).",
+    "Ship an opt-in sanitized static Replay Capsule / public replay so judges can inspect a successful council run without installing or authenticating provider CLIs, doubling as the public-URL artifact (G5, G16).",
+    "Time-box an architecture go/no-go: the engine must stream one run, cancel it safely, and replay it deterministically in-browser; otherwise fall back to a polished static Flight Deck (G12).",
+    "Scope to one end-to-end workflow plus a small set of inspectable views; exclude Electron, accounts, collaboration, and general chat (G7).",
+    "Keep the Node host as the sole trusted mediator: loopback-only, session-protected, allowlisted operations, no arbitrary shell endpoint, sanitized replay exports by default (G6, G10)."
+  ],
+  "recommendation_claim_ids": ["G18", "G14", "G17", "G21", "G9", "G16"],
+  "condition_claim_ids": ["G9", "G19", "G5", "G16", "G12", "G7"],
+  "strongest_counter_case": {
+    "claim_ids": ["G19", "G9", "G16"],
+    "reasoning": "If the hackathon mandates a publicly hosted URL and/or judges cannot install and authorize the provider CLIs on their demo machines, a polished local-only `aiki serve` could be ineligible or undemonstrable regardless of build quality — making the entire local-first architecture the wrong bet unless the hosted static replay leads and local serve is treated as secondary."
+  },
+  "decision_snapshot": {
+    "decisive_numbers": [
+      {"label": "Architecture go/no-go window", "value": "48 hours", "meaning": "if streaming, safe cancellation, and deterministic in-browser replay are not working, fall back to a static deck", "claim_ids": ["G12"]},
+      {"label": "Standout views in scope", "value": "3–4", "meaning": "vertical-slice UI scope for a solo sub-week build (planning heuristic, not a verified constant)", "claim_ids": ["G7"]},
+      {"label": "Build window / team", "value": "< 1 week, solo", "meaning": "schedule constraint forcing a narrow reuse-first slice", "claim_ids": ["G7", "G20"]}
+    ],
+    "payback": {
+      "status": "NOT_COMPUTABLE",
+      "result": "No monetization or cost figures were supplied.",
+      "basis": "Monetization is deferred until repeated usage is demonstrated; provider installation remains the primary scaling constraint.",
+      "claim_ids": ["G11"]
+    },
+    "options": [
+      {"label": "aiki serve (local web layer)", "commitment": "reuse existing Node/npm orchestration and add a browser presentation layer", "commitment_kind": "KNOWN", "tradeoff": "local-first may not satisfy a public-URL submission rule or demo-machine CLI install", "claim_ids": ["G14", "G18", "G16"]},
+      {"label": "Electron app", "commitment": "packaging, code signing, OS-specific builds, auto-update", "commitment_kind": "UNKNOWN", "tradeoff": "heavy secondary download and OS security warnings for high effort in a tight schedule", "claim_ids": ["G14", "G15"]}
+    ],
+    "tripwire": {
+      "metric": "engine can stream one run, cancel it safely, and replay it deterministically in the browser",
+      "threshold": "not met by the ~48h go/no-go",
+      "decision_rule": "stop the live workbench and submit the polished static Flight Deck / Replay Capsule",
+      "claim_ids": ["G12"]
+    }
+  },
+  "key_points": [
+    "Load-bearing risk first: hackathon rules and demo environment were never inspected (G9), and a recorded public-hosted-URL requirement means a local-only interface does not by itself satisfy submission (G19) — verify before building.",
+    "`aiki serve` is the correct build over Electron: settled lower-risk reuse of the existing Node process (G18) and zero distribution friction versus Electron's heavy download and OS warnings (G14).",
+    "The defensible differentiation is inspectable multi-model decision provenance, not a chat wrapper (G17); the standout views must expose disagreement → chair ruling → synthesis provenance.",
+    "The strongest demo moment is a prepared decision where visible model disagreement changes the recommendation, plus an instantly shareable public replay (G21).",
+    "Local-first fails if judges cannot install or authorize the CLIs (G16); a sanitized static Replay Capsule (G5) is both the mitigation and the public-URL artifact.",
+    "Scope must be one workflow plus a few inspectable views with Electron, accounts, collaboration, and chat excluded (G7); premium frontend under a week is unproven (G20).",
+    "A time-boxed kill gate protects the solo schedule: if stream/cancel/replay is not working, ship the static Flight Deck (G12).",
+    "The serve-vs-Electron effort delta itself is unmeasured (G3, G13 UNVERIFIABLE); the choice is justified by corroborating settled claims, not by a comparative benchmark."
+  ],
+  "dissent": [
+    "If the hackathon forbids local-only entries or mandates a public hosted URL, a polished `aiki serve` may be ineligible regardless of quality; the safer framing may be to lead with the hosted static replay and treat local serve as secondary (G19, G9).",
+    "The serve-over-Electron effort claim rests on UNVERIFIABLE evidence (G3, G13) — the effort advantage is asserted, not benchmarked, so an unforeseen serve-layer complication could erase it.",
+    "Committing UI to inspectable-provenance features (G4) before those features exist risks over-scoping the narrow slice the schedule allows (G7, G20)."
+  ],
+  "confidence_notes": "High confidence on the build choice (aiki serve over Electron): it is supported by multiple independent settled claims (G14, G18) plus corroborating differentiation and demo-moment claims (G17, G21). Confidence is deliberately capped to PROCEED_WITH_CONDITIONS rather than clean PROCEED because the decisive submission-eligibility and demo-portability risks are verified-open (G9) and unresolved (G19, G16), and the comparative effort evidence is UNVERIFIABLE (G3, G13). The numeric thresholds (48h, 3–4 views) are planning heuristics drawn from the graph, not measured constants."
+}

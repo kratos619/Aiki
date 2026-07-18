@@ -2,7 +2,8 @@
 // contract's task? Two code checks (no model call — the §601/§532 T6 "deterministic core"; the §9
 // "verifier spot-check" is deferred): (1) the output produced ≥1 position (an analyst that
 // produced none did not engage the task), and (2) its `task_echo` is similar enough to the contract
-// task (overlap coefficient ≥ DRIFT_MIN_SIMILARITY). Drifted outputs are excluded from everything
+// — task + constraints + success_criteria (overlap coefficient ≥ DRIFT_MIN_SIMILARITY). Drifted
+// outputs are excluded from everything
 // downstream and logged; if exclusion drops the survivor count below quorum (2), the run aborts.
 
 import type { ProviderId } from '../../providers/types.js';
@@ -11,11 +12,21 @@ import { StageError, type RunCtx } from '../context.js';
 import { overlapCoefficient, tokenize } from '../cluster.js';
 import type { SeatOutput } from './s4-analyze.js';
 
-/** `task_echo` must share ≥ this fraction of its tokens with the contract task to count as on-task.
+/** `task_echo` must share ≥ this fraction of its tokens with the contract to count as on-task.
  *  Overlap coefficient (not Jaccard) so a short echo is not penalized against a longer contract
  *  paragraph. Lenient by design — this catches an analyst that wandered off-task, not paraphrase
  *  distance. Tunable (same footnote class as the S2 clustering threshold). */
 export const DRIFT_MIN_SIMILARITY = 0.3;
+
+/** The reference token set is the contract the seat was told to address — task + constraints +
+ *  success_criteria — NOT just the one-sentence task. Run 626e (2026-07-18, REAL QUORUM kill):
+ *  the prompt says "restate the task" and both seats paraphrased accurately, but against the
+ *  17-token model-authored task sentence they scored 0.294/0.250 < 0.3 and the run died with 18
+ *  good positions on disk. Against the full contract the same echoes score 0.680/0.500 while a
+ *  genuinely off-task echo stays ≤0.08 — paraphrase passes, drift still fails, threshold untouched. */
+function contractTokens(contract: IntentContract): Set<string> {
+  return tokenize([contract.task, ...contract.constraints, ...contract.success_criteria].join(' '));
+}
 
 export interface DriftEntry {
   provider: ProviderId;
@@ -37,7 +48,7 @@ export async function s5Drift(
   seats: SeatOutput[],
   minSeats = 2,
 ): Promise<{ report: DriftReport; kept: SeatOutput[] }> {
-  const taskTokens = tokenize(contract.task);
+  const taskTokens = contractTokens(contract);
   const entries: DriftEntry[] = [];
   const kept: SeatOutput[] = [];
   const excluded: ProviderId[] = [];

@@ -217,3 +217,20 @@ export async function snapshotUrlSources(input: string, options: SnapshotOptions
   const sources = await Promise.all(extractPublicUrls(input).map((url, index) => snapshotOne(url, index, options)));
   return UrlSourceSet.parse({ sources });
 }
+
+/** v6 T10: a URL the user attached is presumptively decision-relevant — if it cannot be read, the
+ *  run must stop BEFORE any paid call and ask, instead of spending the full council budget on a
+ *  conditional verdict (run f740 burned 12 calls around a 403'd hackathon page). Returns the stop
+ *  message, or null to proceed. Quick mode and an explicit override proceed as before. */
+export function blockedSourceStop(
+  sources: UrlSourceSetT,
+  mode: string,
+  allowBlockedSources: boolean,
+): string | null {
+  if (mode === 'quick' || allowBlockedSources) return null;
+  const unreadable = sources.sources.filter((source) => source.status !== 'FETCHED');
+  if (unreadable.length === 0) return null;
+  const details = unreadable.map((source) => `${source.url} (${source.status}${source.error ? `: ${source.error}` : ''})`).join('; ');
+  return `a source you attached could not be read — ${details}. The council would have to decide without the fact you attached it for. `
+    + 'Paste the relevant text into your idea input and rerun, or rerun with --allow-blocked-sources to proceed without it (the report will be conditional).';
+}

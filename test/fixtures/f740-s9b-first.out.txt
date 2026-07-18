@@ -1,0 +1,229 @@
+Schema confirmed. Here is the ActionPlan.
+
+```json
+{
+  "reader_brief": {
+    "headline": "Build `aiki serve` — a local web workbench that makes the model council's decisions inspectable, and ship a shareable replay so judges can see it without installing anything",
+    "bottom_line": "Choose `aiki serve` over Electron. It reuses your existing Node orchestration, adds zero install friction for people who already have the CLI, and lets you spend your solo week on the interface instead of packaging, signing, and OS security warnings. But a local server is only half the submission: pair it with an opt-in, redacted public Replay Capsule — a self-contained, hosted snapshot of one real council run — so judges can inspect the result on a machine that has none of the provider CLIs installed. Your differentiator is not 'three chatbots side by side'; it is showing WHY the council reached its answer: the claims, where models disagreed, and how the chair resolved it. Confirm the hackathon's submission rules before you write code — a required public URL or a required desktop app would reshape this whole plan.",
+    "sections": [
+      {
+        "heading": "The verdict: serve, not Electron",
+        "summary": "Serve wins on the things that actually matter for a solo sub-week build. Electron buys you nothing here and costs you the week.",
+        "bullets": [
+          "Serve reuses the Node process you already trust to spawn and stream the CLIs — the browser is just a presentation layer over what works today.",
+          "Existing users upgrade the npm package and run one command; no second download, no code signing, no 'unidentified developer' warnings.",
+          "Electron would still be local-only (same limitation as serve) while adding packaging, IPC, and per-OS builds you have no time to polish.",
+          "Both architectures share one real risk — the demo machine may not have the CLIs installed — which the Replay Capsule solves, not Electron."
+        ]
+      },
+      {
+        "heading": "The standout: inspectable decision provenance",
+        "summary": "The memorable, defensible idea is auditing the decision, not animating the conversation. Two views carry it.",
+        "bullets": [
+          "Live Council Flight Deck: one bounded run rendered as a stage map — brief accepted, providers investigating, claims arriving, disagreements escalated, chair synthesizing — with elapsed time and a safe cancel.",
+          "Disagreement Lens: a claim matrix showing each provider's position, its evidence, unresolved gaps, and the chair's ruling; click the final answer to see which arguments were accepted and which were rejected.",
+          "The single strongest demo moment: a prepared question where visible model disagreement actually changes the final recommendation — proof the council beats any one model, shown, not asserted.",
+          "This is what a 'multi-model chat wrapper' cannot show, and it's why the visuals map to real value instead of decoration."
+        ]
+      },
+      {
+        "heading": "The submission bridge: Judge-Safe Replay Capsule",
+        "summary": "A local server alone likely can't be the submission. The Capsule turns one successful run into something anyone can open.",
+        "bullets": [
+          "Export a finished session as a self-contained, redacted static artifact: recorded stage events, claims, the final decision — no live provider dependency.",
+          "Redact prompts, local paths, credentials, and source content by default; hosting is opt-in so nothing leaks by accident.",
+          "The same artifact is your hosted-URL submission, your reliable demo when a live run fails, and a shareable decision record — one build, three jobs."
+        ]
+      },
+      {
+        "heading": "How to not run out of week",
+        "summary": "The plan is one end-to-end workflow and three or four views — nothing else — with an early gate that protects the schedule.",
+        "bullets": [
+          "First 48 hours prove the hardest thing: can the engine stream one run, cancel it cleanly, and replay it deterministically in the browser?",
+          "If that gate fails, stop building the live workbench and ship a polished static Flight Deck from recorded runs — you still have a compelling submission.",
+          "Deliberately out of scope: Electron, accounts, collaboration, and a general chat UI. Every one of those trades your differentiator for busywork."
+        ]
+      }
+    ],
+    "next_step": "Before writing any code, get the hackathon's official rules in hand — is a public, interactive hosted URL required (vs. a video or static replay)? Is a packaged desktop app mandatory? What is the judging/demo environment? This one answer decides whether the serve + Replay Capsule plan ships as-is or needs reshaping.",
+    "caveats": [
+      "The hackathon page couldn't be opened, so its submission rules, required technology, and demo environment are still unconfirmed — the whole plan assumes a web UI plus a hosted replay is acceptable.",
+      "Premium frontend delivery in under a week by one person is unproven, which is why scope is capped at one workflow and a few views rather than a full product.",
+      "Whether judges can install and authenticate all three provider CLIs on their machines is unknown — the Replay Capsule exists precisely so the demo survives if they can't."
+    ],
+    "source_ids": ["codex/E1", "codex/E3", "codex/E4", "codex-coverage-fill/E3"]
+  },
+  "feature_backlog": {
+    "must": [
+      {
+        "feature": "`aiki serve`: loopback-only local server with one allowlisted run endpoint, a random session token, a live event stream (SSE), and safe cancellation",
+        "user_value": "Gives the browser a real, secure path to start and stop a council run using the orchestration that already works.",
+        "rationale": "The Node host must own spawning/streaming/cancel; the browser cannot launch CLIs itself, so this is the backbone everything else sits on.",
+        "effort": "M"
+      },
+      {
+        "feature": "Live Council Flight Deck (event-driven stage map with elapsed time and cancel)",
+        "user_value": "Users can see what the council is doing and intervene when a run is slow or no longer useful.",
+        "rationale": "Turns invisible orchestration into an observable process — the first thing that makes the product feel alive rather than a spinner.",
+        "effort": "M"
+      },
+      {
+        "feature": "Disagreement Lens (claim matrix: provider positions, evidence, gaps, chair ruling; drill into accepted/rejected arguments)",
+        "user_value": "Developers can audit whether the synthesis resolved real disagreement or just averaged outputs.",
+        "rationale": "This is the defensible differentiator — decision provenance is what a chat wrapper can't reproduce.",
+        "effort": "M"
+      },
+      {
+        "feature": "Judge-Safe Replay Capsule (redacted, self-contained static export of one completed run, opt-in hosting)",
+        "user_value": "A successful run stays inspectable on machines that lack the CLIs or credentials.",
+        "rationale": "Bridges a local-only architecture to a likely public-URL submission requirement and de-risks the live demo.",
+        "effort": "M"
+      }
+    ],
+    "should": [
+      {
+        "feature": "Council Advantage Reveal (curated case comparing one provider's answer to the council result, surfacing added risks/contradictions/gaps)",
+        "user_value": "Judges see why orchestration matters instead of inferring it from visual complexity.",
+        "rationale": "Makes the product thesis falsifiable inside the demo; strong if time allows after the golden path is solid.",
+        "effort": "M"
+      },
+      {
+        "feature": "Auto-open the browser on `aiki serve` and one-command upgrade path from the existing npm package",
+        "user_value": "Existing users get from install to a running interface in a single step.",
+        "rationale": "Preserves the zero-friction distribution advantage that justified choosing serve.",
+        "effort": "S"
+      },
+      {
+        "feature": "Local-first safety posture: loopback binding, session protection, explicit note of what data reaches providers, sanitized exports by default",
+        "user_value": "Users can trust that running locally actually keeps their prompts and code private.",
+        "rationale": "The privacy claim is only real if the boundaries are enforced and visible.",
+        "effort": "S"
+      }
+    ],
+    "later": [
+      {
+        "feature": "Streaming side-by-side raw provider output as an optional drill-down view",
+        "user_value": "Power users who want the unsynthesized text can still get it.",
+        "rationale": "Nice-to-have, but risks collapsing into the 'three chat columns' pattern you're differentiating against — defer past the demo.",
+        "effort": "M"
+      },
+      {
+        "feature": "Reusable decision archive / saved council runs",
+        "user_value": "Teams could revisit and reuse past decisions.",
+        "rationale": "Plausible later wedge but not needed to impress or to prove the core thesis this week.",
+        "effort": "L"
+      },
+      {
+        "feature": "Mobile-responsive polish and full keyboard accessibility pass",
+        "user_value": "Broader reach and a more professional feel.",
+        "rationale": "Worth doing once the desktop golden path is locked; not a gating feature for judging.",
+        "effort": "S"
+      }
+    ],
+    "wont": [
+      {
+        "feature": "Electron desktop packaging",
+        "reason": "Adds signing, IPC, auto-update, and per-OS builds while remaining local-only — pure cost against a solo sub-week budget with no offsetting benefit."
+      },
+      {
+        "feature": "Accounts, auth system, or a collaboration layer",
+        "reason": "Out of scope for a local-first tool and a hackathon demo; consumes the week without touching the differentiator."
+      },
+      {
+        "feature": "General multi-model chat interface",
+        "reason": "Competes directly with commodity wrappers and dilutes the inspectable-provenance thesis that makes Aiki stand out."
+      },
+      {
+        "feature": "Any API-key-based hosted inference service",
+        "reason": "Breaks the local-first, no-API-key premise and turns Aiki into something it isn't."
+      }
+    ]
+  },
+  "implementation_plan": {
+    "milestones": [
+      {
+        "order": 1,
+        "timebox": "First 48 hours (architecture kill gate)",
+        "outcome": "Smallest complete browser-to-council path exists, or the fallback is triggered before more time is spent.",
+        "tasks": [
+          "Add the `aiki serve` command: loopback-only server, random session token, one allowlisted run endpoint",
+          "Wire a structured stage-event stream (SSE) over the existing orchestration adapters",
+          "Implement safe cancellation of an in-flight provider run",
+          "Record a run deterministically so it can be replayed in the browser"
+        ],
+        "acceptance_test": "From a fresh browser session, start one council run, watch structured stage events stream, cancel it cleanly, and replay the recorded run end-to-end. If any of these can't be met in 48h, switch to the static Flight Deck fallback."
+      },
+      {
+        "order": 2,
+        "timebox": "Days 2–4 (decision experience)",
+        "outcome": "The full path from question to auditable answer, built around one research workflow.",
+        "tasks": [
+          "Build the brief/question entry screen",
+          "Build the Live Council Flight Deck stage map with elapsed time and cancel",
+          "Build the Disagreement Lens claim matrix and final-synthesis view",
+          "Add error and provider-missing states; make the layout responsive and keyboard-accessible"
+        ],
+        "acceptance_test": "A user submits a question and, without touching the CLI, watches the run, opens the Disagreement Lens, and drills from the final answer into the accepted and rejected arguments that produced it."
+      },
+      {
+        "order": 3,
+        "timebox": "Days 4–6 (package the proof)",
+        "outcome": "The demo is repeatable regardless of provider latency, quota, auth, or network failure.",
+        "tasks": [
+          "Implement sanitized Replay Capsule export (redact prompts, paths, credentials, source by default)",
+          "Prepare one reliable live case and one offline fallback capsule",
+          "Add the Council Advantage Reveal using recorded outputs",
+          "Verify the hosted capsule opens with no provider CLI installed"
+        ],
+        "acceptance_test": "Open the exported capsule on a machine with none of the provider CLIs installed and inspect the full run and final decision; confirm no prompts, paths, credentials, or source content leak."
+      },
+      {
+        "order": 4,
+        "timebox": "Final day (freeze and rehearse)",
+        "outcome": "A low-risk submission that communicates one clear outcome, with no new features added.",
+        "tasks": [
+          "Fresh-install test, provider-missing states, cancellation, desktop and mobile visual checks",
+          "Review replay redaction one more time",
+          "Write and time a sub-three-minute demo script and record the submission video"
+        ],
+        "acceptance_test": "A clean-machine walkthrough runs the prepared case and, on any live failure, falls back to the hosted capsule without breaking the story — rehearsed inside three minutes."
+      }
+    ]
+  },
+  "actions": [
+    {
+      "order": 1,
+      "action": "Get the hackathon's official rules in writing this week — required submission technology, whether a public interactive hosted URL is mandatory (vs. video or static replay), judging criteria, and the demo environment. Contact organizers directly if the page stays inaccessible.",
+      "why": "The largest open assumption is that a local web UI plus a hosted replay is a valid submission; the recorded public-hosted-URL requirement means neither serve nor Electron satisfies submission alone, so this gates the entire plan.",
+      "validates": "G19",
+      "effort": "S",
+      "kill_signal": "Rules require a packaged desktop application, or a live interactive hosted URL that a local-only server plus a static Replay Capsule cannot satisfy."
+    },
+    {
+      "order": 2,
+      "action": "In the first 48 hours, prove the boundary: make the existing engine stream one complete run over `aiki serve`, cancel a provider process cleanly, and replay the recorded run deterministically in the browser.",
+      "why": "This is the highest technical risk in the build; if the engine can't stream/cancel/replay, the live workbench isn't viable and you must fall back to a static Flight Deck before spending the week.",
+      "validates": "Q:Can the existing Aiki engine stream",
+      "effort": "M",
+      "kill_signal": "By hour 48 the engine cannot reliably stream a full run, cancel a provider process, or replay a run deterministically — trigger the static Flight Deck fallback."
+    },
+    {
+      "order": 3,
+      "action": "Assemble and rehearse one prepared council case where models visibly disagree and that disagreement changes the final recommendation, then confirm it reads as clearly better than the strongest single-provider answer.",
+      "why": "The differentiator is inspectable decision provenance, and the strongest demo moment is disagreement changing the outcome; if the prepared case doesn't visibly beat a single model, the core pitch doesn't land.",
+      "validates": "Q:Does a prepared council demo",
+      "effort": "S",
+      "kill_signal": "The prepared council result is not visibly better or better-supported than the best single-provider answer, so the multi-model advantage can't be shown live."
+    },
+    {
+      "order": 4,
+      "action": "Run a redaction check on the Replay Capsule export: confirm it excludes prompts, local paths, credentials, and sensitive source content by default while remaining understandable to someone who wasn't there.",
+      "why": "The local-first privacy claim and the safety of a publicly hosted capsule both depend on sanitized exports being the default, not an option.",
+      "validates": "G10",
+      "effort": "S",
+      "kill_signal": "A default export still leaks prompts, paths, credentials, or source content, or redaction strips so much that the run becomes unreadable."
+    }
+  ],
+  "sequencing_note": "Rules first (Action 1) because a wrong assumption there invalidates everything downstream and it's the cheapest to resolve. The 48-hour boundary proof (Action 2) comes next because it's the single technical fact that decides live-workbench vs. static-fallback, and every later build task depends on the answer. The prepared demo case (Action 3) validates the pitch itself and can proceed in parallel once the engine streams. Redaction (Action 4) is last because it only matters once a capsule exists to export — but it must clear before anything is hosted publicly."
+}
+```

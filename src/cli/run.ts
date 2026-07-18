@@ -4,6 +4,8 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
+import { blockedSourceStop, snapshotUrlSources } from '../orchestration/url-sources.js';
+import type { UrlSourceSet } from '../schemas/index.js';
 import { renderTerminalSummary, type DecisionReportJson } from '../orchestration/stages/s10-render.js';
 import { run as runEngine } from '../orchestration/engine.js';
 import type { RoleMap, WorkflowId } from '../orchestration/context.js';
@@ -26,6 +28,7 @@ export interface RunFlags {
   yes?: boolean; // skip the run-cost confirmation (also skipped when non-interactive)
   evidence?: string; // idea-refinement: user-scoped local source file/directory
   mode?: string; // idea-refinement: quick | council | research
+  allowBlockedSources?: boolean; // v6 T10: proceed past an unreadable supplied URL (default: stop and ask)
 }
 
 /** Rough provider-call estimate for the run-cost preview (V5). Approximate — the real count varies with
@@ -56,6 +59,23 @@ function confirm(question: string): Promise<boolean> {
     rl.question(question, (a) => {
       rl.close();
       resolve(!/^n/i.test(a.trim()));
+    });
+  });
+}
+
+/** One question, one trimmed answer. Resolve BEFORE close — closing fires the EOF handler, and
+ *  the live "typed Y, got cancelled" bug was that handler resolving '' first. EOF alone (Ctrl+D)
+ *  still resolves '' = the safe deny default. Exported (with injectable streams) for the test. */
+export function ask(
+  question: string,
+  io: { input: NodeJS.ReadableStream; output: NodeJS.WritableStream } = { input: process.stdin, output: process.stdout },
+): Promise<string> {
+  return new Promise((resolve) => {
+    const rl = createInterface({ input: io.input, output: io.output });
+    rl.on('close', () => resolve(''));
+    rl.question(question, (a) => {
+      resolve(a.trim());
+      rl.close();
     });
   });
 }
@@ -194,6 +214,35 @@ export async function runCommand(workflow: string, input: string | undefined, op
     process.stdout.write(`${note}\n`);
   }
 
+  // v6 T10b: check supplied URLs BEFORE any provider spend. A blocked source in a TTY gets a
+  // simple permission prompt — Y allow, anything else deny. Headless keeps the fail-fast gate.
+  let allowBlockedSources = opts.allowBlockedSources ?? false;
+  let urlSources: UrlSourceSet | undefined;
+  if (workflow === 'idea-refinement') {
+    urlSources = await snapshotUrlSources(text);
+    const stopMessage = blockedSourceStop(urlSources, mode ?? 'council', allowBlockedSources);
+    if (stopMessage && process.stdin.isTTY && process.stdout.isTTY) {
+      const unreadable = urlSources.sources.filter((item) => item.status !== 'FETCHED');
+      const noun = unreadable.length > 1 ? 'these pages' : 'this page';
+      for (const source of unreadable) {
+        process.stdout.write(`\n  ⚠ Couldn't read a page you attached:\n    ${source.url}\n    reason: ${source.error ?? source.status}\n`);
+      }
+      process.stdout.write(`\n  Do you want to run without ${noun}?\n`);
+      process.stdout.write(`    y = yes, run anyway (facts from ${noun} will be marked unverified)\n`);
+      process.stdout.write('    n = no, cancel — paste the page text into your prompt and rerun\n\n');
+      const answer = await ask('  Choice [y/N]: ');
+      if (/^y/i.test(answer)) {
+        allowBlockedSources = true;
+      } else {
+        process.stdout.write('\n  Cancelled. Paste the page text into your prompt and rerun, or rerun with --allow-blocked-sources.\n');
+        return 0;
+      }
+    } else if (stopMessage) {
+      process.stderr.write(`  ✖ ${stopMessage}\n`);
+      return 1;
+    }
+  }
+
   const outcome = await runEngine(workflow as WorkflowId, text, {
     mode,
     budget: resolvedBudget,
@@ -203,6 +252,8 @@ export async function runCommand(workflow: string, input: string | undefined, op
     runsRoot: await resolveRunsRoot(), // hybrid: repo .aiki when in a repo, else ~/.aiki
     providerModels: cfg.models, // V8: per-provider model → CLI --model
     evidencePack,
+    allowBlockedSources,
+    urlSources,
   });
 
   if (outcome.ok) {

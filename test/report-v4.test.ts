@@ -8,7 +8,7 @@ import { requestedOutputsFor, mergeRequestedOutputs } from '../src/orchestration
 import { buildJudgePrompt, evidenceHoleConditions } from '../src/orchestration/stages/s9-judge.js';
 import { buildDecisionReport, computeConfidence } from '../src/orchestration/stages/s10-render.js';
 import { detectWeakSeat } from '../src/orchestration/stages/s6-positions.js';
-import { selectVerificationTargets } from '../src/orchestration/stages/s8-verify.js';
+import { selectVerificationEscalations, selectVerificationTargets } from '../src/orchestration/stages/s8-verify.js';
 import { selectEscalations } from '../src/orchestration/decision-graph.js';
 import { DecisionGraph as DecisionGraphSchema } from '../src/schemas/index.js';
 import type { DecisionReportJson, S10Args } from '../src/orchestration/stages/s10-render.js';
@@ -351,7 +351,19 @@ describe('claim nature (v4)', () => {
     expect(factualId).toBeDefined();
     graph.claims.find((claim) => claim.id === factualId)!.nature = 'FACTUAL';
 
-    const prompt = buildJudgePrompt(loadC289().contract, graph, { verifications: [] }, []);
+    // v6 (run e1ce): the chair adjudicates what S8 ACTUALLY verified, never a re-ranked selection —
+    // so build the verification set S8 would produce for this graph and assert it flows through.
+    const verifications = {
+      verifications: selectVerificationEscalations(graph).map((item) => ({
+        claim_id: item.claim_id,
+        status: 'UNVERIFIABLE' as const,
+        reasoning: 'unavailable',
+        evidence_ids: [],
+        calculation_check: 'NOT_APPLICABLE' as const,
+        missing_evidence: [],
+      })),
+    };
+    const prompt = buildJudgePrompt(loadC289().contract, graph, verifications, []);
     const escalated = prompt.split('ESCALATED CLAIMS + VERIFICATION: ')[1]!.split('\nAPPEND-ONLY REBUTTAL EVENTS:')[0]!;
     expect(escalated).toContain(`"id": "${factualId}"`);
   });

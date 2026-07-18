@@ -1,0 +1,119 @@
+{
+  "verifications": [
+    {
+      "claim_id": "G6",
+      "status": "PARTIAL",
+      "reasoning": "Method: tested each asserted responsibility separately. E5 supports host-mediated CLI spawning, and E1 supports a Node/npm context, but neither establishes that Node specifically must own streaming, cancellation, and permission enforcement.",
+      "evidence_ids": [
+        "codex/E1",
+        "codex/E5"
+      ],
+      "calculation_check": "NOT_APPLICABLE",
+      "missing_evidence": [
+        "Architecture or prototype evidence covering streaming, cancellation, and permission enforcement",
+        "Evidence excluding non-Node trusted host implementations"
+      ]
+    },
+    {
+      "claim_id": "G9",
+      "status": "VERIFIED",
+      "reasoning": "Method: checked whether the supplied cards contain independently inspectable hackathon rules. E4 records that the page was blocked and the relevant rules and demo environment were not verified; E2 supplies only user-reported context.",
+      "evidence_ids": [
+        "codex/E2",
+        "codex/E4"
+      ],
+      "calculation_check": "NOT_APPLICABLE",
+      "missing_evidence": [
+        "Accessible official hackathon rules, judging criteria, submission requirements, and demo-environment details"
+      ]
+    },
+    {
+      "claim_id": "G3",
+      "status": "UNVERIFIABLE",
+      "reasoning": "Method: compared evidence for both implementation paths. E1 and E2 establish an npm product and tight schedule, while E6 merely states the preferred conclusion; no comparative implementation evidence proves that `aiki serve` should be selected over Electron.",
+      "evidence_ids": [
+        "codex/E1",
+        "codex/E2",
+        "codex/E6"
+      ],
+      "calculation_check": "NOT_APPLICABLE",
+      "missing_evidence": [
+        "Comparative prototypes or effort estimates for `aiki serve` and Electron",
+        "Verified hackathon submission and demo requirements"
+      ]
+    },
+    {
+      "claim_id": "G4",
+      "status": "PARTIAL",
+      "reasoning": "Method: separated demonstrated product behavior from claimed differentiation. E1 and E3 support a council-oriented, synthesized experience, but do not establish the proposed inspectable trace features or prove differentiation from multi-model chat wrappers.",
+      "evidence_ids": [
+        "codex/E1",
+        "codex/E3"
+      ],
+      "calculation_check": "NOT_APPLICABLE",
+      "missing_evidence": [
+        "Evidence that the product exposes claims, disagreements, rulings, and provenance",
+        "Comparative product or user evidence establishing differentiation"
+      ]
+    },
+    {
+      "claim_id": "G7",
+      "status": "PARTIAL",
+      "reasoning": "Method: tested the schedule premise and each prescribed scope limit. E2 supports the solo, sub-week constraint and E1 supports reuse, but neither proves the exact three-or-four-view limit or that every excluded feature must be omitted.",
+      "evidence_ids": [
+        "codex/E1",
+        "codex/E2"
+      ],
+      "calculation_check": "NOT_APPLICABLE",
+      "missing_evidence": [
+        "Feature-level effort estimates or prototype results",
+        "Evidence supporting the exact view count and exclusions"
+      ]
+    },
+    {
+      "claim_id": "G8",
+      "status": "PARTIAL",
+      "reasoning": "Method: checked each distribution component independently. E1 confirms an existing npm package and E6 favors extending it, but no supplied evidence establishes that this is the best path or supports automatic browser launch and exported replay artifacts.",
+      "evidence_ids": [
+        "codex/E1",
+        "codex/E6"
+      ],
+      "calculation_check": "NOT_APPLICABLE",
+      "missing_evidence": [
+        "Distribution-path comparison",
+        "Evidence for browser auto-open feasibility and replay-artifact sharing",
+        "User or judge demand evidence"
+      ]
+    },
+    {
+      "claim_id": "G12",
+      "status": "PARTIAL",
+      "reasoning": "Method: tested the gate rationale, deadline, criteria, and fallback separately. E1 and E2 support existing orchestration and schedule pressure, while E5 supports host mediation; none validates the exact 48-hour threshold, deterministic replay feasibility, or static Flight Deck fallback.",
+      "evidence_ids": [
+        "codex/E1",
+        "codex/E2",
+        "codex/E5"
+      ],
+      "calculation_check": "NOT_APPLICABLE",
+      "missing_evidence": [
+        "Prototype results for streaming, safe cancellation, and deterministic replay",
+        "Schedule analysis supporting a 48-hour threshold",
+        "Evidence that a static Flight Deck is an eligible and preferable fallback"
+      ]
+    },
+    {
+      "claim_id": "G13",
+      "status": "UNVERIFIABLE",
+      "reasoning": "Method: sought comparative technical and effort evidence. E7 establishes only that Aiki is an npm package; it provides no measurements or implementation evidence comparing a local server with Electron packaging, signing, and distribution.",
+      "evidence_ids": [
+        "agy/ev_aiki_npm"
+      ],
+      "calculation_check": "NOT_APPLICABLE",
+      "missing_evidence": [
+        "Comparative architecture assessment",
+        "Implementation estimates or prototype results",
+        "Platform signing and packaging requirements for the target submission"
+      ]
+    }
+  ]
+}

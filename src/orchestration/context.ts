@@ -10,7 +10,7 @@
 // - Full audit (§15): every call's exact prompt and raw output are written under `raw/`.
 
 import { randomBytes } from 'node:crypto';
-import type { CallRecord, GrillAnswer, IdeaMode, RunBriefDraft, RunMeta } from '../schemas/index.js';
+import type { CallRecord, GrillAnswer, IdeaMode, RunBriefDraft, RunMeta, UrlSourceSet } from '../schemas/index.js';
 import type { Adapter, FlagProfile, ProviderId, ReadOnlyFlag, RunResultAdapter } from '../providers/types.js';
 import { PROVIDER_IDS } from '../providers/types.js';
 import { ADAPTERS } from '../providers/adapters.js';
@@ -137,6 +137,8 @@ export interface RunCtxOpts {
   now?: () => number; // injectable clock (tests)
   replay?: Map<string, string>; // resume (V6.3): (provider,prompt)→prior output; matched calls skip the model
   evidencePack?: EvidencePack; // R4: user-scoped local paths + hashes; contents are not copied
+  allowBlockedSources?: boolean; // v6 T10: proceed past an unreadable supplied URL (default: stop and ask)
+  urlSources?: UrlSourceSet; // v6 T10b: snapshot already taken (and user-approved) by the CLI — don't refetch
 }
 
 export class RunCtx {
@@ -148,6 +150,8 @@ export class RunCtx {
   readonly cwd: string;
   readonly events?: RunEvents;
   readonly evidencePack?: EvidencePack;
+  readonly allowBlockedSources?: boolean;
+  readonly urlSources?: UrlSourceSet;
   readonly budget: { limit: number; used: number };
   readonly calls: CallRecord[] = [];
   /** Logical provider-call stages, including resume cache hits. Used by bounded protocol caps. */
@@ -173,6 +177,8 @@ export class RunCtx {
     this.cwd = opts.cwd;
     this.events = opts.events;
     this.evidencePack = opts.evidencePack;
+    this.allowBlockedSources = opts.allowBlockedSources;
+    this.urlSources = opts.urlSources;
     this.budget = { limit: opts.budget ?? defaultBudgetFor(opts.workflow, this.mode), used: 0 };
     this.handles = new Map(opts.handles.map((h) => [h.id, h]));
     this.signal = opts.signal;

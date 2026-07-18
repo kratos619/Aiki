@@ -14,17 +14,24 @@ import { StageError } from './context.js';
  *  Two live failures shaped it (run 20260715-1516): the S9 chair's only defect was `dissent` as a
  *  string, and the paid repair it triggered flipped the verdict PIVOT→PWC and died on 7 conditions
  *  vs max 6. Policy:
- *  - LOSSLESS (always): a lone value where an array is expected becomes a one-element array. Runs
- *    BEFORE the paid repair — a wrappable-only defect costs zero extra calls.
- *  - LOSSY (`lossy: true`, last resort after the repair failed): arrays beyond their schema max are
- *    truncated in order — one extra condition costs one condition, never the run.
+ *  - LOSSLESS (always): a lone value where an array is expected becomes a one-element array, and an
+ *    EMPTY optional min-1 string is dropped (empty carries no information — absent beats invalid;
+ *    run f740's codex seat burned a 267s repair on 12 empty rationales). Runs BEFORE the paid
+ *    repair — such defects cost zero extra calls.
+ *  - LOSSY (`lossy: true`, last resort once the repair path is spent or disallowed): arrays beyond
+ *    their schema max are truncated in order; strings beyond their max are clipped at a word
+ *    boundary with a trailing ellipsis (run f740's planner died on a 173-char headline vs max 160
+ *    with no repair budget).
  *  Never invents a value. The full schema still validates the result; anything else stays invalid. */
 export function coerceToSchema(schema: unknown, value: unknown, lossy: boolean): unknown {
   const def = (schema as { _def?: Record<string, unknown> } | null | undefined)?._def;
   if (!def) return value;
   const kind = def.typeName as string | undefined;
   if (kind === 'ZodOptional' || kind === 'ZodNullable' || kind === 'ZodDefault' || kind === 'ZodReadonly' || kind === 'ZodCatch') {
-    return value === undefined || value === null ? value : coerceToSchema(def.innerType, value, lossy);
+    if (value === undefined || value === null) return value;
+    const coerced = coerceToSchema(def.innerType, value, lossy);
+    if (kind === 'ZodOptional' && coerced === '' && minStringLength(def.innerType) >= 1) return undefined;
+    return coerced;
   }
   if (kind === 'ZodEffects') return coerceToSchema(def.schema, value, lossy); // refine/preprocess wrappers
   if (kind === 'ZodPipeline') return coerceToSchema(def.in, value, lossy);
@@ -44,7 +51,31 @@ export function coerceToSchema(schema: unknown, value: unknown, lossy: boolean):
     }
     return out;
   }
+  if (kind === 'ZodString') {
+    if (!lossy || typeof value !== 'string') return value;
+    const max = stringCheck(def, 'max');
+    if (typeof max !== 'number' || value.length <= max) return value;
+    const cut = value.slice(0, max - 1);
+    const atWord = cut.includes(' ') ? cut.slice(0, cut.lastIndexOf(' ')) : cut;
+    return `${atWord}…`;
+  }
   return value;
+}
+
+function stringCheck(def: Record<string, unknown>, kind: 'min' | 'max'): number | undefined {
+  const checks = def.checks as Array<{ kind: string; value?: number }> | undefined;
+  const found = checks?.find((check) => check.kind === kind)?.value;
+  return typeof found === 'number' ? found : undefined;
+}
+
+function minStringLength(schema: unknown): number {
+  const def = (schema as { _def?: Record<string, unknown> } | null | undefined)?._def;
+  if (!def) return 0;
+  const kind = def.typeName as string | undefined;
+  if (kind === 'ZodEffects') return minStringLength(def.schema);
+  if (kind === 'ZodPipeline') return minStringLength(def.in);
+  if (kind !== 'ZodString') return 0;
+  return stringCheck(def, 'min') ?? 0;
 }
 
 export async function jsonCall<T>(
@@ -84,6 +115,10 @@ export async function jsonCall<T>(
   const wrapped = schema.safeParse(coerceToSchema(schema, first.json, false));
   if (wrapped.success) return wrapped.data;
   if (opts.repair === false) {
+    // Repair is unavailable (budget/policy) — the deterministic floor is all we have. A clipped
+    // string beats a discarded artifact (run f740: complete plan lost to a 13-char overflow).
+    const saved = trySalvage(first.json);
+    if (saved !== undefined) return saved;
     throw new StageError(stage, 'BAD_OUTPUT', `output failed validation: ${zodMessage(parsed.error)}`);
   }
 

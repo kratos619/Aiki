@@ -1,0 +1,215 @@
+{
+  "adjudications": [
+    {
+      "id": "G3",
+      "ruling": "UNRESOLVED",
+      "reasoning": "Verification is UNVERIFIABLE: there are no comparative prototypes or effort estimates for `aiki serve` versus Electron, and E6 only restates the preferred conclusion. The selection cannot be settled on evidence, even though separate settled claims independently favor serve.",
+      "evidence_ids": [
+        "codex/E1",
+        "codex/E2",
+        "codex/E6"
+      ],
+      "effect_on_decision": "The serve-vs-Electron choice is not carried by this claim; it rests on settled claims G14/G18, not on a proven effort comparison.",
+      "what_would_change_it": "Comparative prototypes or measured effort estimates for both implementation paths."
+    },
+    {
+      "id": "G4",
+      "ruling": "UNRESOLVED",
+      "reasoning": "Verification is PARTIAL: a council-oriented synthesized experience is supported, but the specific inspectable-trace features (claims, disagreement, rulings, provenance) and the differentiation-from-chat-wrappers claim are not established. The distinctive-mechanism thesis is directional, not proven.",
+      "evidence_ids": [
+        "codex/E1",
+        "codex/E3"
+      ],
+      "effect_on_decision": "The differentiation argument is carried by settled claim G17, not by this unverified feature list.",
+      "what_would_change_it": "Evidence the product actually exposes claims/disagreements/rulings/provenance, plus comparative product evidence versus existing wrappers."
+    },
+    {
+      "id": "G6",
+      "ruling": "UNRESOLVED",
+      "reasoning": "Verification is PARTIAL: the narrowed point — a trusted local host must mediate execution because browser pages cannot spawn arbitrary CLIs — holds, but Node's exclusive ownership of streaming, cancellation, and permission enforcement is not established and other host architectures are not excluded. Only the mediation premise is supported.",
+      "evidence_ids": [
+        "codex/E1",
+        "codex/E5"
+      ],
+      "effect_on_decision": "Supports a trusted-local-host architecture generally, not the strong Node-only enforcement claim.",
+      "what_would_change_it": "Architecture or prototype evidence covering streaming, cancellation, and permission enforcement that excludes non-Node hosts."
+    },
+    {
+      "id": "G7",
+      "ruling": "UNRESOLVED",
+      "reasoning": "Verification is PARTIAL: the solo sub-week constraint and orchestration reuse are supported, but the exact three-or-four-view count and the claim that every listed feature must be excluded are not proven. The scope discipline is sound in direction only.",
+      "evidence_ids": [
+        "codex/E1",
+        "codex/E2"
+      ],
+      "effect_on_decision": "Scope narrowing is directionally justified, but the specific view count and exclusions are planning choices, not evidence-backed thresholds.",
+      "what_would_change_it": "Feature-level effort estimates or prototype results fixing the view count and exclusions."
+    },
+    {
+      "id": "G8",
+      "ruling": "UNRESOLVED",
+      "reasoning": "Verification is PARTIAL: extending the existing npm package is supported, but 'best path,' automatic browser launch, and exported replay-artifact sharing are not established and no distribution-path comparison exists. The core npm-reuse idea is favored but its specific mechanics are unproven.",
+      "evidence_ids": [
+        "codex/E1",
+        "codex/E6"
+      ],
+      "effect_on_decision": "npm-package distribution is the favored direction, but auto-open and replay-artifact sharing remain unverified add-ons.",
+      "what_would_change_it": "A distribution-path comparison plus feasibility evidence for browser auto-open and replay-artifact sharing."
+    },
+    {
+      "id": "G9",
+      "ruling": "REJECT",
+      "reasoning": "Verification is VERIFIED: E4 records that the hackathon page was blocked and that judging rules, required submission technology, and demo environment were not independently verified, and E2 supplies only user-reported context. The claim that these remain unverified is itself confirmed.",
+      "evidence_ids": [
+        "codex/E2",
+        "codex/E4"
+      ],
+      "effect_on_decision": "This is the decisive live unknown; it gates any local-only build and drives the conditions rather than a clean PROCEED."
+    },
+    {
+      "id": "G12",
+      "ruling": "UNRESOLVED",
+      "reasoning": "Verification is PARTIAL: existing orchestration and schedule pressure support having a kill gate, but the exact 48-hour threshold, deterministic-replay feasibility, and eligibility/preferability of a static Flight Deck fallback are unproven. The gate's rationale holds; its specific parameters do not.",
+      "evidence_ids": [
+        "codex/E1",
+        "codex/E2",
+        "codex/E5"
+      ],
+      "effect_on_decision": "A protective kill gate is prudent, but the 48-hour figure and the static fallback need validation before they are load-bearing.",
+      "what_would_change_it": "Prototype results for streaming, safe cancellation, and deterministic replay, plus evidence the static Flight Deck is an eligible submission."
+    },
+    {
+      "id": "G13",
+      "ruling": "UNRESOLVED",
+      "reasoning": "Verification is UNVERIFIABLE: E7 establishes only that Aiki is an npm package and provides no measurements comparing a local server against Electron packaging, signing, and distribution. The effort-advantage assertion has no comparative evidence.",
+      "evidence_ids": [
+        "agy/ev_aiki_npm"
+      ],
+      "effect_on_decision": "The 'serve needs less effort' claim is unproven; the serve preference is carried instead by settled claims G14/G18.",
+      "what_would_change_it": "A comparative architecture assessment with implementation estimates and the target platform's signing/packaging requirements."
+    }
+  ],
+  "verdict": "Build the `aiki serve` local web interface rather than an Electron app: the settled evidence favors serve on zero distribution friction (G14) and lower-risk reuse of the existing Node orchestration process (G18), while the direct effort-comparison claims (G3, G13) are unverifiable and do not carry the choice. The differentiator is inspectable multi-model decision provenance (G17), not a chat wrapper. However, the hackathon's submission rules are confirmed-unverified (G9) and a recorded public-hosted-URL requirement (G19) means neither serve nor Electron alone satisfies submission, so proceeding is conditional. Pair the local server with an opt-in sanitized public Replay Capsule (G5, G21) so judges can inspect a run without installing provider CLIs (G16).",
+  "recommendation": "PROCEED_WITH_CONDITIONS",
+  "conditions": [
+    "Before building, confirm the official hackathon rules — required submission technology, the public-hosted-URL requirement, judging criteria, and demo environment (G9, G19).",
+    "Ship an opt-in sanitized public Replay Capsule at a hosted URL so judges can inspect a successful council run without installing or authenticating provider CLIs (G5, G16, G21).",
+    "Build `aiki serve` reusing the existing Node orchestration for spawning/streaming/cancellation, loopback-only, allowlisted operations, no arbitrary shell endpoint (G18, G6).",
+    "Scope to one end-to-end workflow plus 3–4 standout views; no Electron, account system, collaboration layer, or general chat (G7).",
+    "Enforce a 48-hour architecture kill gate: if the engine cannot stream one run, cancel it safely, and replay it deterministically in the browser, fall back to a polished static Flight Deck (G12).",
+    "Center the demo on a prepared decision where visible model disagreement changes the final recommendation, ending in an instantly shareable public replay (G21)."
+  ],
+  "recommendation_claim_ids": [
+    "G14",
+    "G18",
+    "G17",
+    "G19",
+    "G9",
+    "G16",
+    "G5",
+    "G21"
+  ],
+  "condition_claim_ids": [
+    "G9",
+    "G19",
+    "G5",
+    "G16",
+    "G18",
+    "G7",
+    "G12"
+  ],
+  "strongest_counter_case": {
+    "claim_ids": [
+      "G9",
+      "G19",
+      "G16"
+    ],
+    "reasoning": "The hackathon requirements are a verified unknown (G9) and a recorded public-hosted-URL requirement (G19) means a local-only architecture — serve or Electron — does not by itself satisfy submission. If the required submission technology or demo environment excludes a CLI-dependent local build (G16), then committing build time to serve before validating the rules is premature, and the honest recommendation would be to validate eligibility first rather than PROCEED_WITH_CONDITIONS."
+  },
+  "decision_snapshot": {
+    "decisive_numbers": [
+      {
+        "label": "Team & schedule",
+        "value": "1 developer, under 1 week",
+        "meaning": "Solo sub-week window forces a narrow vertical slice reusing existing orchestration",
+        "claim_ids": [
+          "G7",
+          "G20",
+          "G12"
+        ]
+      },
+      {
+        "label": "Standout views",
+        "value": "3–4 (proposed cap)",
+        "meaning": "Scope ceiling required to reach premium polish in the time available",
+        "claim_ids": [
+          "G7"
+        ]
+      },
+      {
+        "label": "Architecture kill gate",
+        "value": "48 hours (proposed, unvalidated)",
+        "meaning": "Deadline to prove live stream/cancel/replay or switch to a static fallback",
+        "claim_ids": [
+          "G12"
+        ]
+      }
+    ],
+    "payback": {
+      "status": "NOT_COMPUTABLE",
+      "result": "No monetization or cost figures exist; monetization is deferred until repeated usage is demonstrated",
+      "basis": "G11 defers monetization and identifies provider installation as the scaling constraint",
+      "claim_ids": [
+        "G11"
+      ]
+    },
+    "options": [
+      {
+        "label": "aiki serve (local web server)",
+        "commitment": "Reuse existing Node orchestration and add a browser presentation layer",
+        "commitment_kind": "UNKNOWN",
+        "tradeoff": "Zero distribution friction and lower risk, but local-only does not satisfy a public-hosted-URL submission on its own",
+        "claim_ids": [
+          "G14",
+          "G18",
+          "G19"
+        ]
+      },
+      {
+        "label": "Electron app",
+        "commitment": "Packaging, code signing, IPC, auto-update, OS-specific builds",
+        "commitment_kind": "UNKNOWN",
+        "tradeoff": "Heavy secondary download and OS security warnings, still local-only, and no comparative effort estimate exists",
+        "claim_ids": [
+          "G14",
+          "G15",
+          "G13"
+        ]
+      }
+    ],
+    "tripwire": {
+      "metric": "Whether a judge/demo machine can install and authorize the provider CLIs",
+      "threshold": "cannot",
+      "decision_rule": "Do not rely on live local execution; serve the sanitized public Replay Capsule instead",
+      "claim_ids": [
+        "G16",
+        "G5"
+      ]
+    }
+  },
+  "key_points": [
+    "Verify first: the hackathon rules are confirmed-unverified (G9) and a recorded public-hosted-URL requirement (G19) means neither serve nor Electron alone satisfies submission — this gates the whole plan.",
+    "Serve beats Electron on the settled evidence — zero distribution friction (G14) and lower-risk Node reuse (G18); the direct effort-comparison claims (G3, G13) are unverifiable and do not carry the choice.",
+    "A sanitized public Replay Capsule (G5, G21) bridges a local-only architecture to the hosted-URL requirement and lets judges inspect a run without installing CLIs (G16).",
+    "The defensible differentiator is inspectable multi-model decision provenance (G17), not a multi-model chat wrapper — but the specific inspectable-trace features (G4) remain unproven and must actually ship.",
+    "Scope is the execution risk: solo, under one week, premium frontend unproven (G20) → one end-to-end workflow plus 3–4 views and nothing else (G7).",
+    "Protect the schedule with a 48-hour kill gate to a static Flight Deck (G12), noting the exact threshold is a planning choice, not verified.",
+    "The strongest demo moment is a prepared decision where visible model disagreement changes the final recommendation (G21)."
+  ],
+  "dissent": [
+    "If the required submission technology or public-URL rule disqualifies a local, CLI-dependent architecture, building serve at all is wasted effort — the rules should be validated before any build time is committed (G9, G19).",
+    "Every escalated architectural claim resolved UNRESOLVED, so the serve-over-Electron choice rests entirely on SUPPORTED context claims (G14, G18) that were never adversarially tested against a real Electron effort estimate; confidence in 'serve' is softer than it appears.",
+    "The inspectable-provenance differentiation (G17) is asserted, not demonstrated against actual competitors (G4 unproven), so the 'wow factor' could underdeliver relative to plainer multi-model UIs."
+  ],
+  "confidence_notes": "Directionally high confidence that serve beats Electron: it is anchored in multiple independently SUPPORTED settled claims (G14, G18) and the counter-claims for Electron effort are unverifiable, not favorable. Lower confidence on eligibility: the dominant uncertainty is submission requirements, which are verified-unknown (G9) with a recorded public-URL constraint (G19), which is why the ruling is PROCEED_WITH_CONDITIONS rather than PROCEED. Numeric thresholds (48-hour gate, 3–4 views) are stated as proposals and are not evidence-verified, so they are treated as planning caps, not facts."
+}

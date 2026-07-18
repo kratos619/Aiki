@@ -1,0 +1,417 @@
+{
+  "task_echo": "Choose between Electron and an `aiki serve` interface, refine the strongest hackathon concept, pressure-test adoption, and define standout features plus a practical solo development plan. The recommendation must preserve Aiki's local-first, no-API-key orchestration of installed provider CLIs.",
+  "strongest_version": "Build `aiki serve` as a local Decision Studio for developers who already use Claude Code, Codex, or Gemini/Antigravity. A developer starts one command, submits an idea or code-review question, and watches a structured council expose agreements, conflicts, evidence, and judge decisions before producing a traceable synthesis. This wins if the interface demonstrates why multiple models produced a better decision rather than merely displaying several chat streams. Shipping inside the existing npm package minimizes adoption and demo friction, while a replayable capsule preserves the demonstration when provider authentication or connectivity fails. The narrow wedge should remain idea stress-testing and code review—not generic research—because those workflows match Aiki's published positioning and give judges a concrete before-and-after comparison.",
+  "positions": [
+    {
+      "local_id": "P1",
+      "proposition": "Choose `aiki serve` over Electron for the hackathon submission.",
+      "dimension_id": "R9",
+      "stance": "SUPPORT",
+      "basis": "INFERENCE",
+      "nature": "JUDGMENT",
+      "load_bearing": true,
+      "if_false": "PIVOT",
+      "reasoning": "It extends the existing npm installation and avoids creating, packaging, and distributing a second desktop product during a solo, sub-week build.",
+      "evidence_ids": ["E1", "E2", "E3"],
+      "depends_on": ["P7", "P8"]
+    },
+    {
+      "local_id": "P2",
+      "proposition": "The initial audience should be developers who already have at least one supported provider CLI installed and regularly perform code review or idea stress-testing.",
+      "dimension_id": "R1",
+      "stance": "SUPPORT",
+      "basis": "INFERENCE",
+      "nature": "JUDGMENT",
+      "load_bearing": true,
+      "if_false": "PIVOT",
+      "reasoning": "This audience matches Aiki's current positioning and tolerates local CLI prerequisites; targeting general researchers would make installation friction and developer-oriented providers harder to justify.",
+      "evidence_ids": ["E1", "E2"],
+      "depends_on": []
+    },
+    {
+      "local_id": "P3",
+      "proposition": "The primary competitive benchmark should be a developer manually consulting provider CLIs and synthesizing their answers, including the option of doing nothing and continuing that workflow.",
+      "dimension_id": "R2",
+      "stance": "MIXED",
+      "basis": "INFERENCE",
+      "nature": "JUDGMENT",
+      "load_bearing": true,
+      "if_false": "CONDITION",
+      "reasoning": "No current competitor evidence was supplied. The product must therefore prove reduced synthesis effort and a better decision against the observable status quo rather than claim an unverified market lead.",
+      "evidence_ids": ["E1", "E2", "E5"],
+      "depends_on": ["P2"]
+    },
+    {
+      "local_id": "P4",
+      "proposition": "Aiki's defensible demo differentiation is a traceable disagreement-to-verdict workflow, not simultaneous model chat windows.",
+      "dimension_id": "D3",
+      "stance": "SUPPORT",
+      "basis": "INFERENCE",
+      "nature": "JUDGMENT",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "reasoning": "Claim-level agreements, conflicts, judge selections, and final provenance make the council mechanism understandable and let users assess whether orchestration improved the result.",
+      "evidence_ids": ["E1", "E2"],
+      "depends_on": ["P3"]
+    },
+    {
+      "local_id": "P5",
+      "proposition": "Distribution should remain one package and one command: install or update `aiki-cli`, run `aiki serve`, and open the loopback URL.",
+      "dimension_id": "R9",
+      "stance": "SUPPORT",
+      "basis": "INFERENCE",
+      "nature": "JUDGMENT",
+      "load_bearing": true,
+      "if_false": "CONDITION",
+      "reasoning": "The existing npm channel is Aiki's strongest adoption asset; a separate Electron download would split releases, documentation, and trust.",
+      "evidence_ids": ["E1", "E2"],
+      "depends_on": ["P1", "P8"]
+    },
+    {
+      "local_id": "P6",
+      "proposition": "Hackathon fit beyond the user-stated AI/LLM Innovation theme remains unverified.",
+      "dimension_id": "R10",
+      "stance": "UNKNOWN",
+      "basis": "EVIDENCE",
+      "nature": "FACTUAL",
+      "load_bearing": true,
+      "if_false": "PIVOT",
+      "reasoning": "The supplied hackathon snapshot records HTTP 403, so required technologies, judging weights, submission format, and demo rules cannot be treated as known.",
+      "evidence_ids": ["E3", "E4"],
+      "depends_on": []
+    },
+    {
+      "local_id": "P7",
+      "proposition": "A polished narrow vertical slice is feasible for one developer in under a week, but a broad research platform or full desktop product is not credibly scoped.",
+      "dimension_id": "R13",
+      "stance": "MIXED",
+      "basis": "INFERENCE",
+      "nature": "JUDGMENT",
+      "load_bearing": true,
+      "if_false": "CONDITION",
+      "reasoning": "Reusing the existing orchestrator makes one end-to-end workflow plausible; structured streaming, premium visualization, cancellation, replay, and demo hardening still create material schedule risk.",
+      "evidence_ids": ["E1", "E3"],
+      "depends_on": ["P1"]
+    },
+    {
+      "local_id": "P8",
+      "proposition": "The Node server must exclusively own provider spawning, streaming, cancellation, and validation while the browser receives structured events over a loopback-only authenticated session.",
+      "dimension_id": "D1",
+      "stance": "SUPPORT",
+      "basis": "INFERENCE",
+      "nature": "JUDGMENT",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "reasoning": "This preserves the local CLI execution boundary, avoids arbitrary browser-triggered commands, and permits the UI to remain a thin visualization layer over Aiki.",
+      "evidence_ids": ["E1", "E2"],
+      "depends_on": []
+    },
+    {
+      "local_id": "P9",
+      "proposition": "A live-only demonstration is too fragile; the submission should include provider preflight checks and replay of a previously completed real run.",
+      "dimension_id": "D5",
+      "stance": "MIXED",
+      "basis": "INFERENCE",
+      "nature": "JUDGMENT",
+      "load_bearing": true,
+      "if_false": "CONDITION",
+      "reasoning": "The product depends on locally installed and authenticated provider CLIs, while the judge environment is unknown. Replay protects the visual narrative without pretending a recorded run is live.",
+      "evidence_ids": ["E1", "E4", "E5"],
+      "depends_on": ["P8"]
+    },
+    {
+      "local_id": "P10",
+      "proposition": "Monetization should be deferred; the hackathon release should optimize for adoption and evidence of repeat use through the existing npm package.",
+      "dimension_id": "R8",
+      "stance": "SUPPORT",
+      "basis": "INFERENCE",
+      "nature": "JUDGMENT",
+      "load_bearing": false,
+      "if_false": "MINOR",
+      "reasoning": "No willingness-to-pay evidence was supplied, and introducing accounts, billing, or hosted infrastructure would conflict with the local-first wedge and the deadline.",
+      "evidence_ids": ["E1", "E3", "E5"],
+      "depends_on": ["P2"]
+    },
+    {
+      "local_id": "P11",
+      "proposition": "Aiki has repeat-use demand among developers beyond the hackathon.",
+      "dimension_id": "R7",
+      "stance": "UNKNOWN",
+      "basis": "ASSUMPTION",
+      "nature": "FACTUAL",
+      "load_bearing": true,
+      "if_false": "STOP",
+      "reasoning": "No user-demand or usage evidence was supplied. Before broadening scope, test five target developers and require at least three to prefer the council output over a single-provider baseline and commit to using it again.",
+      "evidence_ids": ["E5"],
+      "depends_on": ["P2", "P3", "P4"]
+    },
+    {
+      "local_id": "P12",
+      "proposition": "Local-first execution reduces hosted inference burden but does not eliminate privacy, provider-policy, retention, operating-system, or process-scaling risks.",
+      "dimension_id": "R12",
+      "stance": "MIXED",
+      "basis": "INFERENCE",
+      "nature": "JUDGMENT",
+      "load_bearing": false,
+      "if_false": "CONDITION",
+      "reasoning": "Prompts and artifacts can still contain sensitive code, provider terms remain unverified, and local process availability limits team-scale claims. Keep artifacts local, make retention visible, and avoid enterprise or collaboration promises.",
+      "evidence_ids": ["E1", "E2", "E5"],
+      "depends_on": ["P8"]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "E1",
+      "claim_supported": "The published `aiki-cli` package snapshot identifies version 0.3.2 as a local-first council using Claude Code, Codex, and Gemini/Antigravity CLIs without API keys.",
+      "source_kind": "PRIMARY",
+      "support": "SUPPORTS",
+      "freshness": "CURRENT",
+      "locator": "https://www.npmjs.com/package/aiki-cli",
+      "accessed_at": "2026-07-17T06:49:24.464Z"
+    },
+    {
+      "id": "E2",
+      "claim_supported": "The user proposes `aiki serve`, a local visual research interface, synthesized output, and reuse of installed provider CLIs.",
+      "source_kind": "USER",
+      "support": "SUPPORTS",
+      "freshness": "CURRENT",
+      "locator": "/Users/user/Documents/Personal-Learning/AiKi/.aiki/runs/20260717-1219-idea-refinement-f740/inputs/idea-brief.md"
+    },
+    {
+      "id": "E3",
+      "claim_supported": "The user reports a solo team, less than one week remaining, and an AI/LLM Innovation theme.",
+      "source_kind": "USER",
+      "support": "SUPPORTS",
+      "freshness": "CURRENT",
+      "locator": "/Users/user/Documents/Personal-Learning/AiKi/.aiki/runs/20260717-1219-idea-refinement-f740/inputs/idea-brief.md"
+    },
+    {
+      "id": "E4",
+      "claim_supported": "The supplied hackathon source snapshot records that automated access to the hackathon page was blocked with HTTP 403.",
+      "source_kind": "USER",
+      "support": "SUPPORTS",
+      "freshness": "DATED",
+      "locator": "https://namastedev.com/hackathon",
+      "accessed_at": "2026-07-17T06:49:24.464Z"
+    },
+    {
+      "id": "E5",
+      "claim_supported": "The supplied material does not provide user-demand measurements, verified judging rules, provider-policy analysis, demo-environment guarantees, or evidence of the developer's frontend execution capability.",
+      "source_kind": "USER",
+      "support": "CONTEXT_ONLY",
+      "freshness": "CURRENT",
+      "locator": "/Users/user/Documents/Personal-Learning/AiKi/.aiki/runs/20260717-1219-idea-refinement-f740/inputs/idea-brief.md"
+    }
+  ],
+  "calculations": [],
+  "coverage": [
+    {
+      "dimension_id": "R1",
+      "status": "COVERED",
+      "position_ids": ["P2"],
+      "rationale": ""
+    },
+    {
+      "dimension_id": "R2",
+      "status": "COVERED",
+      "position_ids": ["P3"],
+      "rationale": ""
+    },
+    {
+      "dimension_id": "R3",
+      "status": "COVERED",
+      "position_ids": ["P4"],
+      "rationale": ""
+    },
+    {
+      "dimension_id": "R4",
+      "status": "COVERED",
+      "position_ids": ["P7", "P8"],
+      "rationale": ""
+    },
+    {
+      "dimension_id": "R5",
+      "status": "COVERED",
+      "position_ids": ["P7", "P10", "P12"],
+      "rationale": ""
+    },
+    {
+      "dimension_id": "R6",
+      "status": "COVERED",
+      "position_ids": ["P8", "P12"],
+      "rationale": ""
+    },
+    {
+      "dimension_id": "R7",
+      "status": "COVERED",
+      "position_ids": ["P11"],
+      "rationale": ""
+    },
+    {
+      "dimension_id": "R8",
+      "status": "COVERED",
+      "position_ids": ["P10"],
+      "rationale": ""
+    },
+    {
+      "dimension_id": "R9",
+      "status": "COVERED",
+      "position_ids": ["P1", "P5"],
+      "rationale": ""
+    },
+    {
+      "dimension_id": "R10",
+      "status": "COVERED",
+      "position_ids": ["P6"],
+      "rationale": ""
+    },
+    {
+      "dimension_id": "R11",
+      "status": "COVERED",
+      "position_ids": ["P12"],
+      "rationale": ""
+    },
+    {
+      "dimension_id": "R12",
+      "status": "COVERED",
+      "position_ids": ["P6", "P8", "P9", "P11", "P12"],
+      "rationale": ""
+    },
+    {
+      "dimension_id": "R13",
+      "status": "COVERED",
+      "position_ids": ["P7"],
+      "rationale": ""
+    },
+    {
+      "dimension_id": "D1",
+      "status": "COVERED",
+      "position_ids": ["P8"],
+      "rationale": ""
+    },
+    {
+      "dimension_id": "D2",
+      "status": "COVERED",
+      "position_ids": ["P4", "P9"],
+      "rationale": ""
+    },
+    {
+      "dimension_id": "D3",
+      "status": "COVERED",
+      "position_ids": ["P4"],
+      "rationale": ""
+    },
+    {
+      "dimension_id": "D4",
+      "status": "COVERED",
+      "position_ids": ["P1", "P5"],
+      "rationale": ""
+    },
+    {
+      "dimension_id": "D5",
+      "status": "COVERED",
+      "position_ids": ["P9"],
+      "rationale": ""
+    }
+  ],
+  "decision_questions": [
+    {
+      "question": "Do the hackathon rules require a publicly hosted URL or technology that excludes a localhost server?",
+      "claim_ids": ["P1", "P6"]
+    },
+    {
+      "question": "Can the existing orchestrator expose validated structured events and cancellation without duplicating provider execution logic?",
+      "claim_ids": ["P7", "P8"]
+    },
+    {
+      "question": "Will the judged demonstration run on a machine where all required provider CLIs are installed and authenticated?",
+      "claim_ids": ["P9"]
+    },
+    {
+      "question": "In a five-developer test, do at least three prefer Aiki's result over a single-provider baseline and say they would use it again?",
+      "claim_ids": ["P2", "P3", "P4", "P11"]
+    },
+    {
+      "question": "Can the UI expose claim-level summaries and provenance without displaying hidden chain-of-thought or sensitive raw logs?",
+      "claim_ids": ["P4", "P12"]
+    },
+    {
+      "question": "Can the solo developer deliver the streaming event model and premium visualization by day five, leaving one full day for demo hardening?",
+      "claim_ids": ["P7"]
+    },
+    {
+      "question": "Do provider terms permit this local orchestration and the proposed retention of run artifacts?",
+      "claim_ids": ["P8", "P12"]
+    },
+    {
+      "question": "Does the submission format accept an honest recorded-run replay as a fallback when a live provider fails?",
+      "claim_ids": ["P6", "P9"]
+    }
+  ],
+  "deliverable_proposals": [
+    {
+      "output": "FEATURE_BACKLOG",
+      "title": "Council Arena",
+      "detail": "Stream each provider as a distinct council member with status, structured claim cards, agreements, contradictions, and judge selections. Show concise model-produced rationales rather than hidden chain-of-thought.",
+      "user_value": "Developers can understand where models disagree and why the final answer is stronger without reading three complete transcripts.",
+      "why_distinctive": "It turns orchestration into an inspectable decision process instead of presenting an ordinary multi-column chat interface.",
+      "evidence_ids": ["E1", "E2"]
+    },
+    {
+      "output": "FEATURE_BACKLOG",
+      "title": "Verdict Provenance",
+      "detail": "Attach every major final recommendation to the supporting council claims and show rejected or unresolved dissent beside it.",
+      "user_value": "Users can audit the synthesis, investigate weak assumptions, and avoid treating the final answer as unexplained consensus.",
+      "why_distinctive": "The memorable output becomes a defensible decision artifact rather than another generated document.",
+      "evidence_ids": ["E1", "E2"]
+    },
+    {
+      "output": "FEATURE_BACKLOG",
+      "title": "Challenge the Verdict",
+      "detail": "Let the user select one final claim, ask the strongest dissenting model to attack it, and run one bounded re-synthesis that highlights exactly what changed.",
+      "user_value": "Developers can pressure-test the most consequential assumption without restarting an entire research session.",
+      "why_distinctive": "It demonstrates that the council is interactive and falsification-oriented, not merely parallel generation.",
+      "evidence_ids": ["E1", "E2"]
+    },
+    {
+      "output": "FEATURE_BACKLOG",
+      "title": "Replayable Run Capsule",
+      "detail": "Persist a completed real run as a local event sequence that can be replayed with a visible Recorded Run badge, provider metadata, timestamps, and final artifact.",
+      "user_value": "Users can revisit, share locally, and compare past decisions; the demo remains reliable if a provider is unavailable.",
+      "why_distinctive": "The same feature solves genuine reproducibility and hackathon-stage reliability without faking live execution.",
+      "evidence_ids": ["E1", "E4"]
+    },
+    {
+      "output": "IMPLEMENTATION_PLAN",
+      "title": "Day 1: Thin Serve Boundary",
+      "detail": "Add `aiki serve` to the existing package, bind only to loopback, launch a browser with an unguessable session token, serve one static application, and adapt the existing orchestrator into validated run events. Permit only allowlisted read-only Aiki workflows.",
+      "user_value": "One command opens a safe local interface while preserving current CLI behavior and provider access.",
+      "why_distinctive": "It reuses Aiki's existing execution engine instead of building a second Electron runtime or another orchestration layer.",
+      "evidence_ids": ["E1", "E2", "E3"]
+    },
+    {
+      "output": "IMPLEMENTATION_PLAN",
+      "title": "Days 2–3: One Complete Decision Workflow",
+      "detail": "Implement provider preflight, prompt submission, run creation, parallel status, validated event streaming, cancellation, judging, synthesis, and local artifact loading for one idea stress-test template. Verify the full path with all three providers before adding visual extras.",
+      "user_value": "The user can complete the core job end to end and receive a real synthesized decision.",
+      "why_distinctive": "A single working council proves the product thesis more effectively than many disconnected screens.",
+      "evidence_ids": ["E1", "E2", "E3"]
+    },
+    {
+      "output": "IMPLEMENTATION_PLAN",
+      "title": "Days 4–5: Build the Demonstration Layer",
+      "detail": "Add Council Arena, Verdict Provenance, a bounded Challenge the Verdict interaction, responsive visual polish, empty/error states, and recorded-run replay. Cut Challenge the Verdict first if the core run is unstable.",
+      "user_value": "The orchestration becomes understandable, memorable, and usable during both live and recorded demonstrations.",
+      "why_distinctive": "The schedule prioritizes the visual evidence of multi-model value while preserving a clear cut line.",
+      "evidence_ids": ["E2", "E3", "E4"]
+    },
+    {
+      "output": "IMPLEMENTATION_PLAN",
+      "title": "Day 6: Demo and Adoption Hardening",
+      "detail": "Test from a clean installation, verify provider-missing and provider-failure paths, record one excellent real run, prepare a three-minute narrative comparing single-model output with Aiki's verdict, and run five target-developer evaluations.",
+      "user_value": "Judges see a reliable demonstration and the submission includes early evidence that developers value the result.",
+      "why_distinctive": "It makes comparative output quality—not interface spectacle alone—the closing proof.",
+      "evidence_ids": ["E3", "E4", "E5"]
+    }
+  ]
+}

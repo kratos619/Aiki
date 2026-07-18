@@ -3,6 +3,7 @@
 
 import type { DecisionGraph } from '../decision-graph.js';
 import { selectEscalations } from '../decision-graph.js';
+import { sanitizeClaimGroups } from '../claim-groups.js';
 import type { ClaimVerificationSet as ClaimVerificationSetT } from '../../schemas/index.js';
 import { ClaimVerificationSet } from '../../schemas/index.js';
 import { isFatal, StageError, type RunCtx } from '../context.js';
@@ -13,12 +14,18 @@ const S8_PROMPT = `ROLE: Independent verifier. Check each anonymous decision cla
 provided evidence cards and deterministic calculation checks. Output ONLY JSON:
 {"verifications": [{"claim_id": "<G-id>", "status": "VERIFIED|PARTIAL|CONTRADICTED|UNVERIFIABLE",
   "reasoning": "<concise reason>", "evidence_ids": ["<E-id>"],
-  "calculation_check": "PASS|FAIL|NOT_APPLICABLE", "missing_evidence": ["<gap>"]}]}
+  "calculation_check": "PASS|FAIL|NOT_APPLICABLE", "missing_evidence": ["<gap>"]}],
+ "claim_groups": [{"ids": ["<G-id>", "<G-id>"], "relation": "SAME|OPPOSES"}]}
 VERIFIED = the proposition is supported. CONTRADICTED = it is refuted. PARTIAL = evidence is mixed or
 incomplete. UNVERIFIABLE = the supplied sources cannot decide. Cite only supplied evidence IDs. Model
 knowledge cannot verify a current, numeric, legal, medical, financial, market, or regulatory fact.
-Judge each item independently; no verdict quota. JSON only.{{SKILL}}
-ITEMS: {{ITEMS_JSON}}`;
+Judge each item independently; no verdict quota.
+claim_groups: scan ALL CLAIMS below (not only ITEMS). Group ids that assert the SAME proposition in
+different words (relation "SAME") and pair ids that directly contradict each other (relation
+"OPPOSES"). Only group claims from different seats; use existing claim ids only; omit the field when
+there are none. JSON only.{{SKILL}}
+ITEMS: {{ITEMS_JSON}}
+ALL CLAIMS (id, proposition, seat — for claim_groups only): {{CLAIMS_JSON}}`;
 
 interface VerifierInput {
   prompt: string;
@@ -90,9 +97,20 @@ function verifierInput(graph: DecisionGraph, skill = ''): VerifierInput {
       evidence_hole: graph.holes.evidence.find((hole) => hole.claim_id === claim.id)?.reason,
     };
   });
+  // Anonymous seat aliases (provider identity stays hidden): S1, S2, … by first appearance.
+  const seatAlias = new Map<string, string>();
+  for (const position of graph.positions) {
+    if (!seatAlias.has(position.provider)) seatAlias.set(position.provider, `S${seatAlias.size + 1}`);
+  }
+  const claimsIndex = graph.claims.map((claim) => ({
+    id: claim.id,
+    proposition: claim.proposition,
+    seats: [...new Set(claim.position_ids.map((id) => seatAlias.get(positionById.get(id)?.provider ?? '') ?? '?'))],
+  }));
   const prompt = S8_PROMPT
     .replace('{{SKILL}}', skill ? `\n\n${skill}` : '')
-    .replace('{{ITEMS_JSON}}', JSON.stringify(items, null, 2));
+    .replace('{{ITEMS_JSON}}', JSON.stringify(items, null, 2))
+    .replace('{{CLAIMS_JSON}}', JSON.stringify(claimsIndex, null, 2));
   return { prompt, evidenceRefs };
 }
 
@@ -107,11 +125,18 @@ export function claimVerificationRefIssues(
   expectedIds: Iterable<string> = selectVerificationEscalations(graph).map((item) => item.claim_id),
 ): string[] {
   const expected = new Set(expectedIds);
+  const known = new Set(graph.claims.map((claim) => claim.id));
   const evidence = new Map(graph.evidence.map((item) => [item.id, item]));
   const seen = new Set<string>();
   const issues: string[] = [];
   for (const verification of verifications.verifications) {
-    if (!expected.has(verification.claim_id)) issues.push(`unknown claim id: ${verification.claim_id}`);
+    // A claim id absent from the graph is a dangling reference (fatal even when the caller's
+    // expected set is derived from the verifications themselves, as S9's is).
+    if (!known.has(verification.claim_id)) {
+      issues.push(`unknown claim id: ${verification.claim_id}`);
+      continue;
+    }
+    if (!expected.has(verification.claim_id)) issues.push(`unexpected claim verification: ${verification.claim_id}`);
     if (seen.has(verification.claim_id)) issues.push(`duplicate claim verification: ${verification.claim_id}`);
     seen.add(verification.claim_id);
     const cards = verification.evidence_ids.map((id) => evidence.get(id));
@@ -169,11 +194,13 @@ export async function s8Verify(ctx: RunCtx, graph: DecisionGraph): Promise<Claim
     const input = verifierInput(graph, loadSkill('idea-refinement', 'verifier'));
     // Optional work gets no model repair: one logical optional call must remain one call.
     const result = await jsonCall(ctx, ctx.handle(ctx.roles.verifier), 'S8', input.prompt, ClaimVerificationSet, { repair: false });
+    const claimGroups = sanitizeClaimGroups(graph, result.claim_groups);
     const translated: ClaimVerificationSetT = {
       verifications: result.verifications.map((verification) => ({
         ...verification,
         evidence_ids: verification.evidence_ids.map((id) => input.evidenceRefs.get(id) ?? id),
       })),
+      ...(claimGroups.length ? { claim_groups: claimGroups } : {}),
     };
     const issues = claimVerificationRefIssues(graph, translated, escalations.map((item) => item.claim_id));
     if (issues.length) throw new StageError('S8', 'BAD_OUTPUT', issues.join('; '));

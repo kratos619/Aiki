@@ -1,5 +1,7 @@
 import type { DecisionReportJson } from './stages/s10-render.js';
 import { DISPLAY_NAME, type ProviderId } from '../providers/types.js';
+import { evidenceOrigin } from './evidence-origin.js';
+import { sanitizeLocalPaths } from './sanitize-paths.js';
 
 function cell(value: string): string {
   return value.replaceAll('\n', ' ').replaceAll('|', '\\|');
@@ -72,6 +74,7 @@ const FLAG_EXPLAIN: Record<string, string> = {
   weak_seat: 'one scout seat contributed far less evidenced material than the other; treat convergence cautiously',
   source_fallback_search: 'a supplied page blocked direct reading; the source-investigation seat searched for accessible sources instead',
   deliverable_gap: 'one or more surviving scouts omitted a requested feature or implementation proposal',
+  plan_partial: 'the answer planner omitted part of the requested deliverables; the report shows what was produced',
 };
 
 function degradation(report: DecisionReportJson, flags: string[]): string[] {
@@ -100,10 +103,13 @@ function councilRead(report: DecisionReportJson): string {
 export function sanitizeReaderText(text: string, labelFor?: (id: string) => string | null): string {
   return stripReaderClaimIds(text, labelFor)
     .replace(/\b(?:G|C|D)\d+\b/g, '')
-    .replace(/\bUNVERIFIABLE\b/gi, 'not independently confirmed')
-    .replace(/\bUNVERIFIED\b/gi, 'not yet confirmed')
-    .replace(/\bPARTIAL\b/gi, 'partly supported')
-    .replace(/\bCONFLICTED\b/gi, 'supported by conflicting evidence')
+    // v6: UPPERCASE-only — a leaked internal enum is rewritten; ordinary English ("the rules are
+    // unverified") is the model's own prose and must survive (f740's "confirmed-unverified" became
+    // "confirmed-not yet confirmed" under the old /gi).
+    .replace(/\bUNVERIFIABLE\b/g, 'not independently confirmed')
+    .replace(/\bUNVERIFIED\b/g, 'not yet confirmed')
+    .replace(/\bPARTIAL\b/g, 'partly supported')
+    .replace(/\bCONFLICTED\b/g, 'supported by conflicting evidence')
     .replace(/\bstructural score\b/gi, 'confidence estimate')
     .replace(/\bevidence coverage\b/gi, 'source strength')
     .replace(/\bverification coverage\b/gi, 'source strength')
@@ -122,7 +128,7 @@ export function cleanReaderText(report: DecisionReportJson, text: string): strin
 
 const MATERIAL_WARNING_ORDER = [
   'synthesis_suspect', 'low_diversity', 'weak_seat', 'deliverable_gap', 'plan_skipped',
-  'plan_fallback', 'headless_intent', 'verification_skipped', 'research_ungrounded',
+  'plan_fallback', 'plan_partial', 'headless_intent', 'verification_skipped', 'research_ungrounded',
 ] as const;
 
 const READER_WARNING: Record<(typeof MATERIAL_WARNING_ORDER)[number], string> = {
@@ -132,6 +138,7 @@ const READER_WARNING: Record<(typeof MATERIAL_WARNING_ORDER)[number], string> = 
   deliverable_gap: 'At least one scout omitted a requested feature or implementation proposal.',
   plan_skipped: 'The answer-planning step was skipped because its call budget was unavailable.',
   plan_fallback: 'The answer planner failed validation; this report uses a deterministic fallback.',
+  plan_partial: 'The answer planner omitted part of the requested deliverables; the report shows what was produced.',
   headless_intent: 'No person confirmed the interpreted request; documented defaults were used.',
   verification_skipped: 'Independent verification was skipped; important factual claims may remain unchecked.',
   research_ungrounded: 'Source investigation did not produce a cited public source; treat current claims as ungrounded.',
@@ -246,7 +253,8 @@ function renderReaderBriefMarkdown(report: DecisionReportJson): string {
   if (projection.snapshot) {
     L.push('## Decision numbers', '', '### Decisive numbers', '', '| Metric | Value | What it means |', '|---|---:|---|');
     for (const item of projection.snapshot.decisiveNumbers) L.push(`| ${cell(item.label)} | ${cell(item.value)} | ${cell(item.meaning)} |`);
-    if (projection.snapshot.payback) {
+    // v6: a NOT_COMPUTABLE payback is noise on a non-financial question — omit, don't announce.
+    if (projection.snapshot.payback && projection.snapshot.payback.status !== 'NOT_COMPUTABLE') {
       L.push('', `**Payback — ${projection.snapshot.payback.status.replaceAll('_', ' ')}:** ${projection.snapshot.payback.result}`);
       L.push(`Basis: ${projection.snapshot.payback.basis}`, '');
     } else L.push('');
@@ -300,6 +308,8 @@ function renderReaderBriefMarkdown(report: DecisionReportJson): string {
 
   if (projection.sources.length) {
     L.push('## Sources', '');
+    const externalCount = report.dossier.evidence.filter((item) => evidenceOrigin(item) === 'EXTERNAL').length;
+    L.push(`${externalCount} independent external source${externalCount === 1 ? '' : 's'}; everything else is your own material or model background.`, '');
     for (const source of projection.sources) {
       const citationScope = source.citedFor.length ? ` — Cited for: ${source.citedFor.join('; ')}` : '';
       L.push(`${source.url ? `- [${source.label.replace(/[\[\]]/g, '')}](${source.url})` : `- ${source.label}`}${citationScope}`);
@@ -339,7 +349,7 @@ function renderLegacyDecisionDossierMarkdown(report: DecisionReportJson): string
     for (const item of report.decisionSnapshot.decisiveNumbers) {
       L.push(`| ${cell(item.label)} | ${cell(item.value)} | ${cell(item.meaning)} | ${cell(readerClaimRefs(report, item.claimIds))} |`);
     }
-    if (report.decisionSnapshot.payback) {
+    if (report.decisionSnapshot.payback && report.decisionSnapshot.payback.status !== 'NOT_COMPUTABLE') {
       const payback = report.decisionSnapshot.payback;
       L.push('', `**Payback — ${payback.status.replaceAll('_', ' ')}:** ${payback.result}`);
       L.push(`Basis: ${payback.basis}`, '');
@@ -567,7 +577,11 @@ function renderLegacyDecisionDossierMarkdown(report: DecisionReportJson): string
   if (dossier.evidence.length) {
     L.push('| Evidence ID | Source | Date | Freshness | Verification | Linked claims |', '|---|---|---|---|---|---|');
     for (const evidence of dossier.evidence) {
-      L.push(`| ${evidence.id} | ${cell(evidence.source)} (${evidence.sourceKind}) | ${evidence.date} | ${evidence.freshness} | ${evidence.verificationStatus} | ${cell(readerClaimRefs(report, evidence.claimIds))} |`);
+      // v6: the user's own material can corroborate what they told us — never "verify" it.
+      const verification = evidenceOrigin(evidence) === 'USER_MATERIAL'
+        ? 'consistent with your materials (not independently checked)'
+        : evidence.verificationStatus;
+      L.push(`| ${evidence.id} | ${cell(evidence.source)} (${evidence.sourceKind}) | ${evidence.date} | ${evidence.freshness} | ${verification} | ${cell(readerClaimRefs(report, evidence.claimIds))} |`);
     }
   } else L.push('No evidence cards were stored.');
 
@@ -607,7 +621,8 @@ function renderLegacyDecisionDossierMarkdown(report: DecisionReportJson): string
   return L.join('\n');
 }
 
-/** Canonical Markdown. HTML and Copy-Markdown consume the same persisted reader brief. */
+/** Canonical Markdown. HTML and Copy-Markdown consume the same persisted reader brief.
+ *  v6: every rendered artifact is path-sanitized; stored run JSON keeps raw locators for audit. */
 export function renderDecisionDossierMarkdown(report: DecisionReportJson): string {
-  return report.dossier.readerBrief ? renderReaderBriefMarkdown(report) : renderLegacyDecisionDossierMarkdown(report);
+  return sanitizeLocalPaths(report.dossier.readerBrief ? renderReaderBriefMarkdown(report) : renderLegacyDecisionDossierMarkdown(report));
 }

@@ -126,7 +126,66 @@ describe('full-council source gate', () => {
     expect(ctx.flags).toContain('source_fallback_search');
   });
 
-  it.each(['council', 'research'] as const)('%s preserves a blocked source and falls back to Codex search', async (mode) => {
+  it('honors a CLI-provided snapshot without refetching (T10b: the user already approved it)', async () => {
+    vi.stubGlobal('fetch', async () => { throw new Error('must not fetch — snapshot was provided'); });
+    let modelCalls = 0;
+    const handles = (['agy', 'codex'] as ProviderId[]).map((id): ProviderHandle => ({
+      id,
+      adapter: { id, run: async () => (modelCalls++, { ok: true, text: '{}', json: {}, durationMs: 1 }) },
+      flags: { id, jsonOutput: false, readOnlyFlag: 'sandbox' },
+      readOnly: 'sandbox',
+      version: 'test',
+    }));
+    const writer = new RunWriter(makeRunId('idea-refinement'), root);
+    const ctx = new RunCtx({
+      runId: writer.runId,
+      workflow: 'idea-refinement',
+      mode: 'council',
+      handles,
+      roles: { analyst: 'agy', judge: 'codex', verifier: 'codex', s4: ['agy', 'codex'] },
+      writer,
+      cwd: writer.dir,
+      urlSources: { sources: [{ id: 'U1', url: 'https://example.com/hackathon', status: 'BLOCKED', accessed_at: '2026-07-17T00:00:00.000Z', error: 'HTTP 403' }] } as never,
+    });
+
+    const outcome = await executeRun(ctx, 'Research https://example.com/hackathon before deciding.', runIdeaRefinement);
+
+    // The provided snapshot is authoritative: gate still stops (no override), zero fetches, zero model calls.
+    expect(outcome.error?.code).toBe('SOURCE_UNREADABLE');
+    expect(modelCalls).toBe(0);
+    const artifact = JSON.parse(await readFile(join(writer.dir, '00a-url-sources.json'), 'utf8'));
+    expect(artifact.sources[0]).toMatchObject({ url: 'https://example.com/hackathon', status: 'BLOCKED' });
+  });
+
+  it.each(['council', 'research'] as const)('%s stops by default when a supplied source is blocked — no model calls burned', async (mode) => {
+    vi.stubGlobal('fetch', async () => new Response('Access denied', { status: 403, headers: { 'content-type': 'text/html' } }));
+    let modelCalls = 0;
+    const handles = (['agy', 'codex'] as ProviderId[]).map((id): ProviderHandle => ({
+      id,
+      adapter: { id, run: async () => (modelCalls++, { ok: true, text: '{}', json: {}, durationMs: 1 }) },
+      flags: { id, jsonOutput: false, readOnlyFlag: 'sandbox' },
+      readOnly: 'sandbox',
+      version: 'test',
+    }));
+    const writer = new RunWriter(makeRunId('idea-refinement'), root);
+    const ctx = new RunCtx({
+      runId: writer.runId,
+      workflow: 'idea-refinement',
+      mode,
+      handles,
+      roles: { analyst: 'agy', judge: 'codex', verifier: 'codex', s4: ['agy', 'codex'] },
+      writer,
+      cwd: writer.dir,
+    });
+
+    const outcome = await executeRun(ctx, 'Research the rules at https://example.com/hackathon before deciding.', runIdeaRefinement);
+
+    expect(outcome.error?.code).toBe('SOURCE_UNREADABLE');
+    expect(outcome.error?.message).toContain('--allow-blocked-sources');
+    expect(modelCalls).toBe(0); // v6 T10: the f740 failure mode — 12 calls around a 403 — is dead
+  });
+
+  it.each(['council', 'research'] as const)('%s preserves a blocked source and falls back to Codex search when the user proceeds explicitly', async (mode) => {
     vi.stubGlobal('fetch', async () => new Response(
       '<html><title>Just a moment...</title><script src="/cdn-cgi/challenge-platform/x"></script></html>',
       { status: 403, headers: { 'content-type': 'text/html' } },
@@ -154,6 +213,7 @@ describe('full-council source gate', () => {
       roles: { analyst: 'agy', judge: 'codex', verifier: 'codex', s4: ['agy', 'codex'] },
       writer,
       cwd: writer.dir,
+      allowBlockedSources: true, // v6 T10: the fallback path now requires the explicit override
     });
 
     const outcome = await executeRun(

@@ -726,8 +726,17 @@ export const ClaimVerification = z.object({
   missing_evidence: z.array(z.string().min(1)),
 }).strict();
 
+/** v6 semantic claim join: S8 may group claims that assert the same proposition in different
+ *  words (SAME) or directly contradict each other (OPPOSES). `.catch(undefined)` keeps a
+ *  malformed grouping from ever costing the verification set — groups are a bonus, never a risk. */
+export const ClaimGroup = z.object({
+  ids: z.array(z.string().min(1)).min(2).max(8),
+  relation: z.enum(['SAME', 'OPPOSES']),
+}).strict();
+
 export const ClaimVerificationSet = z.object({
   verifications: z.array(ClaimVerification),
+  claim_groups: z.array(ClaimGroup).max(12).optional().catch(undefined),
 }).strict();
 
 // ── R5: bounded, append-only rebuttal events ───────────────────────────────
@@ -1165,6 +1174,7 @@ export const RunMeta = z.object({
     'weak_seat',
     'plan_skipped',
     'plan_fallback',
+    'plan_partial',
     'headless_intent',
     'verification_skipped',
     'research_ungrounded',
@@ -1219,6 +1229,7 @@ export type DecisionGraph = z.infer<typeof DecisionGraph>;
 export type Verification = z.infer<typeof Verification>;
 export type VerificationSet = z.infer<typeof VerificationSet>;
 export type ClaimVerification = z.infer<typeof ClaimVerification>;
+export type ClaimGroup = z.infer<typeof ClaimGroup>;
 export type ClaimVerificationSet = z.infer<typeof ClaimVerificationSet>;
 export type RebuttalResponse = z.infer<typeof RebuttalResponse>;
 export type RebuttalResponseSet = z.infer<typeof RebuttalResponseSet>;
