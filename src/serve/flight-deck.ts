@@ -365,13 +365,17 @@ export class FlightDeck {
     if (action.t === 'gate' && !gate.scopes?.includes(action.decision)) throw new DeckError(400, 'that gate does not accept a permission decision');
     if (action.t === 'answer' && gate.scopes) throw new DeckError(400, 'that gate expects a permission decision');
     const value = action.t === 'gate' ? action.decision : action.value;
-    if (!this.gates.resolve(action.gateId, value)) throw new DeckError(409, 'gate is no longer pending');
     const summary = action.t === 'gate' ? decisionSummary(action.decision) : 'Answer received';
-    this.log(`⏵ ${summary}`);
-    active.bus.emit({ t: 'gate_resolved', gateId: action.gateId, summary });
+    // Persist the gate receipt BEFORE releasing the gate: resolving it unblocks the run loop, which appends
+    // the follow-up answer turn. If we appended the receipt after resolving, the two appendFile writes race
+    // and the receipt can land as the thread's terminal turn instead of the reply. ponytail: order the two
+    // writes by persisting first, not by adding a per-thread write lock.
     await appendTurn(this.opts.runsRoot, active.threadId, {
       kind: 'gate_receipt', gate_kind: gate.kind, summary, decision: action.t === 'gate' ? action.decision : 'answered',
     });
+    if (!this.gates.resolve(action.gateId, value)) throw new DeckError(409, 'gate is no longer pending');
+    this.log(`⏵ ${summary}`);
+    active.bus.emit({ t: 'gate_resolved', gateId: action.gateId, summary });
   }
 
   private async resume(oldRunId: string): Promise<SendOutcomeT> {
