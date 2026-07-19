@@ -16,208 +16,321 @@
     --violet-hot: #a794ff;
     --green: #4ade80;
     --red: #ef4444;
+    --amber: #fbbf24;
     --dim: #6b7280;
     --text: #e5e7eb;
   }
-  html { scroll-snap-type: y mandatory; }
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'IBM Plex Mono', monospace;
-  }
+  html { scroll-snap-type: y proximity; }
+  body { background: var(--bg); color: var(--text); font-family: 'IBM Plex Mono', monospace; }
   .slide {
     min-height: 100vh;
     scroll-snap-align: start;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    padding: 8vh 8vw;
-    position: relative;
-    overflow: hidden;
+    display: flex; flex-direction: column; justify-content: center;
+    padding: 7vh 7vw;
+    position: relative; overflow: hidden;
     border-bottom: 1px solid rgba(139,124,232,.12);
   }
   .slide::before {
-    content: '';
-    position: absolute; inset: 0; pointer-events: none;
+    content: ''; position: absolute; inset: 0; pointer-events: none;
     background: radial-gradient(ellipse 70% 60% at 80% 20%, rgba(139,124,232,.10), transparent 60%);
   }
   .kicker {
-    color: var(--violet-hot);
-    font-size: clamp(13px, 1.4vw, 16px);
-    font-weight: 700;
-    letter-spacing: 3px;
-    text-transform: uppercase;
-    margin-bottom: 24px;
+    color: var(--violet-hot); font-size: clamp(12px, 1.3vw, 15px); font-weight: 700;
+    letter-spacing: 3px; text-transform: uppercase; margin-bottom: 20px;
   }
-  h1, h2 {
-    font-family: 'Anton', sans-serif;
-    font-weight: 400;
-    line-height: 1.02;
-    color: #fff;
-    letter-spacing: .5px;
-  }
+  h1, h2 { font-family: 'Anton', sans-serif; font-weight: 400; line-height: 1.04; color: #fff; letter-spacing: .5px; }
   h1 { font-size: clamp(52px, 9vw, 128px); }
-  h2 { font-size: clamp(36px, 5.5vw, 76px); margin-bottom: 32px; }
+  h2 { font-size: clamp(32px, 4.8vw, 66px); margin-bottom: 26px; }
   .accent { color: var(--violet-hot); }
   .good { color: var(--green); }
   .bad { color: var(--dim); text-decoration: line-through; text-decoration-color: var(--red); text-decoration-thickness: 5px; }
-  p.lead {
-    font-size: clamp(16px, 1.9vw, 22px);
-    line-height: 1.65;
-    max-width: 850px;
-    color: #b6bcc8;
-  }
-  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-top: 40px; max-width: 1100px; }
-  .card {
-    background: var(--card);
-    border: 1px solid rgba(139,124,232,.28);
-    border-radius: 16px;
-    padding: 26px 24px;
-  }
-  .card b { color: #fff; display: block; font-size: clamp(15px, 1.6vw, 19px); margin-bottom: 10px; }
-  .card span { color: #9aa1ad; font-size: clamp(13px, 1.4vw, 16px); line-height: 1.55; display: block; }
+  p.lead { font-size: clamp(15px, 1.7vw, 20px); line-height: 1.65; max-width: 880px; color: #b6bcc8; }
+  p.lead b { color: #fff; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 18px; margin-top: 34px; max-width: 1150px; }
+  .card { background: var(--card); border: 1px solid rgba(139,124,232,.28); border-radius: 14px; padding: 22px 20px; }
+  .card b { color: #fff; display: block; font-size: clamp(14px, 1.5vw, 18px); margin-bottom: 8px; }
+  .card span { color: #9aa1ad; font-size: clamp(12px, 1.3vw, 15px); line-height: 1.55; display: block; }
+  .card span code { color: var(--green); }
   .pill {
-    display: inline-block; margin: 6px 8px 6px 0;
-    border: 1px solid rgba(139,124,232,.4); border-radius: 999px;
-    padding: 8px 18px; font-size: clamp(13px, 1.4vw, 16px); color: var(--violet-hot); font-weight: 500;
+    display: inline-block; margin: 6px 8px 6px 0; border: 1px solid rgba(139,124,232,.4);
+    border-radius: 999px; padding: 7px 16px; font-size: clamp(12px, 1.3vw, 15px);
+    color: var(--violet-hot); font-weight: 500;
   }
-  .stat-row { display: flex; align-items: baseline; gap: 28px; flex-wrap: wrap; margin: 36px 0; }
-  .stat-big { font-family: 'Anton'; font-size: clamp(80px, 13vw, 190px); }
-  .vs { color: var(--dim); font-size: clamp(20px, 2.5vw, 34px); font-weight: 700; }
+  .stat-row { display: flex; align-items: baseline; gap: 28px; flex-wrap: wrap; margin: 30px 0; }
+  .stat-big { font-family: 'Anton'; font-size: clamp(80px, 12vw, 175px); }
+  .vs { color: var(--dim); font-size: clamp(20px, 2.4vw, 32px); font-weight: 700; }
   code.block {
     display: block; background: var(--card); border: 1px solid rgba(139,124,232,.3);
-    border-radius: 12px; padding: 22px 26px; margin-top: 28px; max-width: 620px;
-    font-size: clamp(15px, 1.8vw, 21px); color: var(--green); line-height: 1.9;
+    border-radius: 12px; padding: 20px 24px; margin-top: 24px; max-width: 640px;
+    font-size: clamp(14px, 1.6vw, 19px); color: var(--green); line-height: 1.9;
   }
   code.block .c { color: var(--dim); }
-  .foot { position: absolute; bottom: 26px; left: 8vw; right: 8vw; display: flex; justify-content: space-between; font-size: 12px; color: var(--dim); letter-spacing: 1px; }
+  .foot { position: absolute; bottom: 22px; left: 7vw; right: 7vw; display: flex; justify-content: space-between; font-size: 12px; color: var(--dim); letter-spacing: 1px; }
   a { color: var(--violet-hot); text-decoration: none; border-bottom: 1px solid rgba(167,148,255,.4); }
-  ul.flow { list-style: none; margin-top: 36px; max-width: 900px; }
-  ul.flow li {
-    padding: 16px 0 16px 40px; position: relative;
-    font-size: clamp(15px, 1.7vw, 20px); color: #b6bcc8; line-height: 1.5;
-    border-left: 2px solid rgba(139,124,232,.35); margin-left: 8px;
+
+  /* ---- slide 2: tab-hell visual ---- */
+  .tabs { display: flex; gap: 18px; margin: 34px 0 10px; flex-wrap: wrap; max-width: 1050px; }
+  .tab {
+    flex: 1 1 260px; background: var(--card); border: 1px solid rgba(255,255,255,.12);
+    border-radius: 12px; overflow: hidden; min-width: 240px;
   }
-  ul.flow li::before {
-    content: ''; position: absolute; left: -8px; top: 26px;
-    width: 14px; height: 14px; border-radius: 50%;
-    background: var(--violet); box-shadow: 0 0 16px rgba(139,124,232,.8);
+  .tab-bar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: rgba(255,255,255,.04); border-bottom: 1px solid rgba(255,255,255,.08); font-size: 12px; color: var(--dim); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; }
+  .tab-body { padding: 16px 14px; font-size: clamp(11px, 1.2vw, 14px); line-height: 1.6; color: #9aa1ad; }
+  .tab-body .paste { color: var(--amber); }
+  .loop {
+    margin-top: 26px; font-size: clamp(14px, 1.6vw, 19px); color: var(--red);
+    font-weight: 700; letter-spacing: 1px;
   }
-  ul.flow li b { color: #fff; }
-  .orbs { display: flex; gap: 28px; margin: 40px 0 10px; flex-wrap: wrap; }
-  .orb {
-    width: clamp(80px, 10vw, 120px); height: clamp(80px, 10vw, 120px); border-radius: 50%;
-    display: flex; align-items: center; justify-content: center; flex-direction: column;
-    background: var(--card); border: 3px solid; font-family: 'Anton'; font-size: clamp(28px, 4vw, 44px);
+
+  /* ---- pipeline flow ---- */
+  .pipe { counter-reset: step; list-style: none; margin-top: 30px; max-width: 980px; }
+  .pipe li {
+    counter-increment: step; position: relative;
+    padding: 14px 0 14px 64px; border-left: 2px solid rgba(139,124,232,.35); margin-left: 20px;
   }
-  .orb i { font-style: normal; font-family: 'IBM Plex Mono'; font-size: 12px; font-weight: 700; letter-spacing: 1px; margin-top: 4px; }
-  .o1 { border-color: #e8927c; color: #e8927c; }
-  .o2 { border-color: #7dd3c8; color: #7dd3c8; }
-  .o3 { border-color: #7ca9e8; color: #7ca9e8; }
+  .pipe li::before {
+    content: counter(step); position: absolute; left: -21px; top: 14px;
+    width: 40px; height: 40px; border-radius: 50%;
+    background: var(--card); border: 2px solid var(--violet);
+    color: var(--violet-hot); font-weight: 700; font-size: 17px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .pipe li:last-child { border-left-color: transparent; }
+  .pipe b { color: #fff; font-size: clamp(15px, 1.6vw, 19px); display: block; margin-bottom: 4px; }
+  .pipe span { color: #9aa1ad; font-size: clamp(12px, 1.35vw, 15px); line-height: 1.55; display: block; max-width: 760px; }
+
+  /* ---- architecture diagram ---- */
+  .arch { margin-top: 28px; max-width: 1050px; display: flex; flex-direction: column; gap: 0; }
+  .layer {
+    background: var(--card); border: 1px solid rgba(139,124,232,.35); border-radius: 12px;
+    padding: 14px 18px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  }
+  .layer .lname { color: var(--violet-hot); font-weight: 700; font-size: clamp(11px, 1.2vw, 14px); letter-spacing: 1.5px; min-width: 150px; text-transform: uppercase; }
+  .node {
+    background: rgba(139,124,232,.10); border: 1px solid rgba(139,124,232,.45); border-radius: 8px;
+    padding: 8px 14px; font-size: clamp(11px, 1.2vw, 14px); color: var(--text);
+  }
+  .node.hot { border-color: var(--green); color: var(--green); background: rgba(74,222,128,.07); }
+  .node small { display: block; color: var(--dim); font-size: 10px; margin-top: 2px; }
+  .down { text-align: center; color: var(--violet); font-size: 18px; line-height: 1.9; }
+  .down small { color: var(--dim); font-size: 11px; letter-spacing: 1px; margin-left: 10px; }
+
+  /* ---- dense slides (fit 720p) ---- */
+  .dense .kicker { margin-bottom: 10px; }
+  .dense h2 { font-size: clamp(26px, 3.4vw, 46px); margin-bottom: 16px; }
+  .dense .pipe { margin-top: 12px; }
+  .dense .pipe li { padding: 8px 0 8px 52px; }
+  .dense .pipe li::before { width: 32px; height: 32px; font-size: 14px; left: -17px; top: 8px; }
+  .dense .pipe b { font-size: clamp(13px, 1.4vw, 16px); margin-bottom: 2px; }
+  .dense .pipe span { font-size: clamp(11px, 1.2vw, 13.5px); }
+  .pipe.cols {
+    display: grid; grid-auto-flow: column;
+    grid-template-rows: repeat(3, auto); grid-template-columns: 1fr 1fr;
+    gap: 0 56px; max-width: 1200px;
+  }
+  .dense .arch { margin-top: 12px; }
+  .dense .layer { padding: 9px 14px; }
+  .dense .down { line-height: 1.45; font-size: 15px; }
+  .dense code.block { padding: 14px 20px; margin-top: 12px; font-size: clamp(13px, 1.4vw, 16px); }
+  .dense table { margin-top: 14px; }
+  .dense th, .dense td { padding: 9px 14px; }
+  .dense p.lead { font-size: clamp(13px, 1.5vw, 17px); }
+
+  /* ---- expect table ---- */
+  table { border-collapse: collapse; margin-top: 28px; width: 100%; max-width: 950px; }
+  th, td { text-align: left; padding: 13px 16px; font-size: clamp(12px, 1.35vw, 15px); border-bottom: 1px solid rgba(139,124,232,.18); }
+  th { color: var(--violet-hot); letter-spacing: 1.5px; text-transform: uppercase; font-size: clamp(11px, 1.2vw, 13px); }
+  td { color: #b6bcc8; }
+  td b { color: #fff; }
+  td .g { color: var(--green); } td .a { color: var(--amber); } td .r { color: var(--red); } td .d { color: var(--dim); }
 </style>
 </head>
 <body>
 
 <!-- 1 · Title -->
 <section class="slide">
-  <div class="kicker">OpenAI × NamasteDev Codex Hackathon · Solo build</div>
+  <div class="kicker">Pitch deck · Solo build</div>
   <h1>AIKI</h1>
   <h2 class="accent" style="margin-top:8px">A local LLM council.</h2>
-  <p class="lead" style="margin-top:20px">Don't ask an AI. Convene a council. Claude, Codex and Gemini deliberate on your machine — and hand you one verdict, with receipts.</p>
+  <p class="lead" style="margin-top:18px">Don't ask an AI. Convene a council. Claude, Codex and Gemini deliberate on your machine — and hand you one verdict, with receipts.</p>
   <div class="foot"><span>aiki · pitch deck</span><span>↓ scroll or press ↓</span></div>
 </section>
 
-<!-- 2 · Problem -->
+<!-- 2 · The problem (personal) -->
 <section class="slide">
-  <div class="kicker">01 · The problem</div>
-  <h2>One model, one answer —<br><span class="accent">confidently wrong.</span></h2>
-  <p class="lead">People bet real time and money on single-model answers: "Should I build this?" "Is this idea worth six months of my life?" Every model has blind spots, and a lone model can't see its own.</p>
-  <div class="foot"><span>aiki</span><span>2 / 8</span></div>
-</section>
-
-<!-- 3 · Insight -->
-<section class="slide">
-  <div class="kicker">02 · The insight</div>
-  <h2>Models don't share<br>the <span class="accent">same blind spots.</span></h2>
-  <p class="lead">Claude, GPT and Gemini are trained differently and fail differently. Their <b style="color:#fff">disagreement is signal</b> — if you structure it. That structure is the product.</p>
-  <div class="orbs">
-    <div class="orb o1">C<i>CLAUDE</i></div>
-    <div class="orb o2">O<i>CODEX</i></div>
-    <div class="orb o3">G<i>GEMINI</i></div>
+  <div class="kicker">01 · The problem — I lived it</div>
+  <h2>Refining an idea meant<br><span class="accent">copy-paste hell.</span></h2>
+  <p class="lead">Every time I wanted to pressure-test an idea, my "process" was: paste the same prompt into ChatGPT… then Claude… then Gemini. Compare the answers by eye. Tweak the prompt. Paste again. Repeat until something felt right.</p>
+  <div class="tabs">
+    <div class="tab"><div class="tab-bar"><span class="dot" style="background:#e8927c"></span>claude.ai</div><div class="tab-body"><span class="paste">⌘V</span> "should I build my idea…"<br>→ 800 words. Sounds smart.</div></div>
+    <div class="tab"><div class="tab-bar"><span class="dot" style="background:#7dd3c8"></span>chatgpt.com</div><div class="tab-body"><span class="paste">⌘V</span> same prompt again…<br>→ 900 words. Disagrees. Why?</div></div>
+    <div class="tab"><div class="tab-bar"><span class="dot" style="background:#7ca9e8"></span>gemini.google</div><div class="tab-body"><span class="paste">⌘V</span> same prompt, third time…<br>→ agrees with… both?</div></div>
   </div>
-  <div class="foot"><span>aiki</span><span>3 / 8</span></div>
+  <div class="loop">↻ compare by eye → tweak → paste again → repeat → give up</div>
+  <div class="foot"><span>aiki</span><span>2 / 12</span></div>
 </section>
 
-<!-- 4 · Product -->
+<!-- 3 · Why that fails -->
 <section class="slide">
-  <div class="kicker">03 · The product</div>
-  <h2>A structured deliberation,<br>not a group chat.</h2>
-  <ul class="flow">
-    <li><b>Independent analysis</b> — each model works the problem alone, in separate research lanes, before seeing any other opinion.</li>
-    <li><b>Cross-examination</b> — claims become a typed evidence graph; genuine disagreements are escalated and rebutted, not averaged away.</li>
-    <li><b>Chairman's verdict</b> — go / no-go, a confidence score, the conditions under which it holds, and what would change the answer.</li>
-  </ul>
-  <p class="lead" style="margin-top:32px">Every stage is schema-validated. Every call is on the cost receipt. Everything runs read-only.</p>
-  <div class="foot"><span>aiki</span><span>4 / 8</span></div>
+  <div class="kicker">02 · Why that fails</div>
+  <h2>You become the<br><span class="accent">orchestrator.</span></h2>
+  <div class="cards">
+    <div class="card"><b>No structure</b><span>Three walls of prose. Nothing lines up claim-to-claim, so "comparing" is really skimming.</span></div>
+    <div class="card"><b>Disagreements get lost</b><span>The one place models genuinely conflict — the most valuable signal — is exactly what your eye glosses over.</span></div>
+    <div class="card"><b>No memory, no verdict</b><span>Ten tabs later there's no record of what was claimed, what was checked, or why you believed it. Just vibes.</span></div>
+    <div class="card"><b>Exhausting</b><span>So you stop at "feels right" — and bet weeks of your life on it.</span></div>
+  </div>
+  <div class="foot"><span>aiki</span><span>3 / 12</span></div>
 </section>
 
-<!-- 5 · Proof -->
+<!-- 4 · The insight -->
 <section class="slide">
-  <div class="kicker">04 · The proof</div>
+  <div class="kicker">03 · The insight</div>
+  <h2>Models don't share<br>the <span class="accent">same blind spots.</span></h2>
+  <p class="lead">Claude, GPT and Gemini are trained differently and fail differently. Their <b>disagreement is signal</b> — if a machine structures it instead of a tired human skimming it. That structure is the product.</p>
+  <div class="foot"><span>aiki</span><span>4 / 12</span></div>
+</section>
+
+<!-- 5 · The solution -->
+<section class="slide">
+  <div class="kicker">04 · The solution</div>
+  <h2>So I built the orchestrator:<br><span class="accent">a council with rules.</span></h2>
+  <p class="lead">Aiki takes the AI CLIs already installed on your machine — Claude Code, Codex, Gemini — and runs them through a proper deliberation protocol: independent analysis, structured cross-examination, and a chairman's ruling. One command in, one audited decision report out.</p>
+  <div style="margin-top:30px">
+    <span class="pill">no API keys</span>
+    <span class="pill">100% local</span>
+    <span class="pill">read-only</span>
+    <span class="pill">every call on a receipt</span>
+  </div>
+  <div class="foot"><span>aiki</span><span>5 / 12</span></div>
+</section>
+
+<!-- 6 · Pipeline, easy language -->
+<section class="slide dense">
+  <div class="kicker">05 · How a run works — in plain language</div>
+  <h2>Six steps from idea to verdict.</h2>
+  <ol class="pipe cols">
+    <li><b>Understand the ask</b><span>Aiki asks you 3–4 sharp clarifying questions, then locks a "decision contract": the exact decision, your constraints, and what success means. No vague prompts go downstream.</span></li>
+    <li><b>Independent research</b><span>Two scout models work the problem alone in separate lanes — one on market &amp; adoption, one on economics &amp; delivery. Neither sees the other's answer, so no groupthink.</span></li>
+    <li><b>Build the claim graph</b><span>Every claim, every piece of evidence, every stance becomes a typed graph — so agreement and genuine disagreement are detected structurally, not by skimming prose.</span></li>
+    <li><b>Cross-examine</b><span>Load-bearing claims get verified; real disagreements get a bounded rebuttal round — concede, counter, or narrow. Weak claims die here, not in your product.</span></li>
+    <li><b>The chairman rules</b><span>The strongest model sits as judge: each disputed claim HOLDS, FAILS, or stays UNRESOLVED — rolled into one recommendation with explicit conditions.</span></li>
+    <li><b>Report + receipts</b><span>You get a decision report: verdict, confidence score, validation plan, open questions — plus a receipt of every call, token and second spent.</span></li>
+  </ol>
+  <div class="foot"><span>aiki</span><span>6 / 12</span></div>
+</section>
+
+<!-- 7 · Technical architecture -->
+<section class="slide dense">
+  <div class="kicker">06 · Technical architecture</div>
+  <h2>Schema-locked pipeline, sandboxed providers.</h2>
+  <div class="arch">
+    <div class="layer">
+      <span class="lname">Interfaces</span>
+      <span class="node">aiki TUI <small>terminal</small></span>
+      <span class="node">aiki serve <small>browser workspace · 127.0.0.1 · SSE live frames</small></span>
+      <span class="node">aiki CLI <small>headless runs</small></span>
+    </div>
+    <div class="down">↓ <small>decision request · mode quick / council / auto</small></div>
+    <div class="layer">
+      <span class="lname">Orchestration engine</span>
+      <span class="node">stage pipeline S0→S10 <small>contract → scouts → graph → cross-exam → chair → report</small></span>
+      <span class="node">auto router <small>1-call fast path ↔ full council</small></span>
+      <span class="node">approval gates <small>files · URLs · spend</small></span>
+    </div>
+    <div class="down">↓ <small>every stage boundary = zod-validated JSON · prose never crosses</small></div>
+    <div class="layer">
+      <span class="lname">Provider adapters</span>
+      <span class="node hot">claude <small>--permission-mode plan</small></span>
+      <span class="node hot">codex <small>--sandbox read-only</small></span>
+      <span class="node hot">Gemini (agy) <small>--sandbox</small></span>
+    </div>
+    <div class="down">↓ <small>spawned locally · env filtered of keys/tokens · read-only enforced</small></div>
+    <div class="layer">
+      <span class="lname">Artifacts</span>
+      <span class="node">.aiki/runs/&lt;id&gt;/ <small>one JSON per stage · resumable · replayable</small></span>
+      <span class="node">decision report <small>terminal · markdown · HTML</small></span>
+      <span class="node">cost receipt <small>calls · tokens · duration</small></span>
+    </div>
+  </div>
+  <div class="foot"><span>aiki</span><span>7 / 12</span></div>
+</section>
+
+<!-- 8 · Proof -->
+<section class="slide">
+  <div class="kicker">07 · The proof</div>
   <h2>Measured, not vibes.</h2>
   <div class="stat-row">
     <span class="stat-big good">100%</span>
     <span class="vs">vs</span>
     <span class="stat-big bad">77%</span>
   </div>
-  <p class="lead">On a pre-registered, held-out code-review benchmark with planted bugs, the council caught <b style="color:#fff">every single one</b>. The best single model missed ~1 in 4. Identical precision — zero false positives.</p>
-  <div class="foot"><span>aiki</span><span>5 / 8</span></div>
+  <p class="lead">Same engine, second job: code review. On a pre-registered, held-out benchmark with planted bugs, the council caught <b>every single one</b>. The best single model missed ~1 in 4. Identical precision — zero false positives.</p>
+  <div class="foot"><span>aiki</span><span>8 / 12</span></div>
 </section>
 
-<!-- 6 · Why different -->
+<!-- 9 · How to use -->
+<section class="slide dense">
+  <div class="kicker">08 · How to use it</div>
+  <h2>Install once, convene anytime.</h2>
+  <code class="block">
+    <span class="c">$</span> npm install -g aiki-cli<br>
+    <span class="c">$</span> aiki serve <span class="c"># browser workspace</span><br>
+    <span class="c">$</span> aiki &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="c"># or the terminal TUI</span>
+  </code>
+  <ul class="pipe" style="margin-top:18px">
+    <li><b>Type your idea</b><span>Plain language: "Should I build X or Y?" Pick quick, council, or let auto route it.</span></li>
+    <li><b>Answer the grill</b><span>3–4 clarifying questions sharpen your idea before any model spends a token on it.</span></li>
+    <li><b>Approve the spend</b><span>Aiki shows the estimated calls up front; nothing paid runs without your yes. File and URL access are gated the same way.</span></li>
+    <li><b>Read the verdict, ask follow-ups</b><span>The report lands in the workspace; follow-up questions cost exactly one call — labeled "no council".</span></li>
+  </ul>
+  <div class="foot"><span>aiki</span><span>9 / 12</span></div>
+</section>
+
+<!-- 10 · What to expect -->
+<section class="slide dense">
+  <div class="kicker">09 · What to expect</div>
+  <h2>Honest costs, honest verdicts.</h2>
+  <table>
+    <tr><th>Mode</th><th>Provider calls</th><th>Time</th><th>Best for</th></tr>
+    <tr><td><b>quick</b></td><td>≈3</td><td>minutes</td><td>one clear decision</td></tr>
+    <tr><td><b>council</b></td><td>≈13</td><td>~15–20 min</td><td>bets worth real money or months</td></tr>
+    <tr><td><b>auto</b></td><td>1–13</td><td>scales</td><td>let Aiki route: simple → 1-call fast path, hard → full council</td></tr>
+    <tr><td><b>follow-up</b></td><td>exactly 1</td><td>seconds</td><td>questions on a finished report</td></tr>
+  </table>
+  <p class="lead" style="margin-top:18px">Verdicts are one of: <span style="color:var(--green)">ACCEPTED</span> · <span style="color:var(--amber)">ACCEPTED WITH CONDITIONS</span> · <span style="color:var(--red)">REJECTED</span> · <span style="color:var(--dim)">INCONCLUSIVE</span> — each with a structural confidence score that only rises when claims were actually verified. Aiki will tell you 17/100 when that's the truth.</p>
+  <div class="foot"><span>aiki</span><span>10 / 12</span></div>
+</section>
+
+<!-- 11 · Different -->
 <section class="slide">
-  <div class="kicker">05 · Why it's different</div>
+  <div class="kicker">10 · Why it's different</div>
   <h2>No keys. No cloud.<br><span class="accent">No trust required.</span></h2>
   <div class="cards">
     <div class="card"><b>No API keys</b><span>Orchestrates the provider CLIs you already have installed and pay for. Zero new accounts, zero new bills.</span></div>
     <div class="card"><b>Local &amp; private</b><span>Runs entirely on your machine, bound to 127.0.0.1. Your idea never leaves your laptop.</span></div>
-    <div class="card"><b>Read-only, honest</b><span>Models can't write or execute. Verdicts ship receipts — and follow-ups are labeled "1 call · no council" when the council didn't convene.</span></div>
-    <div class="card"><b>Adaptive cost</b><span>Auto mode routes a simple decision to a 1-call fast path and a hard one to a full council — you pay for deliberation only when it's needed.</span></div>
+    <div class="card"><b>Read-only, honest</b><span>Models can't write or execute. Verdicts ship receipts, and shortcuts are labeled — never hidden.</span></div>
+    <div class="card"><b>Two jobs, one engine</b><span>Idea refinement in minutes (the demo) and adversarial code review (the benchmark) — same council, same box.</span></div>
   </div>
-  <div class="foot"><span>aiki</span><span>6 / 8</span></div>
+  <div class="foot"><span>aiki</span><span>11 / 12</span></div>
 </section>
 
-<!-- 7 · Two jobs -->
+<!-- 12 · Close -->
 <section class="slide">
-  <div class="kicker">06 · Two jobs, one engine</div>
-  <h2>Pressure-test ideas.<br>Catch missed bugs.</h2>
-  <div class="cards">
-    <div class="card"><b>Idea refinement (the demo)</b><span>Bring a decision, get a ruling in minutes: verdict, confidence, conditions, validation plan and open questions — in a live workspace, <code>aiki serve</code>.</span></div>
-    <div class="card"><b>Code review (the benchmark)</b><span>The same council cross-examines diffs adversarially. This is the mode behind the 100%-vs-77% result — deeper, slower, shipped in the same box.</span></div>
-  </div>
-  <div style="margin-top:36px">
-    <span class="pill">quick · ≈3 calls</span>
-    <span class="pill">council · full deliberation</span>
-    <span class="pill">auto · routes for you</span>
-  </div>
-  <div class="foot"><span>aiki</span><span>7 / 8</span></div>
-</section>
-
-<!-- 8 · Try it -->
-<section class="slide">
-  <div class="kicker">07 · Try it now</div>
+  <div class="kicker">11 · Try it now</div>
   <h2>Two commands<br>to convene.</h2>
   <code class="block">
     <span class="c">$</span> npm install -g aiki-cli<br>
     <span class="c">$</span> aiki serve
   </code>
-  <p class="lead" style="margin-top:36px">
+  <p class="lead" style="margin-top:32px">
     GitHub — <a href="https://github.com/kratos619/Aiki">github.com/kratos619/Aiki</a><br>
     Live replay — <a href="https://kratos619.github.io/Aiki/">kratos619.github.io/Aiki</a><br>
     npm — <a href="https://www.npmjs.com/package/aiki-cli">npmjs.com/package/aiki-cli</a>
   </p>
-  <p class="lead" style="margin-top:28px; color:#fff">The models were never the product. <span class="accent">The deliberation is.</span></p>
-  <div class="foot"><span>aiki · built solo</span><span>8 / 8</span></div>
+  <p class="lead" style="margin-top:26px; color:#fff">The models were never the product. <span class="accent">The deliberation is.</span></p>
+  <div class="foot"><span>aiki · built solo</span><span>12 / 12</span></div>
 </section>
 
 <script>
