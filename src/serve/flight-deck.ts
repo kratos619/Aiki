@@ -60,6 +60,8 @@ export interface FlightDeckOpts {
   validateUrl?: typeof validatePublicUrl;
   followupRunner?: FollowupRunner;
   now?: () => Date;
+  /** Optional sink for human-readable run progress lines (the serve CLI wires this to the terminal). */
+  log?: (line: string) => void;
 }
 
 export class DeckError extends Error {
@@ -365,6 +367,7 @@ export class FlightDeck {
     const value = action.t === 'gate' ? action.decision : action.value;
     if (!this.gates.resolve(action.gateId, value)) throw new DeckError(409, 'gate is no longer pending');
     const summary = action.t === 'gate' ? decisionSummary(action.decision) : 'Answer received';
+    this.log(`⏵ ${summary}`);
     active.bus.emit({ t: 'gate_resolved', gateId: action.gateId, summary });
     await appendTurn(this.opts.runsRoot, active.threadId, {
       kind: 'gate_receipt', gate_kind: gate.kind, summary, decision: action.t === 'gate' ? action.decision : 'answered',
@@ -463,6 +466,7 @@ export class FlightDeck {
     const projected = SafeReportProjection.parse({
       runId,
       verdict: verdictView(raw.verdict.status),
+      confidence: { score: Math.round((raw.verdict.confidence ?? 0) * 100), label: raw.verdict.confidenceLabel ?? 'Low' },
       headline: clean(reader.headline),
       bottomLine: clean(reader.bottomLine),
       sections: reader.sections.map((section) => ({ heading: clean(section.heading), summary: clean(section.summary), bullets: section.bullets.map(clean) })),
@@ -492,6 +496,7 @@ export class FlightDeck {
 
   private async executeDecision(active: ActiveRun, cfg: AikiConfig): Promise<void> {
     try {
+      this.log(`▶ convening ${active.input.mode} council · ${active.id}`);
       const estimate = estimateRun('idea-refinement', { mode: active.input.mode });
       let evidencePack = active.resume?.evidencePack;
       let urlSources: UrlSourceSetT = active.resume?.urlSources ?? { sources: [] };
@@ -563,6 +568,7 @@ export class FlightDeck {
       await this.refreshCounters(active);
       if (outcome.ok) {
         const report = await this.report(active.id);
+        this.log(`✓ verdict: ${report.verdict.label}${report.confidence ? ` · confidence ${report.confidence.score} (${report.confidence.label})` : ''} · ${active.calls} calls`);
         active.bus.emit({ t: 'report_ready', runId: active.id });
         active.bus.emit({ t: 'receipt', receipt: report.receipt });
         await this.finishThread(active, 'idle');
@@ -634,16 +640,26 @@ export class FlightDeck {
     }
   }
 
+  /** Human-readable progress line to the serve terminal (no-op unless a log sink is wired). */
+  private log(line: string): void {
+    this.opts.log?.(line);
+  }
+
   private runEvents(active: ActiveRun): RunEvents {
     const stage = (id: string) => IDEA_STAGES.find((item) => item.id === id);
+    const name = (provider: ProviderId) => DISPLAY_NAME[provider] ?? provider;
     return {
-      onStageStart: (id) => active.bus.emit({ t: 'stage', id, label: stage(id)?.label ?? id, status: 'running' }),
+      onStageStart: (id) => {
+        this.log(`⏳ ${stage(id)?.label ?? id}`);
+        active.bus.emit({ t: 'stage', id, label: stage(id)?.label ?? id, status: 'running' });
+      },
       onStageEnd: (id, status) => {
         active.bus.emit({ t: 'stage', id, label: stage(id)?.label ?? id, status });
         if (id === 'S7') void this.refreshCounters(active);
       },
       onCallStart: (provider, callStage, category, replayed) => {
         active.inflight.set(`${provider}:${callStage}`, { category, replayed });
+        this.log(`   → ${name(provider)} · ${category}${replayed ? ' (replay)' : ''}`);
         active.bus.emit({ t: 'call', provider, stage: callStage, phase: 'start', category, replayed });
       },
       onCallEnd: (provider, callStage, ms, ok, replayed) => {
@@ -657,10 +673,12 @@ export class FlightDeck {
           active.callMs[provider] = (active.callMs[provider] ?? 0) + ms;
           if (started.category === 'repair') active.repairs++;
         }
+        this.log(`   ← ${name(provider)} ${ok ? 'ok' : 'FAILED'} · ${(ms / 1000).toFixed(1)}s${replayed ? ' (replay)' : ''} · ${active.calls} calls`);
         active.bus.emit({ t: 'call', provider, stage: callStage, phase: 'end', ms, ok, category: started.category, replayed });
         if (started.category === 'repair' && !replayed) active.bus.emit({ t: 'counters', repairs: active.repairs });
       },
       clarify: async (question, options): Promise<ClarifyChoice> => {
+        this.log(`⏸ awaiting your input — ${question}`);
         const gate: GateCardView = { id: this.gates.gateId('clarify'), kind: 'clarify', title: 'Choose the intended reading', lines: [], question, options, allowText: true };
         const value = await this.gates.request<string | number>(gate, undefined, (card) => active.bus.emit({ t: 'gate', gate: card }));
         if (active.abort.signal.aborted || value === 'deny') throw new StageError('S0', 'ABORT', 'aborted');
@@ -686,7 +704,10 @@ export class FlightDeck {
       id: this.gates.gateId(kind), kind, title, lines,
       scopes: ['allow_once', 'allow_session', 'deny'],
     };
-    return this.gates.request(gate, key, (card) => active.bus.emit({ t: 'gate', gate: card }));
+    return this.gates.request(gate, key, (card) => {
+      this.log(`⏸ awaiting your approval — ${title}`);
+      active.bus.emit({ t: 'gate', gate: card });
+    });
   }
 
   private async refreshCounters(active: ActiveRun): Promise<void> {

@@ -1,5 +1,5 @@
-// aiki serve workspace — dependency-free HD3 client. The browser receives structured frames only;
-// model prose appears solely in the reader-safe report projection.
+// aiki serve workspace — dependency-free dark-council client. The browser receives structured
+// frames only; model prose appears solely in the reader-safe report projection and follow-ups.
 
 const DECK_TOKEN = document.querySelector('meta[name="deck-token"]')?.content ?? '';
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -29,6 +29,7 @@ const state = {
   settings: null, providers: [], threadId: null, runId: null, events: null,
   attachments: [], gates: new Map(), turnKeys: new Set(), helloLastSeq: 0,
   calls: 0, budget: 1, active: false, canFollowup: false, runKind: 'decision',
+  provCalls: {}, provInflight: {}, runStart: null, stageLabel: 'working',
 };
 
 // ── shell reads ───────────────────────────────────────────────────────────────
@@ -44,8 +45,22 @@ function renderProviders(providers) {
     const dot = el('span', 'provider__dot'); dot.dataset.tone = p.tone;
     const main = el('div', 'provider__main');
     main.append(el('div', 'provider__name', p.name), el('div', 'provider__model', p.model ?? 'CLI default'));
-    li.append(dot, main, el('div', 'provider__status', p.label));
+    const status = el('div', 'provider__status', p.label); status.dataset.tone = p.tone;
+    li.append(dot, main, status);
     list.append(li);
+  }
+  renderHeaderModels(providers);
+}
+
+function renderHeaderModels(providers) {
+  const root = $('#header-models');
+  if (!root) return;
+  root.replaceChildren();
+  for (const p of providers) {
+    const avatar = el('span', 'avatar', p.name[0]);
+    avatar.dataset.seat = p.id;
+    avatar.title = `${p.name} · ${p.model ?? 'CLI default'}`;
+    root.append(avatar);
   }
 }
 
@@ -55,19 +70,31 @@ function renderQuorum(q) {
   $('.quorum__label', $('#quorum')).textContent = q.label;
 }
 
+// The council seat cards (right deck) — model tiles with live status, progress and activity.
 function renderRoster(providers) {
   const roster = $('#seat-roster');
   if (!roster) return;
   roster.replaceChildren();
   const pinned = state.settings?.roles ?? {};
+  state.provCalls = {}; state.provInflight = {};
   for (const p of providers) {
-    const seat = el('li', 'seat'); seat.dataset.seat = p.id;
-    seat.append(el('span', 'seat__glyph'));
-    const main = el('div', 'seat__main');
-    main.append(el('div', 'seat__name', p.name), el('div', 'seat__role', roleFor(p.id, pinned)));
+    state.provCalls[p.id] = 0; state.provInflight[p.id] = 0;
+    const seat = el('li', 'seat'); seat.dataset.seat = p.id; seat.dataset.busy = 'false';
+    const row = el('div', 'seat__row');
+    row.append(el('span', 'seat__glyph', p.name[0]));
+    const id = el('div', 'seat__id');
+    const top = el('div', 'seat__top');
+    top.append(el('span', 'seat__name', p.name), el('span', 'seat__role', roleFor(p.id, pinned)));
+    id.append(top, el('span', 'seat__model', p.model ?? 'CLI default'));
+    const status = el('span', 'seat__status');
     const lamp = el('span', 'seat__lamp'); lamp.dataset.tone = p.tone;
-    seat.append(main, lamp); roster.append(seat);
+    status.append(lamp, el('span', 'seat__status-label', 'Idle'));
+    row.append(id, status);
+    const track = el('div', 'seat__track'); track.append(el('span', 'seat__fill'));
+    seat.append(row, track, el('div', 'seat__activity', 'Standing by'));
+    roster.append(seat);
   }
+  paintCost();
 }
 
 function roleFor(id, pinned) {
@@ -84,13 +111,20 @@ function renderThreads(threads) {
   const list = $('#thread-list'); list.replaceChildren();
   if (!threads.length) { list.append(el('li', 'thread-item__title', 'No decisions yet.')); return; }
   for (const t of threads) {
-    const btn = el('button', 'thread-item'); btn.type = 'button'; btn.dataset.id = t.id;
+    const btn = el('button', 'thread-item'); btn.type = 'button'; btn.dataset.id = t.id; btn.dataset.status = t.status;
     btn.append(el('span', 'thread-item__glyph', STATUS_GLYPH[t.status] ?? '·'));
     const title = el('span', 'thread-item__title', t.title); title.dataset.legacy = String(t.legacy);
     btn.append(title, el('span', 'thread-item__time', relTime(t.updatedAt)));
     btn.addEventListener('click', () => openThread(t.id, btn));
     const li = el('li'); li.append(btn); list.append(li);
   }
+}
+
+function setHeader(title, typeLabel) {
+  $('#session-title').textContent = title || 'New decision';
+  const type = $('#session-type');
+  if (typeLabel) { type.textContent = typeLabel; type.hidden = false; }
+  else type.hidden = true;
 }
 
 async function openThread(id, btn) {
@@ -107,8 +141,9 @@ async function openThread(id, btn) {
 
 function renderThreadView(detail) {
   state.canFollowup = !detail.legacy && detail.turns.some((turn) => turn.kind === 'report');
+  const hasReport = detail.turns.some((turn) => turn.kind === 'report' || turn.kind === 'report_md');
+  setHeader(detail.title, detail.legacy ? 'RECORDED' : hasReport ? 'COUNCIL' : 'THREAD');
   const view = conversation(true);
-  view.append(el('h1', 'thread-view__title', detail.title));
   view.append(el('p', 'thread-view__meta', detail.legacy ? 'Recorded run · read-only history' : 'Decision thread'));
   for (const turn of detail.turns) {
     if (turn.kind === 'report_md') view.append(el('div', 'report', turn.markdown));
@@ -247,50 +282,86 @@ function resolveGate(id, summary) {
   card.append(el('div', 'gate-receipt', summary));
 }
 
-function renderDeck(snapshot) {
-  $('#deck-state').textContent = snapshot.status;
-  const body = $('#deck-body'); body.replaceChildren();
-  const run = el('div', 'deck-run');
-  const budget = el('div', 'budget');
-  const line = el('div', 'budget__line');
-  line.append(el('span', null, 'Call budget'), el('strong', 'budget-count', `${snapshot.calls.used}/${snapshot.calls.budget}${snapshot.calls.replays ? ` · ↻${snapshot.calls.replays}` : ''}`));
-  const track = el('div', 'budget__track'); const fill = el('span', 'budget__fill');
-  fill.style.width = `${Math.min(100, 100 * snapshot.calls.used / snapshot.calls.budget)}%`; track.append(fill); budget.append(line, track);
-  const counters = el('div', 'deck-counters');
-  for (const [key, label] of [['positions', 'positions'], ['evidence', 'evidence'], ['disagreements', 'disputes'], ['repairs', 'repairs']]) {
-    const counter = el('div', 'deck-counter'); counter.dataset.counter = key;
-    counter.append(el('strong', null, String(snapshot.counters[key] ?? 0)), el('span', null, label)); counters.append(counter);
-  }
-  const spine = el('ol', 'stage-spine');
-  for (const stage of snapshot.stages) spine.append(stageNode(stage));
-  run.append(budget, counters, spine); body.append(run);
+// ── the deck (right pane) ───────────────────────────────────────────────────
+
+function setDeckState(label, live) {
+  const node = $('#deck-state');
+  node.textContent = label;
+  if (live) node.dataset.live = live;
 }
 
-function stageNode(stage) {
-  const li = el('li', 'stage-node'); li.dataset.stage = stage.id; li.dataset.status = stage.status;
-  li.append(el('span', 'stage-node__label', stage.label), el('span', 'stage-node__state', stage.status));
-  li.append(el('span', 'stage-node__seat', stage.seat ? DISPLAY[stage.seat] : 'deterministic / assigned at call time'));
+function stageNode(stage, ord) {
+  const li = el('li', 'stage-node'); li.dataset.stage = stage.id; li.dataset.status = stage.status; li.dataset.ord = String(ord);
+  const rail = el('div', 'stage-node__rail');
+  rail.append(el('span', 'stage-node__dot', dotText(stage.status, ord)), el('span', 'stage-node__line'));
+  const body = el('div', 'stage-node__body');
+  body.append(el('span', 'stage-node__label', stage.label), el('span', 'stage-node__state', stageStateText(stage)));
+  li.append(rail, body);
   return li;
 }
 
+function dotText(status, ord) {
+  return status === 'done' ? '✓' : status === 'failed' ? '✕' : status === 'skipped' ? '–' : String(ord);
+}
+function stageStateText(stage) {
+  if (stage.seat) return `${DISPLAY[stage.seat] ?? stage.seat} · ${stage.status}`;
+  return stage.status;
+}
+
+function renderDeck(snapshot) {
+  setDeckState(snapshot.status, snapshot.status === 'running' || snapshot.status === 'gating' ? 'live' : 'idle');
+  $('#run-id').textContent = snapshot.runId ? `run · ${String(snapshot.runId).slice(0, 12)}` : '';
+  const spine = $('#stage-spine'); spine.replaceChildren();
+  snapshot.stages.forEach((stage, i) => spine.append(stageNode(stage, i + 1)));
+  for (const [key, value] of Object.entries(snapshot.counters ?? {})) {
+    const node = $(`.deck-counter[data-counter="${key}"] strong`);
+    if (node) node.textContent = String(value ?? 0);
+  }
+  state.calls = snapshot.calls.used; state.budget = snapshot.calls.budget;
+  for (const [id, n] of Object.entries(snapshot.calls.byProvider ?? {})) { state.provCalls[id] = n; patchSeat(id); }
+  paintCost(snapshot.calls.replays);
+}
+
 function updateStage(frame) {
-  let node = $(`.stage-node[data-stage="${CSS.escape(frame.id)}"]`);
-  if (!node) { node = stageNode(frame); $('.stage-spine')?.append(node); }
+  let node = $(`#stage-spine .stage-node[data-stage="${CSS.escape(frame.id)}"]`);
+  if (!node) {
+    const spine = $('#stage-spine');
+    node = stageNode(frame, spine.children.length + 1); spine.append(node);
+  }
   node.dataset.status = frame.status;
-  $('.stage-node__state', node).textContent = frame.status;
-  $('#deck-state').textContent = frame.status === 'running' ? frame.label : frame.status;
+  $('.stage-node__dot', node).textContent = dotText(frame.status, Number(node.dataset.ord));
+  $('.stage-node__state', node).textContent = stageStateText(frame);
+  if (frame.status === 'running') state.stageLabel = frame.label;
+  setDeckState(frame.status === 'running' ? frame.label : frame.status, frame.status === 'running' ? 'live' : undefined);
   $('#live-stage').textContent = frame.status === 'running' ? frame.label : $('#live-stage').textContent;
   $('#announcer').textContent = `${frame.label} ${frame.status}`;
 }
 
+function patchSeat(id) {
+  const seat = $(`#seat-roster .seat[data-seat="${CSS.escape(id)}"]`);
+  if (!seat) return;
+  const busy = (state.provInflight[id] ?? 0) > 0;
+  const calls = state.provCalls[id] ?? 0;
+  seat.dataset.busy = String(busy);
+  const label = busy ? 'Running' : calls ? 'Done' : 'Idle';
+  $('.seat__status-label', seat).textContent = label;
+  const lamp = $('.seat__lamp', seat);
+  if (!busy) lamp.dataset.tone = calls ? 'green' : 'neutral';
+  $('.seat__fill', seat).style.width = busy ? '70%' : calls ? '100%' : '4%';
+  $('.seat__activity', seat).textContent = busy ? 'Working' : calls ? `${calls} call${calls === 1 ? '' : 's'}` : 'Standing by';
+}
+
 function updateCall(frame, historical) {
-  const node = $(`.stage-node[data-stage="${CSS.escape(frame.stage.split('-')[0])}"]`);
-  if (node) $('.stage-node__seat', node).textContent = `${DISPLAY[frame.provider]} · ${frame.phase}${frame.replayed ? ' ↻ replay' : ''}`;
-  if (frame.phase === 'end' && !frame.replayed && !historical) state.calls++;
-  const count = $('.budget-count');
-  if (count) count.textContent = `${state.calls}/${state.budget}`;
-  const fill = $('.budget__fill');
-  if (fill) fill.style.width = `${Math.min(100, 100 * state.calls / state.budget)}%`;
+  const id = frame.provider;
+  if (frame.phase === 'start') {
+    state.provInflight[id] = (state.provInflight[id] ?? 0) + 1;
+  } else {
+    state.provInflight[id] = Math.max(0, (state.provInflight[id] ?? 0) - 1);
+    if (!frame.replayed) state.provCalls[id] = (state.provCalls[id] ?? 0) + 1;
+    if (frame.phase === 'end' && !frame.replayed && !historical) state.calls++;
+  }
+  patchSeat(id);
+  paintCost();
 }
 
 function updateCounters(frame) {
@@ -301,6 +372,33 @@ function updateCounters(frame) {
   }
 }
 
+// Cost receipt: per-provider call rows + budget bar, driven by live call telemetry.
+function paintCost(replays = 0) {
+  const root = $('#cost-receipt'); if (!root) return;
+  root.replaceChildren();
+  const pinned = state.settings?.roles ?? {};
+  for (const p of state.providers) {
+    const row = el('div', 'cost__row'); row.dataset.seat = p.id;
+    row.append(el('span', 'cost__swatch'), el('span', 'cost__name', `${p.name} · ${roleFor(p.id, pinned)}`), el('span', 'cost__calls', String(state.provCalls[p.id] ?? 0)));
+    root.append(row);
+  }
+  root.append(el('div', 'cost__rule'));
+  const bar = el('div', 'cost__bar'); const fill = el('span', 'cost__fill');
+  fill.style.width = `${Math.min(100, 100 * state.calls / Math.max(1, state.budget))}%`;
+  bar.append(fill); root.append(bar);
+  root.append(el('div', 'cost__note', 'Budget guard active · stops runaway repair loops'));
+  $('#cost-total').textContent = `${state.calls} / ${state.budget} calls${replays ? ` · ↻${replays}` : ''}`;
+}
+
+function resetDeck() {
+  state.calls = 0; state.provCalls = {}; state.provInflight = {};
+  $('#stage-spine').replaceChildren();
+  document.querySelectorAll('.deck-counter strong').forEach((n) => (n.textContent = '0'));
+  renderRoster(state.providers);
+  setDeckState('idle', 'idle');
+  $('#run-id').textContent = '';
+}
+
 async function loadReport(runId) {
   try { renderVerdict(await api(`/api/runs/${encodeURIComponent(runId)}/report`)); }
   catch (error) { toast(`Could not load verdict (${error.message})`); }
@@ -309,19 +407,79 @@ async function loadReport(runId) {
 function renderVerdict(report, root = conversation()) {
   if (root.querySelector(`[data-report-id="${CSS.escape(report.runId)}"]`)) return;
   const card = el('article', 'verdict-card'); card.dataset.tone = report.verdict.tone; card.dataset.reportId = report.runId;
+
+  const chair = el('div', 'verdict-chair');
+  chair.append(el('span', 'verdict-chair__mark', 'a'), el('span', 'verdict-chair__name', 'AIki'), el('span', 'verdict-chair__role', '· chairman of the council'));
+  chair.append(el('span', 'verdict-chair__calls', `${report.receipt.calls} provider calls`));
+
+  const panel = el('div', 'verdict-card__panel');
   const banner = el('header', 'verdict-card__banner');
-  banner.append(el('span', 'verdict-card__label', report.verdict.label), el('h2', null, report.headline));
-  const body = el('div', 'verdict-card__body'); body.append(el('p', 'verdict-card__lead', report.bottomLine));
+  banner.append(el('div', 'verdict-card__eyebrow', 'Decision brief · BLUF'));
+  const head = el('div', 'verdict-card__head');
+  head.append(el('span', 'verdict-card__label', report.verdict.label), el('h2', null, report.headline));
+  banner.append(head);
+  if (report.confidence) {
+    const conf = el('div', 'verdict-conf'); conf.dataset.band = report.confidence.label.toLowerCase();
+    const track = el('span', 'verdict-conf__track'); const fill = el('span', 'verdict-conf__fill');
+    fill.style.width = `${report.confidence.score}%`; track.append(fill);
+    conf.append(track, el('span', 'verdict-conf__label', `Confidence ${report.confidence.score} · ${report.confidence.label}`));
+    banner.append(conf);
+  }
+
+  const body = el('div', 'verdict-card__body');
+  body.append(el('p', 'verdict-card__lead', report.bottomLine));
   report.warnings.forEach((warning) => body.append(el('p', 'verdict-warning', warning)));
-  report.sections.forEach((section) => body.append(disclosure(section.heading, section.summary, section.bullets)));
-  if (report.features.length) body.append(disclosure('Feature priorities', '', report.features.map((item) => `${item.priority} · ${item.feature} — ${item.rationale}`)));
-  if (report.milestones.length) body.append(disclosure('Build plan', '', report.milestones.map((item) => `${item.timebox} · ${item.outcome} — done when ${item.doneWhen}`)));
-  if (report.caveats.length) body.append(disclosure('Caveats', '', report.caveats));
-  if (report.sources.length) body.append(disclosure('Sources', '', report.sources.map((item) => `${item.label}${item.citedFor.length ? ` — ${item.citedFor.join('; ')}` : ''}`)));
-  const next = el('p', 'verdict-card__next'); next.append(el('strong', null, 'Next step · '), document.createTextNode(report.nextStep)); body.append(next);
-  const receipt = el('footer', 'verdict-card__receipt', receiptLine(report.receipt));
-  card.append(banner, body, receipt); root.append(card); scrollConversation();
+
+  if (report.milestones.length) {
+    const block = el('div', 'verdict-block');
+    block.append(el('span', 'verdict-block__label', 'Anchored validation plan'));
+    report.milestones.forEach((m) => {
+      const item = el('div', 'plan-item');
+      item.append(el('span', 'plan-item__badge', m.timebox));
+      const inner = el('div', 'plan-item__body');
+      inner.append(el('span', 'plan-item__text', m.outcome));
+      const done = el('span', 'plan-item__done'); done.append(el('b', null, 'done when'), document.createTextNode(` · ${m.doneWhen}`));
+      inner.append(done); item.append(inner); block.append(item);
+    });
+    body.append(block);
+  }
+
+  const disclosures = [];
+  report.sections.forEach((section) => disclosures.push(disclosure(section.heading, section.summary, section.bullets)));
+  if (report.features.length) disclosures.push(disclosure('Feature priorities', '', report.features.map((item) => `${item.priority} · ${item.feature} — ${item.rationale}`)));
+  if (report.caveats.length) disclosures.push(disclosure('Caveats', '', report.caveats));
+  if (report.sources.length) disclosures.push(disclosure('Sources', '', report.sources.map((item) => `${item.label}${item.citedFor.length ? ` — ${item.citedFor.join('; ')}` : ''}`)));
+  if (disclosures.length) {
+    const bar = el('div', 'verdict-details-bar');
+    const toggle = el('button', 'verdict-toggle-all', 'Expand all'); toggle.type = 'button';
+    toggle.addEventListener('click', () => {
+      const anyClosed = disclosures.some((d) => !d.open);
+      disclosures.forEach((d) => (d.open = anyClosed));
+      toggle.textContent = anyClosed ? 'Collapse all' : 'Expand all';
+    });
+    bar.append(toggle); body.append(bar);
+    disclosures.forEach((d) => body.append(d));
+    disclosures[0].open = true; // lead with the reasoning so the report never reads as thin
+  }
+
+  const next = el('p', 'verdict-card__next'); next.append(el('strong', null, 'Next step · '), document.createTextNode(report.nextStep));
+  body.append(next);
+
+  const actions = el('div', 'verdict-card__actions');
+  const copy = el('button', 'btn', 'Copy summary'); copy.type = 'button';
+  copy.addEventListener('click', () => copySummary(report, copy));
+  actions.append(copy); body.append(actions);
+
+  panel.append(banner, body);
+  card.append(chair, panel, el('footer', 'verdict-card__receipt', receiptLine(report.receipt)));
+  root.append(card); scrollConversation();
   if (state.threadId) { state.canFollowup = true; updateComposer(); }
+}
+
+function copySummary(report, btn) {
+  const text = `${report.verdict.label} — ${report.headline}\n\n${report.bottomLine}\n\nNext step: ${report.nextStep}`;
+  navigator.clipboard?.writeText(text).then(() => { btn.textContent = 'Copied ✓'; setTimeout(() => (btn.textContent = 'Copy summary'), 1600); })
+    .catch(() => toast('Copy failed — select the text manually.'));
 }
 
 function renderFollowup(turn, root = conversation()) {
@@ -348,6 +506,7 @@ async function resumeRun(runId) {
     const outcome = await answerGate('', { t: 'resume' });
     if (!outcome?.runId) return;
     state.runId = outcome.runId; state.runKind = 'decision';
+    resetDeck();
     showSession(true, 'awaiting resume approval'); connectEvents(outcome.runId);
   } catch (error) { toast(error.message); }
 }
@@ -360,12 +519,14 @@ function disclosure(title, summary, bullets) {
 }
 
 function renderReceipt(receipt) {
-  let panel = $('.deck-receipt');
-  if (!panel) { panel = el('section', 'deck-receipt'); $('#deck-body').append(panel); }
-  panel.replaceChildren(el('h3', null, 'Run receipt'), el('p', null, receiptLine(receipt)));
-  if (receipt.providers.length) {
-    const list = el('ul'); receipt.providers.forEach((p) => list.append(el('li', null, `${p.name} · ${p.calls} call${p.calls === 1 ? '' : 's'}`))); panel.append(list);
+  if (receipt.providers?.length) {
+    for (const p of receipt.providers) {
+      const seatId = Object.keys(DISPLAY).find((id) => DISPLAY[id] === p.name) ?? p.name;
+      state.provCalls[seatId] = p.calls;
+    }
   }
+  state.calls = receipt.calls; state.budget = receipt.budget;
+  paintCost(receipt.replays);
 }
 
 function receiptLine(r) {
@@ -374,7 +535,7 @@ function receiptLine(r) {
 
 function finishRun(frame) {
   state.active = false; showSession(false);
-  $('#deck-state').textContent = frame.status === 'ok' ? 'complete' : frame.status;
+  setDeckState(frame.status === 'ok' ? 'complete' : frame.status, frame.status === 'ok' ? 'complete' : 'failed');
   state.events?.close();
   if (frame.status === 'ok') state.canFollowup = true;
   updateComposer();
@@ -387,19 +548,49 @@ function showSession(active, stage = 'awaiting approval') {
   state.active = active;
   $('#composer').hidden = active;
   $('#live-session').hidden = !active;
+  $('#thinking').hidden = !active;
   if (active) {
+    state.runStart = state.runStart || Date.now();
+    state.stageLabel = stage;
     $('#session-label').textContent = state.runKind === 'followup' ? 'Follow-up in progress' : 'Council in session';
     $('#live-stage').textContent = stage;
+    startTicker();
+  } else {
+    stopTicker(); state.runStart = null;
   }
 }
 
-// ── composer + interactions ───────────────────────────────────────────────────────
+// Live elapsed clock so long gaps between frames never read as "stuck".
+let ticker = null;
+function startTicker() { if (!ticker) { tick(); ticker = setInterval(tick, 1000); } }
+function stopTicker() { if (ticker) { clearInterval(ticker); ticker = null; } }
+function tick() {
+  if (!state.active) return stopTicker();
+  const secs = Math.floor((Date.now() - (state.runStart || Date.now())) / 1000);
+  const label = `${state.stageLabel || 'working'} · ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+  const meta = $('.thinking__meta'); if (meta) meta.textContent = label;
+  const stage = $('#live-stage'); if (stage) stage.textContent = label;
+}
+
+// ── composer + interactions ───────────────────────────────────────────────────
+
+const decisionText = $('#decision-text');
 
 $('#composer').addEventListener('submit', async (event) => {
   event.preventDefault();
-  const text = $('#decision-text').value.trim(); if (!text) return;
+  const text = decisionText.value.trim(); if (!text) return;
   await sendMessage(text, state.threadId && state.canFollowup ? 'followup' : 'decision');
 });
+
+decisionText.addEventListener('input', autosize);
+decisionText.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); $('#composer').requestSubmit(); }
+});
+function autosize() {
+  decisionText.style.height = 'auto';
+  decisionText.style.height = `${Math.min(160, decisionText.scrollHeight)}px`;
+  $('#composer-send').disabled = decisionText.value.trim().length === 0;
+}
 
 async function sendMessage(text, kind) {
   const mode = $('#mode').value;
@@ -411,19 +602,21 @@ async function sendMessage(text, kind) {
     }) });
     state.threadId = outcome.threadId; state.runId = outcome.runId;
     state.runKind = kind; state.canFollowup = kind === 'followup';
+    if (newThread) setHeader(text.length > 64 ? `${text.slice(0, 61)}…` : text, kind === 'followup' ? 'FOLLOW-UP' : mode === 'quick' ? 'QUICK' : 'COUNCIL');
     conversation(newThread);
+    resetDeck();
     showSession(true); connectEvents(outcome.runId);
-    $('#decision-text').value = ''; state.attachments = []; renderAttachments();
+    decisionText.value = ''; state.attachments = []; renderAttachments(); autosize();
     updateComposer();
   } catch (error) { toast(error.message); }
 }
 
 function updateComposer() {
   const followup = Boolean(state.threadId && state.canFollowup);
-  $('#decision-text').placeholder = followup
+  decisionText.placeholder = followup
     ? 'Ask a follow-up about this council answer…'
     : 'Describe the decision, constraints, and what a good answer must include…';
-  $('#composer-send').textContent = followup ? 'Ask' : 'Convene';
+  const send = $('#composer-send'); send.title = followup ? 'Ask' : 'Convene'; send.setAttribute('aria-label', followup ? 'Ask' : 'Convene');
   $('#attach').hidden = followup;
   $('.mode-select').hidden = followup;
   $('#estimate').textContent = followup ? '1 call · no council' : $('#mode').value === 'quick' ? '~3 calls · single-pass council' : '8–10 calls · council of installed models';
@@ -456,9 +649,11 @@ $('#new-decision').addEventListener('click', () => {
   if (state.active) return toast('A council is already in session.');
   state.threadId = null; state.runId = null;
   state.canFollowup = false; state.runKind = 'decision'; updateComposer();
+  setHeader('New decision', null);
   $('#thread-view').hidden = true; $('#thread-view').replaceChildren(); $('#empty-state').hidden = false;
+  resetDeck();
   closePanels(false);
-  $('#decision-text').focus();
+  decisionText.focus();
 });
 
 document.addEventListener('keydown', (event) => {
@@ -615,6 +810,7 @@ async function boot() {
     state.settings = snapshot.settings;
     $('#version').textContent = `v${snapshot.version}`;
     renderProviders(snapshot.providers); renderQuorum(snapshot.quorum); renderRoster(snapshot.providers); renderThreads(snapshot.threads);
+    updateComposer(); autosize();
   } catch (error) {
     $('.empty__title').textContent = 'The workspace could not load.';
     $('.empty__lede').textContent = error.message;

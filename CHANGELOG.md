@@ -23,6 +23,14 @@ every fix is pinned by tests on the real payloads that failed live (`test/fixtur
   of announced. Rendered Markdown/HTML never contain local filesystem usernames.
 
 ### Added
+- **Local council workspace:** `aiki serve` opens a loopback-only three-pane browser workspace with cached
+  provider status, decision history, server-enforced file/URL/spend gates, live SSE stage and call telemetry,
+  cancellation, path-free verdict cards, and responsive desktop/mobile layouts.
+- Completed decisions accept one-call follow-up questions labeled `no council`; failed or cancelled runs with
+  cached calls can be resumed after an explicit spend review. Settings atomically persist provider model pins
+  and role assignments without exposing credentials, local paths, or arbitrary JSON to the browser.
+- A dependency-free hosted replay, real workspace screenshot, and timed three-minute demo script provide a
+  safe submission path when judges do not have the three provider CLIs installed.
 - **Semantic claim join at zero extra calls:** the S8 verifier may emit `claim_groups` over an
   anonymous all-claims index; validated groups (unknown ids and single-provider groups dropped)
   overlay CONSENSUS/DISAGREEMENT states through the existing state machine. Cross-provider
