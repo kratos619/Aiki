@@ -99,6 +99,10 @@ function coverageLabel(value: number): 'High' | 'Medium' | 'Low' {
 }
 
 function councilRead(report: DecisionReportJson): string {
+  if (report.fastPath) return 'Single-pass analysis; council escalation was not required.';
+  if (report.adaptiveAuto) return report.autoEscalationReasons?.length
+    ? `The primary analysis tripped structural gates; two task readings checked the interpretation${report.autoChallengeUsed ? ', and one targeted challenger checked eligible claims' : '; no challenger could add information'}. No full council was convened.`
+    : 'Two task readings informed one primary decision analyst. No full council was convened.';
   if (report.mode === 'quick') return 'One structured analyst produced this result; no council, consensus, or independent-verification claim is being made.';
   const scouts = report.models.filter((model) => model.roles.includes('scout')).length;
   if (report.disagreements.length === 0) {
@@ -550,6 +554,7 @@ function renderLegacyDecisionDossierMarkdown(report: DecisionReportJson): string
   L.push(`- Models and roles: ${report.models.map((model) => `${model.name} (${model.roles.join(', ')})`).join(' · ') || 'none recorded'}`);
   L.push(`- Mode: ${report.mode}`);
   L.push(`- Provider calls: ${report.receipt.calls}/${report.receipt.budget}`);
+  if (report.autoEscalationReasons?.length) L.push(`- Adaptive escalation: ${report.autoEscalationReasons.join('; ')}`);
   L.push(`- Categories: discovery ${report.receipt.categories.discovery} · verification ${report.receipt.categories.verification} · repair ${report.receipt.categories.repair} · planning ${report.receipt.categories.planning}`);
   L.push(`- By provider: ${Object.entries(report.receipt.byProvider).map(([provider, count]) => `${providerName(provider)} ${count}`).join(', ') || 'none'}`);
   L.push(`- Recorded model time: ${(report.receipt.modelTimeMs / 1000).toFixed(1)}s`);

@@ -71,6 +71,11 @@ stop copy-pasting between them by hand.
   remaining coverage gaps before the chair.
 - **Two bounded behaviors.** Use `quick` for one structured analyst or `council` for the full multi-model
   decision council with source investigation. `research` remains accepted as an alias for `council`.
+  `--mode auto` deterministically selects the entry policy from the prompt (URLs, an evidence pack, a
+  regulated/financial/security topic, requested deliverables, research wording, or a long input require
+  preflight) and prints the one-line reason — never a learned choice. A clear, short decision question starts
+  with one call; structural gaps in the typed output add the two readings and, only when useful, one targeted
+  challenger call (1–4 total). Use explicit `council` when you want the full multi-model council every time.
 - **A decision dossier, not an essay.** Reports lead with the recommendation, verified evidence coverage,
   decisive facts, first action, strongest counter-case, and critical unknowns. Financial and threshold-heavy
   decisions can include graph-anchored numbers, payback, option commitments, and a go/no-go tripwire.
@@ -254,6 +259,7 @@ Plain text is never charged silently — you get a confirm step before any run s
 ```bash
 aiki run idea-refinement "a fridge-photo-to-recipe app for busy parents"
 aiki run idea-refinement "an early idea" --mode quick             # one structured analyst; no council claim
+aiki run idea-refinement "Should I use Postgres or MySQL?" --mode auto  # starts at 1 call; structural gaps may escalate to 4
 aiki run idea-refinement ./idea.md
 aiki run idea-refinement ./idea.md --mode council --evidence ./research/   # grounded, source-verifying council
 aiki run code-review --base main             # review this branch vs main

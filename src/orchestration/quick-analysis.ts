@@ -60,14 +60,28 @@ export function buildQuickPrompt(
     .replace('{{EVIDENCE_PACK_JSON}}', JSON.stringify(evidencePack ?? { files: [] }));
 }
 
+/** Auto standard path keeps the same typed one-call output without claiming explicit quick mode. */
+export function buildAdaptivePrompt(
+  contract: DecisionContract,
+  inputPath: string,
+  evidencePack: EvidencePack | undefined,
+  skill: string,
+): string {
+  return buildQuickPrompt(contract, inputPath, evidencePack, skill).replace(
+    'ROLE: Single decision analyst. This is explicit QUICK mode, not a multi-model\ncouncil. Give one strong structured analysis and do not claim independent consensus or verification.',
+    'ROLE: Primary decision analyst in an adaptive auto run. Give one strong structured analysis.\nDo not claim council consensus or independent verification. Use provider-native read-only source\ninvestigation when available; otherwise leave current facts visibly unverified.',
+  );
+}
+
 export async function s4QuickAnalyze(
   ctx: RunCtx,
   prompt: string,
+  opts: { persist?: boolean; stage?: string } = {},
 ): Promise<{ seat: SeatOutput; decision: QuickDecisionModelT }> {
   const provider = ctx.roles.judge;
-  const decision = await jsonCall(ctx, ctx.handle(provider), 'Q1', prompt, QuickDecisionModel);
+  const decision = await jsonCall(ctx, ctx.handle(provider), opts.stage ?? 'Q1', prompt, QuickDecisionModel);
   const output = { workflow: 'idea-refinement' as const, ...decision.analysis };
-  await ctx.writer.writeRoleOutput(provider, output);
+  if (opts.persist !== false) await ctx.writer.writeRoleOutput(provider, output);
   return { seat: { provider, sample: provider, output }, decision };
 }
 

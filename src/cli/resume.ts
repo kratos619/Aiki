@@ -125,6 +125,7 @@ export async function resumeCommand(runArg: string | undefined, opts: { root?: s
     evidencePack,
     urlSources,
     allowBlockedSources: urlSources?.sources.some((s) => s.status !== 'FETCHED') ?? false,
+    autoDecision: previousMeta.auto_decision,
   });
 
   if (outcome.ok) {

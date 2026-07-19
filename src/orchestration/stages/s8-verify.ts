@@ -32,6 +32,17 @@ interface VerifierInput {
   evidenceRefs: Map<string, string>;
 }
 
+export interface ClaimPacketTarget {
+  claim_id: string;
+  kind: string;
+}
+
+export interface ClaimPacketSet {
+  packets: unknown[];
+  evidenceRefs: Map<string, string>;
+  allowedEvidence: Map<string, Set<string>>;
+}
+
 export function selectVerificationTargets<T extends { nature?: 'FACTUAL' | 'JUDGMENT' }>(claims: T[], max: number): T[] {
   return claims
     .map((claim, index) => ({ claim, index }))
@@ -59,14 +70,21 @@ function evidenceIdsForClaim(graph: DecisionGraph, claimId: string): Set<string>
   return new Set([...positionEvidence, ...calculationEvidence]);
 }
 
-function verifierInput(graph: DecisionGraph, skill = ''): VerifierInput {
+/** Slim, reusable packet seam: selected claims plus only their linked evidence/calculations. */
+export function buildClaimPackets(
+  graph: DecisionGraph,
+  targets: ClaimPacketTarget[] = selectVerificationEscalations(graph),
+): ClaimPacketSet {
   const positionById = new Map(graph.positions.map((position) => [position.id, position]));
   const evidenceRefs = new Map(graph.evidence.map((evidence, index) => [`E${index + 1}`, evidence.id]));
   const aliasByEvidence = new Map([...evidenceRefs].map(([alias, id]) => [id, alias]));
   const evidenceById = new Map(graph.evidence.map((evidence) => [evidence.id, evidence]));
-  const items = selectVerificationEscalations(graph).map((escalation) => {
+  const allowedEvidence = new Map<string, Set<string>>();
+  const packets = targets.map((escalation) => {
     const claim = graph.claims.find((item) => item.id === escalation.claim_id)!;
     const linkedEvidenceIds = evidenceIdsForClaim(graph, claim.id);
+    allowedEvidence.set(claim.id, new Set([...linkedEvidenceIds]
+      .map((id) => aliasByEvidence.get(id)).filter((id): id is string => id !== undefined)));
     return {
       id: claim.id,
       kind: escalation.kind,
@@ -97,6 +115,12 @@ function verifierInput(graph: DecisionGraph, skill = ''): VerifierInput {
       evidence_hole: graph.holes.evidence.find((hole) => hole.claim_id === claim.id)?.reason,
     };
   });
+  return { packets, evidenceRefs, allowedEvidence };
+}
+
+function verifierInput(graph: DecisionGraph, skill = ''): VerifierInput {
+  const positionById = new Map(graph.positions.map((position) => [position.id, position]));
+  const { packets, evidenceRefs } = buildClaimPackets(graph);
   // Anonymous seat aliases (provider identity stays hidden): S1, S2, … by first appearance.
   const seatAlias = new Map<string, string>();
   for (const position of graph.positions) {
@@ -109,7 +133,7 @@ function verifierInput(graph: DecisionGraph, skill = ''): VerifierInput {
   }));
   const prompt = S8_PROMPT
     .replace('{{SKILL}}', skill ? `\n\n${skill}` : '')
-    .replace('{{ITEMS_JSON}}', JSON.stringify(items, null, 2))
+    .replace('{{ITEMS_JSON}}', JSON.stringify(packets, null, 2))
     .replace('{{CLAIMS_JSON}}', JSON.stringify(claimsIndex, null, 2));
   return { prompt, evidenceRefs };
 }

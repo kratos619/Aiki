@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { RunCtx, makeRunId } from '../src/orchestration/context.js';
+import { deterministicContract } from '../src/orchestration/preflight.js';
 import { s5Drift } from '../src/orchestration/stages/s5-drift.js';
 import type { SeatOutput } from '../src/orchestration/stages/s4-analyze.js';
 import { RunWriter } from '../src/storage/runs.js';
@@ -73,6 +74,15 @@ describe('s5Drift', () => {
     const { report, kept } = await s5Drift(makeCtx(), contract, [realSeats[0]!, realSeats[1]!, drifted]);
     expect(kept).toHaveLength(2);
     expect(report.entries[2]!.on_task).toBe(false);
+  });
+
+  it('accepts an on-task fast-path contract with empty constraints', async () => {
+    const input = 'Should I use Postgres or MySQL for my side project?';
+    const fastContract = deterministicContract(input, ['feasibility']);
+    const { kept } = await s5Drift(makeCtx(), fastContract, [seat('claude', input, 1)], 1);
+
+    expect(fastContract.constraints).toEqual([]);
+    expect(kept).toHaveLength(1);
   });
 
   it('no positions is still excluded regardless of echo', async () => {

@@ -4,8 +4,10 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
-import { blockedSourceStop, snapshotUrlSources } from '../orchestration/url-sources.js';
-import type { UrlSourceSet } from '../schemas/index.js';
+import { blockedSourceStop, extractPublicUrls, snapshotUrlSources } from '../orchestration/url-sources.js';
+import type { RunMeta, UrlSourceSet } from '../schemas/index.js';
+import { buildTaskProfile, resolveAutoMode } from '../orchestration/auto-profile.js';
+import { requestedOutputsFor } from '../orchestration/preflight.js';
 import { renderTerminalSummary, type DecisionReportJson } from '../orchestration/stages/s10-render.js';
 import { run as runEngine } from '../orchestration/engine.js';
 import type { RoleMap, WorkflowId } from '../orchestration/context.js';
@@ -27,7 +29,7 @@ export interface RunFlags {
   cheap?: boolean; // code-review: agy+codex reviewers, claude judge (Opus-thrift; experimental — bench Arm E)
   yes?: boolean; // skip the run-cost confirmation (also skipped when non-interactive)
   evidence?: string; // idea-refinement: user-scoped local source file/directory
-  mode?: string; // idea-refinement: quick | council | research
+  mode?: string; // idea-refinement: quick | council | research | auto
   allowBlockedSources?: boolean; // v6 T10: proceed past an unreadable supplied URL (default: stop and ask)
 }
 
@@ -40,8 +42,10 @@ export interface RunEstimate {
   reserved?: number;
 }
 
-export function estimateRun(workflow: WorkflowId, opts: { cheap?: boolean; mode?: IdeaMode } = {}): RunEstimate {
+export function estimateRun(workflow: WorkflowId, opts: { cheap?: boolean; mode?: IdeaMode; auto?: boolean; fastPath?: boolean } = {}): RunEstimate {
   if (workflow === 'code-review') return { calls: 5, opus: opts.cheap ? 1 : 2 };
+  if (opts.auto) return { calls: 4, opus: 1, minCalls: opts.fastPath ? 1 : 3, reserved: 0 };
+  if (opts.fastPath) return { calls: 1, opus: 1, minCalls: 1, reserved: 0 };
   const mode = opts.mode ?? 'council';
   const plan = IDEA_MODE_PLANS[mode];
   return {
@@ -133,11 +137,14 @@ export async function runCommand(workflow: string, input: string | undefined, op
   }
 
   let mode: IdeaMode | undefined;
+  let autoRequested = false; // v7 Phase B: `--mode auto` → resolved to quick|council once inputs are known
   if (workflow === 'idea-refinement') {
-    if (opts.mode !== undefined) {
+    if (opts.mode === 'auto') {
+      autoRequested = true;
+    } else if (opts.mode !== undefined) {
       const parsed = IdeaModeSchema.safeParse(opts.mode);
       if (!parsed.success) {
-        process.stderr.write(`unknown idea mode "${opts.mode}". Available: quick, council, research\n`);
+        process.stderr.write(`unknown idea mode "${opts.mode}". Available: quick, council, research, auto\n`);
         return 1;
       }
       mode = parsed.data;
@@ -161,7 +168,7 @@ export async function runCommand(workflow: string, input: string | undefined, op
       return 1;
     }
     text = resolved;
-    mode ??= inferIdeaMode(text);
+    if (!autoRequested) mode ??= inferIdeaMode(text);
   }
 
   if (opts.evidence) {
@@ -175,6 +182,20 @@ export async function runCommand(workflow: string, input: string | undefined, op
       process.stderr.write(`cannot load evidence pack: ${error instanceof Error ? error.message : String(error)}\n`);
       return 1;
     }
+  }
+
+  // v7 Phase B: resolve `--mode auto` here, before any RunCtx/engine work, so meta.mode stays quick|council
+  // and the estimate below reflects the resolved mode. urlCount is fetch-free (extract only, no snapshot).
+  let autoDecision: RunMeta['auto_decision'];
+  if (autoRequested) {
+    const resolved = resolveAutoMode(buildTaskProfile(text, {
+      urlCount: extractPublicUrls(text).length,
+      hasEvidencePack: !!evidencePack,
+      requestedOutputs: requestedOutputsFor(text),
+    }));
+    mode = resolved.mode;
+    autoDecision = { resolved: resolved.mode, reasons: resolved.reasons, ...(resolved.fastPath ? { fast_path: true } : {}) };
+    process.stdout.write(`  auto → ${resolved.mode}: ${resolved.reasons.join(', ')}.\n`);
   }
 
   // Precedence (§10/T9): --budget flag > config.budget > built-in default. roles/deadline/models are
@@ -199,7 +220,7 @@ export async function runCommand(workflow: string, input: string | undefined, op
   }
 
   // Run-cost preview (V5): show the estimate; confirm interactively unless --yes or non-interactive.
-  const est = estimateRun(workflow as WorkflowId, { cheap: opts.cheap, mode });
+  const est = estimateRun(workflow as WorkflowId, { cheap: opts.cheap, mode, auto: !!autoDecision, fastPath: autoDecision?.fast_path });
   const callEstimate = est.minCalls !== undefined && est.minCalls !== est.calls ? `${est.minCalls}–${est.calls}` : `${est.calls}`;
   const resolvedBudget = opts.budget ?? cfg.budget ?? defaultBudgetFor(workflow as WorkflowId, mode);
   const reservation = est.reserved ? `; ${est.reserved} call(s) reserved for chair + planner` : '';
@@ -254,6 +275,7 @@ export async function runCommand(workflow: string, input: string | undefined, op
     evidencePack,
     allowBlockedSources,
     urlSources,
+    autoDecision,
   });
 
   if (outcome.ok) {
