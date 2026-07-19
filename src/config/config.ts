@@ -24,6 +24,7 @@ const ConfigRoles = z
     judge: ProviderIdSchema.optional(),
     verifier: ProviderIdSchema.optional(),
     s4: z.array(ProviderIdSchema).min(1).optional(),
+    responder: ProviderIdSchema.optional(),
   })
   .strict();
 
@@ -112,7 +113,10 @@ export function mergeConfig(base: AikiConfig, over: AikiConfig): AikiConfig {
 
 /** Layered config: global `~/.aiki/config.json` (base) overlaid by the project `.aiki/config.json`. What
  *  the CLI actually uses (V8) — a user can set defaults once in the global file and override per project. */
-export async function loadLayeredConfig(): Promise<AikiConfig> {
-  const [global, project] = await Promise.all([loadConfig(homeAikiRoot()), loadConfig('.aiki')]);
+export async function loadLayeredConfig(projectRoot = '.aiki'): Promise<AikiConfig> {
+  const globalRoot = homeAikiRoot();
+  const global = await loadConfig(globalRoot);
+  if (projectRoot === globalRoot) return global;
+  const project = await loadConfig(projectRoot);
   return mergeConfig(global, project);
 }

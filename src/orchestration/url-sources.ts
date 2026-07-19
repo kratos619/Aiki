@@ -63,6 +63,14 @@ async function assertPublicUrl(url: URL, resolveHostname: boolean): Promise<void
   }
 }
 
+/** Validate an attached URL before the browser shows a FETCH_URL permission card. This performs
+ *  the same public-network guard as snapshotting, but does not fetch the page. */
+export async function validatePublicUrl(raw: string, resolveHostname = true): Promise<string> {
+  const url = new URL(raw);
+  await assertPublicUrl(url, resolveHostname);
+  return url.toString();
+}
+
 function npmRegistryUrl(url: URL): string | undefined {
   if (url.hostname !== 'npmjs.com' && url.hostname !== 'www.npmjs.com') return undefined;
   const match = url.pathname.match(/^\/package\/(.+?)\/?$/);

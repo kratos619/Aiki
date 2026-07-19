@@ -7,6 +7,8 @@ describe('estimateRun', () => {
     const fullCouncil = { calls: 10, minCalls: 7, opus: 2, reserved: 3 }; // v6: 3-call tail reserve
     expect(estimateRun('idea-refinement')).toEqual(fullCouncil);
     expect(estimateRun('idea-refinement', { mode: 'quick' })).toEqual({ calls: 3, minCalls: 3, opus: 1, reserved: 0 });
+    expect(estimateRun('idea-refinement', { mode: 'quick', auto: true, fastPath: true })).toEqual({ calls: 4, minCalls: 1, opus: 1, reserved: 0 });
+    expect(estimateRun('idea-refinement', { mode: 'council', auto: true })).toEqual({ calls: 4, minCalls: 3, opus: 1, reserved: 0 });
     expect(estimateRun('idea-refinement', { mode: 'council' })).toEqual(fullCouncil);
     expect(estimateRun('idea-refinement', { mode: 'research' })).toEqual(fullCouncil);
   });

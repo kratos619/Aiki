@@ -54,6 +54,16 @@ export interface FlagProfile {
 
 export type ProviderError = 'NOT_FOUND' | 'AUTH' | 'QUOTA' | 'TIMEOUT' | 'BAD_OUTPUT' | 'CRASH';
 
+/** Per-call token accounting (mirrors schemas NormalizedUsageSchema). estimated:true = local chars/4. */
+export interface NormalizedUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  estimated: boolean;
+  reportedCostUsd?: number;
+}
+
 export interface RunRequest {
   prompt: string; // full composed prompt (role preamble already prepended)
   cwd: string; // working directory (repo root for code-review)
@@ -66,7 +76,7 @@ export interface RunRequest {
 }
 
 export type RunResultAdapter =
-  | { ok: true; text: string; json?: unknown; durationMs: number; providerMeta?: Record<string, unknown> }
+  | { ok: true; text: string; json?: unknown; durationMs: number; providerMeta?: Record<string, unknown>; usage?: NormalizedUsage }
   | { ok: false; error: ProviderError; stderrTail: string; durationMs: number };
 
 /** Raw process result from spawnCapture — full stdout via fd-redirect (avoids §PROVIDER_NOTES 8KB truncation). */
@@ -99,6 +109,8 @@ export interface AdapterSpec {
   envelopeError?(stdout: string): ProviderError | undefined;
   /** Optional: structured metadata from the envelope (cost, session id, usage). */
   meta?(stdout: string): Record<string, unknown> | undefined;
+  /** Optional: provider-reported token accounting (estimated:false). Undefined → A3 estimate. */
+  usage?(stdout: string, stderr: string): NormalizedUsage | undefined;
 }
 
 export interface Adapter {

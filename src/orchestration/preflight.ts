@@ -66,6 +66,26 @@ export interface MergedPreflight {
   missingEvidence: string[];
 }
 
+/** Phase C fast path: the CLI already proved this is an unambiguous, decision-only request. */
+export function deterministicContract(rawInput: string, coreRubric: string[]): DecisionContractT {
+  const successBar = 'a decision-ready recommendation';
+  return DecisionContract.parse({
+    task: rawInput.trim(),
+    task_type: 'idea-refinement',
+    constraints: [],
+    unknowns: [],
+    success_criteria: [successBar],
+    alternatives: [],
+    success_bar: successBar,
+    evidence_supplied: [],
+    missing_evidence: [],
+    core_rubric: coreRubric,
+    user_confirmed: false,
+    confirmation: 'headless-defaulted',
+    requested_outputs: requestedOutputsFor(rawInput),
+  });
+}
+
 function unique(values: string[], max = Number.POSITIVE_INFINITY): string[] {
   const seen = new Set<string>();
   const result: string[] = [];

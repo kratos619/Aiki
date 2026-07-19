@@ -121,7 +121,7 @@ export async function runAdapter(
         return { ok: false, error: 'BAD_OUTPUT', stderrTail: raw.stderr, durationMs: raw.durationMs };
       }
     }
-    return { ok: true, text, json, durationMs: raw.durationMs, providerMeta: spec.meta?.(raw.stdout) };
+    return { ok: true, text, json, durationMs: raw.durationMs, providerMeta: spec.meta?.(raw.stdout), usage: spec.usage?.(raw.stdout, raw.stderr) };
   };
 
   const first = await attempt();

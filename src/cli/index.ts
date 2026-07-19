@@ -13,6 +13,7 @@ import { sessionsCommand } from './sessions.js';
 import { config } from './config.js';
 import { modelsCommand } from './models.js';
 import { benchCommand } from './bench.js';
+import { serveCommand } from './serve.js';
 import { VERSION } from './version.js';
 import { ConfigError, loadLayeredConfig } from '../config/config.js';
 import { resolveRunsRoot } from '../storage/paths.js';
@@ -58,7 +59,7 @@ program
   .option('--head <ref>', 'code-review: head git ref to diff to (default HEAD)')
   .option('--diff <file>', 'code-review: review a patch file instead of computing a git diff')
   .option('--evidence <path>', 'idea-refinement: local source file/directory (stores paths + hashes, not copies)')
-  .option('--mode <mode>', 'idea-refinement: quick | council (research is an alias for council)')
+  .option('--mode <mode>', 'idea-refinement: quick | council | auto (research is an alias for council)')
   .option('--allow-blocked-sources', 'idea-refinement: proceed even when a supplied URL cannot be read (default: stop and ask)')
   .option('--cheap', 'code-review: Gemini+Codex review, Claude judges only disputes (~⅓ the Opus; experimental)')
   .option('--yes', 'skip the run-cost confirmation prompt')
@@ -106,7 +107,7 @@ program
   .command('bench')
   .description('Run code-review, idea lane, or frozen idea-v3 benchmark arms; writes bench/results/*.json.')
   .argument('<workflow>', 'code-review | idea-refinement | idea-v3')
-  .option('--arms <list>', 'comma-separated arms to run (code review defaults A,B,C,D; idea-v3 defaults B,C,D2,R on build)')
+  .option('--arms <list>', 'comma-separated arms to run (code review defaults A,B,C,D; idea-v3 defaults B,C,D2,R; Phase F adds explicit A,B2)')
   .option('--set <name>', 'task set: build | holdout', 'build')
   .option('--resume', 'continue the latest results file: keep already-scored case×arm pairs, retry the rest')
   .option('--yes', 'actually run; without it, print the pre-run Opus-call estimate and exit')
@@ -135,6 +136,15 @@ program
       publishResults: opts.publishResults,
       campaign: opts.campaign,
     }));
+  });
+
+program
+  .command('serve')
+  .description('Open the chat workspace in the browser (localhost only; no paid calls until you convene a run).')
+  .option('--port <n>', 'port to bind (default: first free in 4173–4183)', (v) => parseInt(v, 10))
+  .option('--no-open', 'do not open the browser automatically')
+  .action(async (opts: { port?: number; open?: boolean }) => {
+    process.exit(await serveCommand({ port: opts.port, open: opts.open }));
   });
 
 program

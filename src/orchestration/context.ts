@@ -11,7 +11,7 @@
 
 import { randomBytes } from 'node:crypto';
 import type { CallRecord, GrillAnswer, IdeaMode, RunBriefDraft, RunMeta, UrlSourceSet } from '../schemas/index.js';
-import type { Adapter, FlagProfile, ProviderId, ReadOnlyFlag, RunResultAdapter } from '../providers/types.js';
+import type { Adapter, FlagProfile, NormalizedUsage, ProviderId, ReadOnlyFlag, RunResultAdapter } from '../providers/types.js';
 import { PROVIDER_IDS } from '../providers/types.js';
 import { ADAPTERS } from '../providers/adapters.js';
 import { extractJson } from '../providers/adapter-core.js';
@@ -20,7 +20,7 @@ import { probeFlags } from '../providers/probe.js';
 import type { RunWriter } from '../storage/runs.js';
 import { replayKey } from '../storage/replay.js';
 import type { EvidencePack } from './evidence-pack.js';
-import { callCategory, defaultBudgetFor, defaultDeadlineFor, IDEA_MODE_PLANS, isOptionalStage, LEGACY_DEFAULT_BUDGET } from './modes.js';
+import { callCategory, defaultBudgetFor, defaultDeadlineFor, IDEA_MODE_PLANS, isOptionalStage, LEGACY_DEFAULT_BUDGET, type CallCategory } from './modes.js';
 
 export type WorkflowId = 'idea-refinement' | 'code-review';
 
@@ -39,6 +39,10 @@ export interface RunEvents {
   onStart?(runId: string, dir: string): void;
   onStageStart?(id: string): void;
   onStageEnd?(id: string, status: 'done' | 'failed' | 'skipped'): void;
+  /** Fired around every budgeted provider call (serve deck telemetry). Additive: headless/TUI runs
+   *  pass neither, so nothing changes for them. `replayed` calls are free resume-cache hits. */
+  onCallStart?(provider: ProviderId, stage: string, category: CallCategory, replayed: boolean): void;
+  onCallEnd?(provider: ProviderId, stage: string, ms: number, ok: boolean, replayed: boolean): void;
   /** Ask the user to answer the merged contextual questions before the expensive stages run. */
   grill?(brief: RunBriefDraft): Promise<GrillAnswer[]>;
   /** Ask the user to resolve diverging preflight interpretations. */
@@ -76,7 +80,7 @@ export const DEFAULT_DEADLINE_MS = 20 * 60 * 1000; // wall-clock cap
 // (2026-07-13) after the spawn timeout became actually enforced and killed a LEGITIMATE deep call: codex's
 // S4 analysis of a hard build case ran ~10 min to a valid output (run 20260713-1341, 13:44→13:54). 900s
 // per attempt covers observed deep work; the wall-clock deadline above remains the outer bound.
-const DEFAULT_CALL_TIMEOUT_MS = 900_000;
+export const DEFAULT_CALL_TIMEOUT_MS = 900_000;
 
 export class BudgetExceeded extends Error {
   constructor(limit: number) {
@@ -139,6 +143,7 @@ export interface RunCtxOpts {
   evidencePack?: EvidencePack; // R4: user-scoped local paths + hashes; contents are not copied
   allowBlockedSources?: boolean; // v6 T10: proceed past an unreadable supplied URL (default: stop and ask)
   urlSources?: UrlSourceSet; // v6 T10b: snapshot already taken (and user-approved) by the CLI — don't refetch
+  autoDecision?: RunMeta['auto_decision']; // v7 Phase B: set by the CLI when `--mode auto` resolved the mode
 }
 
 export class RunCtx {
@@ -152,6 +157,7 @@ export class RunCtx {
   readonly evidencePack?: EvidencePack;
   readonly allowBlockedSources?: boolean;
   readonly urlSources?: UrlSourceSet;
+  readonly isAuto: boolean;
   readonly budget: { limit: number; used: number };
   readonly calls: CallRecord[] = [];
   /** Logical provider-call stages, including resume cache hits. Used by bounded protocol caps. */
@@ -166,6 +172,8 @@ export class RunCtx {
   private readonly deadlineAt: number;
   private readonly now: () => number;
   private readonly replay?: Map<string, string>; // resume replay cache (V6.3)
+  private autoDecision?: RunMeta['auto_decision']; // v7 Phase B/D: routing record + output escalation receipt
+  private fastPathActive: boolean;
   private seq = 0; // monotonic per-call counter for raw/ filenames (== budget.used on a fresh run)
 
   constructor(opts: RunCtxOpts) {
@@ -179,6 +187,10 @@ export class RunCtx {
     this.evidencePack = opts.evidencePack;
     this.allowBlockedSources = opts.allowBlockedSources;
     this.urlSources = opts.urlSources;
+    this.isAuto = opts.autoDecision !== undefined;
+    this.fastPathActive = this.mode === 'quick'
+      && opts.autoDecision?.resolved === 'quick'
+      && opts.autoDecision.fast_path === true;
     this.budget = { limit: opts.budget ?? defaultBudgetFor(opts.workflow, this.mode), used: 0 };
     this.handles = new Map(opts.handles.map((h) => [h.id, h]));
     this.signal = opts.signal;
@@ -186,6 +198,25 @@ export class RunCtx {
     this.now = opts.now ?? Date.now;
     this.deadlineAt = this.now() + this.deadlineMs;
     this.replay = opts.replay;
+    this.autoDecision = opts.autoDecision ? { ...opts.autoDecision } : undefined;
+  }
+
+  get fastPath(): boolean {
+    return this.fastPathActive;
+  }
+
+  get autoEscalationReasons(): string[] {
+    return this.autoDecision?.escalation_reasons ?? [];
+  }
+
+  /** Phase D: retain initial fast-path eligibility in meta, but stop rendering it as single-pass. */
+  markAutoEscalated(reasons: string[]): void {
+    if (!this.autoDecision || reasons.length === 0) return;
+    this.fastPathActive = false;
+    this.autoDecision = {
+      ...this.autoDecision,
+      escalation_reasons: [...new Set([...(this.autoDecision.escalation_reasons ?? []), ...reasons])],
+    };
   }
 
   /** Provider ids available this run (READY at setup). */
@@ -219,6 +250,7 @@ export class RunCtx {
   /** Calls optional stages may still spend after preserving this mode's required tail calls. */
   optionalCallsRemaining(): number {
     if (this.workflow !== 'idea-refinement') return 0;
+    if (this.isAuto) return 0; // Phase D adaptive topology owns its single optional challenge directly.
     const plan = IDEA_MODE_PLANS[this.mode];
     const logicalUsed = this.attemptedStages.filter(isOptionalStage).length;
     const protocolRoom = Math.max(0, plan.optionalCalls - logicalUsed);
@@ -250,11 +282,14 @@ export class RunCtx {
     // Resume (V6.3): if this exact (provider, prompt) already succeeded in the run we're resuming,
     // replay its output — no real call, no budget spend. Only never-completed calls hit the model.
     const cachedOut = this.replay?.get(replayKey(handle.id, req.prompt));
+    const category = callCategory(stage);
+    const replayed = cachedOut !== undefined;
+    if (!replayed && this.budget.used + 1 > this.budget.limit) throw new BudgetExceeded(this.budget.limit);
+    this.events?.onCallStart?.(handle.id, stage, category, replayed);
     let res: RunResultAdapter;
     if (cachedOut !== undefined) {
       res = { ok: true, text: cachedOut, json: req.expectJson ? extractJson(cachedOut) : undefined, durationMs: 0 };
     } else {
-      if (this.budget.used + 1 > this.budget.limit) throw new BudgetExceeded(this.budget.limit);
       this.budget.used++;
       res = await handle.adapter.run(
         {
@@ -275,6 +310,7 @@ export class RunCtx {
         stage,
         category: callCategory(stage),
         durationMs: res.durationMs,
+        usage: (res.ok && res.usage) || estimateUsage(req.prompt, res.ok ? res.text : ''),
         ...(res.ok ? {} : { error: res.error }),
       });
     }
@@ -283,6 +319,7 @@ export class RunCtx {
       `${stage}-${handle.id}-${seq}.out`,
       res.ok ? res.text : `[${res.error}]\n${res.stderrTail}`,
     );
+    this.events?.onCallEnd?.(handle.id, stage, res.durationMs, res.ok, replayed);
     return res;
   }
 
@@ -306,6 +343,7 @@ export class RunCtx {
     this.roles.s4.forEach((id, i) => (roles[`s4_${i + 1}`] = id));
     // Fold stage-raised flags in with any explicitly passed by the caller; dedupe.
     const allFlags = [...new Set([...(flags ?? []), ...this.flags])];
+    const usage_totals = this.sumUsage();
     return {
       run_id: this.runId,
       workflow: this.workflow,
@@ -318,11 +356,33 @@ export class RunCtx {
       call_count: this.calls.length,
       budget: { limit: this.budget.limit, used: this.budget.used },
       receipt: this.receipt(),
+      ...(usage_totals ? { usage_totals } : {}),
+      ...(this.autoDecision ? { auto_decision: this.autoDecision } : {}),
       exit_status: exitStatus,
       aborted,
       ...(allFlags.length ? { flags: allFlags } : {}),
     };
   }
+
+  /** Sum per-call usage into run totals. Undefined when no call carries usage (empty run). */
+  private sumUsage(): RunMeta['usage_totals'] {
+    let inputTokens = 0, outputTokens = 0, reportedCalls = 0, estimatedCalls = 0, reportedCostUsd = 0, anyCost = false;
+    for (const c of this.calls) {
+      if (!c.usage) continue;
+      inputTokens += c.usage.inputTokens ?? 0;
+      outputTokens += c.usage.outputTokens ?? 0;
+      if (c.usage.estimated) estimatedCalls++;
+      else reportedCalls++;
+      if (c.usage.reportedCostUsd !== undefined) { reportedCostUsd += c.usage.reportedCostUsd; anyCost = true; }
+    }
+    if (reportedCalls === 0 && estimatedCalls === 0) return undefined;
+    return { inputTokens, outputTokens, reportedCalls, estimatedCalls, ...(anyCost ? { reportedCostUsd } : {}) };
+  }
+}
+
+/** ponytail: chars/4 heuristic, labeled estimated — good enough until a provider reports. */
+function estimateUsage(prompt: string, out: string): NormalizedUsage {
+  return { inputTokens: Math.ceil(prompt.length / 4), outputTokens: Math.ceil(out.length / 4), estimated: true };
 }
 
 /** Run-fatal errors abort the whole run; everything else (e.g. a single provider failure in a

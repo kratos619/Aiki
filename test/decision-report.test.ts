@@ -273,6 +273,22 @@ describe('R7 decision dossier', () => {
     expect(md).toContain('NARROW');
   });
 
+  it('renders a token line in Run details, with ~ iff any call is estimated', () => {
+    const { ctx, args } = fixtures('SUPPORT');
+    const setCalls = (calls: unknown[]) => ((ctx as unknown as { calls: unknown[] }).calls = calls);
+
+    setCalls([
+      { provider: 'agy', stage: 'S4', durationMs: 5, usage: { inputTokens: 9210, outputTokens: 1590, estimated: true } },
+      { provider: 'codex', stage: 'S4', durationMs: 5, usage: { inputTokens: 9210, outputTokens: 1590, estimated: true } },
+    ]);
+    expect(renderReport(ctx, args)).toContain('- Tokens: ~18.4k in / ~3.2k out (2 calls estimated)');
+
+    setCalls([
+      { provider: 'claude', stage: 'S9', durationMs: 5, usage: { inputTokens: 18420, outputTokens: 3180, estimated: false } },
+    ]);
+    expect(renderReport(ctx, args)).toContain('- Tokens: 18.4k in / 3.2k out');
+  });
+
   it.each([['obvious', 'SUPPORT'], ['contestable', 'OPPOSE']] as const)(
     'keeps Markdown, HTML, and copied Markdown aligned for an %s fixture',
     (_name, stance) => {

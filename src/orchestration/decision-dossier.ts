@@ -27,6 +27,14 @@ export function claimShortLabel(text: string, max = 60): string {
   return `${clipped.slice(0, boundary > max * 0.6 ? boundary : max).trimEnd()}…`;
 }
 
+/** Human token summary: "~18.4k in / ~3.2k out (2 calls estimated)". `~` iff any call estimated. */
+export function formatTokenLine(t: { inputTokens: number; outputTokens: number; estimatedCalls: number }): string {
+  const k = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
+  const tilde = t.estimatedCalls > 0 ? '~' : '';
+  const suffix = t.estimatedCalls > 0 ? ` (${t.estimatedCalls} calls estimated)` : '';
+  return `${tilde}${k(t.inputTokens)} in / ${tilde}${k(t.outputTokens)} out${suffix}`;
+}
+
 /** id → claim text lookup for stripReaderClaimIds substitution; shared by readerClaimLabel's fallback and the Markdown/HTML renderers. */
 export function claimLookup(report: DecisionReportJson): (id: string) => string | null {
   return (id) => report.claims.find((claim) => claim.id === id)?.text ?? null;
@@ -91,6 +99,10 @@ function coverageLabel(value: number): 'High' | 'Medium' | 'Low' {
 }
 
 function councilRead(report: DecisionReportJson): string {
+  if (report.fastPath) return 'Single-pass analysis; council escalation was not required.';
+  if (report.adaptiveAuto) return report.autoEscalationReasons?.length
+    ? `The primary analysis tripped structural gates; two task readings checked the interpretation${report.autoChallengeUsed ? ', and one targeted challenger checked eligible claims' : '; no challenger could add information'}. No full council was convened.`
+    : 'Two task readings informed one primary decision analyst. No full council was convened.';
   if (report.mode === 'quick') return 'One structured analyst produced this result; no council, consensus, or independent-verification claim is being made.';
   const scouts = report.models.filter((model) => model.roles.includes('scout')).length;
   if (report.disagreements.length === 0) {
@@ -542,9 +554,11 @@ function renderLegacyDecisionDossierMarkdown(report: DecisionReportJson): string
   L.push(`- Models and roles: ${report.models.map((model) => `${model.name} (${model.roles.join(', ')})`).join(' · ') || 'none recorded'}`);
   L.push(`- Mode: ${report.mode}`);
   L.push(`- Provider calls: ${report.receipt.calls}/${report.receipt.budget}`);
+  if (report.autoEscalationReasons?.length) L.push(`- Adaptive escalation: ${report.autoEscalationReasons.join('; ')}`);
   L.push(`- Categories: discovery ${report.receipt.categories.discovery} · verification ${report.receipt.categories.verification} · repair ${report.receipt.categories.repair} · planning ${report.receipt.categories.planning}`);
   L.push(`- By provider: ${Object.entries(report.receipt.byProvider).map(([provider, count]) => `${providerName(provider)} ${count}`).join(', ') || 'none'}`);
   L.push(`- Recorded model time: ${(report.receipt.modelTimeMs / 1000).toFixed(1)}s`);
+  if (report.receipt.tokens) L.push(`- Tokens: ${formatTokenLine(report.receipt.tokens)}`);
   L.push(`- Degradation flags: ${report.flags.join(', ') || 'none'}`, '');
 
   // This pass runs over already-built (cell-escaped) table rows, so injected labels must be cell-escaped too.

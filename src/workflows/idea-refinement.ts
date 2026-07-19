@@ -17,9 +17,12 @@ import { s10Render } from '../orchestration/stages/s10-render.js';
 import { loadSkill } from '../orchestration/skills.js';
 import { buildLanePrompts } from '../orchestration/idea-lanes.js';
 import type { DecisionContract, DomainDimension, IdeaMode } from '../schemas/index.js';
-import { preflight, renderDecisionInput } from '../orchestration/preflight.js';
-import { buildQuickPrompt, quickActionPlan, quickJudgeReport, s4QuickAnalyze } from '../orchestration/quick-analysis.js';
+import { deterministicContract, preflight, renderDecisionInput } from '../orchestration/preflight.js';
+import { buildAdaptivePrompt, buildQuickPrompt, quickActionPlan, quickJudgeReport, s4QuickAnalyze } from '../orchestration/quick-analysis.js';
 import { blockedSourceStop, snapshotUrlSources } from '../orchestration/url-sources.js';
+import { compileDecisionGraph } from '../orchestration/decision-graph.js';
+import { structuralEscalationGates } from '../orchestration/auto-profile.js';
+import { overlayChallengeDeltas, s4bChallenge } from '../orchestration/stages/s4b-challenge.js';
 
 /** Idea-vetting core rubric: 13 mandatory coverage items. S0 adds 3-5 domain dimensions per run.
  *  Inlined here (like the S4 template) while the skill/`rubric.json` loader (§11)
@@ -165,9 +168,20 @@ export async function runIdeaRefinement(ctx: RunCtx, input: string): Promise<voi
   // it runs in addition, once the user has chosen to proceed.
   const stop = blockedSourceStop(urlSources, ctx.mode, ctx.allowBlockedSources ?? false);
   if (stop) throw new StageError('S0', 'SOURCE_UNREADABLE', `source investigation stopped before model calls: ${stop}`);
-  const { contract, brief } = await runStage(ctx, 'S0', () =>
-    preflight(ctx, input, IDEA_RUBRIC.map((item) => item.label), urlSources));
-  const grilledInput = renderDecisionInput(input, brief, urlSources);
+  let contract: DecisionContract;
+  let grilledInput: string;
+  if (ctx.fastPath) {
+    contract = await runStage(ctx, 'S0', async () => {
+      return deterministicContract(input, IDEA_RUBRIC.map((item) => item.label));
+    });
+    ctx.addFlag('headless_intent');
+    grilledInput = input;
+  } else {
+    const result = await runStage(ctx, 'S0', () =>
+      preflight(ctx, input, IDEA_RUBRIC.map((item) => item.label), urlSources));
+    contract = result.contract;
+    grilledInput = renderDecisionInput(input, result.brief, urlSources);
+  }
 
   // Persist the input as a file so S4's "read the file at {{INPUT_PATH}}" resolves (not a stage).
   await ctx.writer.writeInput('idea.md', input);
@@ -176,6 +190,67 @@ export async function runIdeaRefinement(ctx: RunCtx, input: string): Promise<voi
 
   const rubric = buildIdeaRubric(contract.domain_dimensions);
   const analystSkill = loadSkill('idea-refinement', 'analyst');
+
+  if (ctx.isAuto) {
+    ctx.addFlag('single_model');
+    const startedFast = ctx.fastPath;
+    const primaryPrompt = startedFast
+      ? buildQuickPrompt(contract, inputPath, ctx.evidencePack, analystSkill)
+      : buildAdaptivePrompt(contract, inputPath, ctx.evidencePack, analystSkill);
+    if (!startedFast) await ctx.writer.writePrompt('auto-primary.md', primaryPrompt);
+    const quick = await runStage(ctx, 'S4', () => s4QuickAnalyze(ctx, primaryPrompt, {
+      persist: !startedFast,
+      stage: startedFast ? 'Q1' : 'S4-auto-primary',
+    }));
+    const provisional = compileDecisionGraph(
+      [{ provider: quick.seat.provider, submission: quick.seat.output }],
+      rubric,
+    );
+    const gates = structuralEscalationGates(provisional);
+    if (gates.length) {
+      ctx.markAutoEscalated(gates.map((gate) => gate.reason));
+      if (startedFast) {
+        const result = await runStage(ctx, 'S0-auto', () =>
+          preflight(ctx, input, IDEA_RUBRIC.map((item) => item.label), urlSources));
+        contract = result.contract;
+      }
+    }
+    if (startedFast) {
+      if (gates.length === 0) await ctx.writer.writeJson('intent-contract', contract);
+      await ctx.writer.writePrompt('quick-analyst.md', primaryPrompt);
+      await ctx.writer.writeRoleOutput(quick.seat.provider, quick.seat.output);
+    }
+    const challenge = gates.length
+      ? await runStage(ctx, 'S4b', () => s4bChallenge(ctx, provisional, gates, quick.seat.provider))
+      : { deltas: [] };
+    const { kept } = await runStage(ctx, 'S5', () => s5Drift(ctx, contract, [quick.seat], 1));
+    if (ctx.mode !== 'quick') recordIdeaOutcomeFlags(ctx, contract, kept);
+    const positions = await runStage(ctx, 'S6', () => s6Positions(ctx, kept));
+    const graph = await runStage(ctx, 'S7', () => s7DecisionGraph(ctx, positions, rubric, contract.task));
+    const challenged = overlayChallengeDeltas(graph, challenge.deltas);
+    const verifications = await runStage(ctx, 'S8', async () => {
+      const result = { verifications: [] };
+      await ctx.writer.writeJson('verifications', result);
+      return result;
+    });
+    const rebuttals = await runStage(ctx, 'S8b', async () => {
+      const result = { round: 1 as const, selected_claim_ids: [], events: [], stop_reason: 'NO_ESCALATIONS' as const };
+      await ctx.writer.writeJson('rebuttals', result);
+      return result;
+    });
+    const judgeReport = await runStage(ctx, 'S9', async () => {
+      const report = quickJudgeReport(quick.decision, challenged);
+      await ctx.writer.writeJson('judge-report', report);
+      return report;
+    });
+    const actionPlan = await runStage(ctx, 'S9b', async () => {
+      const plan = quickActionPlan(ctx, quick.seat.provider, quick.decision, challenged, contract);
+      await ctx.writer.writeJson('action-plan', plan);
+      return plan;
+    });
+    await runStage(ctx, 'S10', () => s10Render(ctx, { contract, seats: kept, graph: challenged, verifications, rebuttals, judgeReport, actionPlan, rubric, original: input }));
+    return;
+  }
 
   if (ctx.mode === 'quick') {
     ctx.addFlag('single_model');

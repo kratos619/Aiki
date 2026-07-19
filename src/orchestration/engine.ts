@@ -11,7 +11,7 @@ import { recordSession, updateSessionStatus } from '../storage/sessions.js';
 import { runIdeaRefinement } from '../workflows/idea-refinement.js';
 import { runCodeReview } from '../workflows/code-review.js';
 import type { EvidencePack } from './evidence-pack.js';
-import type { IdeaMode, UrlSourceSet } from '../schemas/index.js';
+import type { IdeaMode, RunMeta, UrlSourceSet } from '../schemas/index.js';
 
 export type WorkflowFn = (ctx: RunCtx, input: string) => Promise<void>;
 
@@ -22,6 +22,7 @@ const WORKFLOWS: Record<WorkflowId, WorkflowFn> = {
 
 export interface RunOutcome {
   ok: boolean;
+  aborted: boolean;
   runId: string;
   dir: string;
   callCount: number;
@@ -46,7 +47,7 @@ export async function executeRun(ctx: RunCtx, input: string, fn: WorkflowFn): Pr
   try {
     await fn(ctx, input);
     await ctx.writer.writeMeta(ctx.buildMeta('ok', false));
-    return { ok: true, ...base, callCount: ctx.calls.length };
+    return { ok: true, aborted: false, ...base, callCount: ctx.calls.length };
   } catch (e) {
     const classified = classifyError(e);
     // A fired abort signal wins: record `aborted` even if the surfacing error was e.g. a killed
@@ -54,11 +55,12 @@ export async function executeRun(ctx: RunCtx, input: string, fn: WorkflowFn): Pr
     const aborted = ctx.aborted || classified.aborted;
     // Best-effort finalize: never let a meta-write failure mask the original error.
     await ctx.writer.writeMeta(ctx.buildMeta(aborted ? 'aborted' : 'failed', aborted)).catch(() => {});
-    return { ok: false, ...base, callCount: ctx.calls.length, error: { code: classified.code, message: e instanceof Error ? e.message : String(e) } };
+    return { ok: false, aborted, ...base, callCount: ctx.calls.length, error: { code: classified.code, message: e instanceof Error ? e.message : String(e) } };
   }
 }
 
 export interface RunOptions {
+  runId?: string; // caller-supplied id (serve: SSE + thread + report all key off it). Default = generated.
   mode?: IdeaMode; // idea-refinement protocol; default council
   budget?: number;
   deadlineMs?: number;
@@ -73,6 +75,7 @@ export interface RunOptions {
   evidencePack?: EvidencePack; // idea-refinement: user-scoped source paths + sha256 manifest
   allowBlockedSources?: boolean; // v6 T10: proceed past an unreadable supplied URL (default: stop and ask)
   urlSources?: UrlSourceSet; // v6 T10b: snapshot already taken (and user-approved) by the CLI — don't refetch
+  autoDecision?: RunMeta['auto_decision']; // v7 Phase B: `--mode auto` routing record, persisted to meta
 }
 
 /**
@@ -86,6 +89,7 @@ export async function run(workflow: WorkflowId, input: string, opts: RunOptions 
   if (handles.length < requiredProviders) {
     return {
       ok: false,
+      aborted: false,
       runId: '(none)',
       dir: '',
       callCount: 0,
@@ -93,7 +97,7 @@ export async function run(workflow: WorkflowId, input: string, opts: RunOptions 
     };
   }
 
-  const runId = makeRunId(workflow);
+  const runId = opts.runId ?? makeRunId(workflow);
   const roles = resolveRoles(workflow, handles.map((h) => h.id), opts.roleOverrides);
   const writer = new RunWriter(runId, opts.runsRoot);
   const ctx = new RunCtx({
@@ -112,6 +116,7 @@ export async function run(workflow: WorkflowId, input: string, opts: RunOptions 
     evidencePack: opts.evidencePack,
     allowBlockedSources: opts.allowBlockedSources,
     urlSources: opts.urlSources,
+    autoDecision: opts.autoDecision,
   });
 
   // Register the session (V6.3) so `aiki sessions`/`resume` can find it from anywhere. run() is a
@@ -126,6 +131,6 @@ export async function run(workflow: WorkflowId, input: string, opts: RunOptions 
     ...(opts.resumedFrom ? { resumedFrom: opts.resumedFrom } : {}),
   });
   const outcome = await executeRun(ctx, input, WORKFLOWS[workflow]);
-  await updateSessionStatus(runId, outcome.ok ? 'ok' : 'failed');
+  await updateSessionStatus(runId, outcome.ok ? 'ok' : outcome.aborted ? 'aborted' : 'failed');
   return outcome;
 }

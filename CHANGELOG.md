@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased — v7 adaptive deliberation
+
+### Added
+- **`aiki run idea-refinement --mode auto`** — a deterministic quick-vs-council routing decision made
+  before any provider call. Escalates to `council` when the prompt supplies URLs or an evidence pack,
+  hits a regulated/financial/security topic, requests deliverables beyond a decision, uses research
+  wording, or runs long (>120 words); otherwise `quick`. Prints the resolved mode + reason and persists
+  it to `meta.auto_decision`. No learned routing (§22): the rules are fixed and inspectable. `meta.mode`
+  stays `quick|council`; legacy metadata still parses and explicit modes keep their existing artifacts.
+- **One-call auto fast path (v7 Phase C).** A short DECISION-only request with a clear decision verb
+  and subject skips the two model preflight readings and builds the same typed contract deterministically.
+  Ambiguous prompts keep the existing quick path; explicit quick/council runs are unchanged. Reports label
+  the result: `Single-pass analysis; council escalation was not required.`
+- **Structural auto escalation (v7 Phase D).** Validated analyst output now triggers a deterministic
+  failover for unsupported decisive claims, model-knowledge STOP/PIVOT claims, failed calculations,
+  contradictory supplied evidence, or load-bearing disagreement. Auto runs use 1–4 calls: two existing
+  preflight readings, one primary analysis, and at most one slim claim-only challenger call. The receipt
+  records every trigger; explicit quick/council paths remain unchanged.
+- **Per-call token accounting (v7 Phase A).** Every call records normalized input/output token usage —
+  provider-reported for Claude, a labeled `chars/4` estimate otherwise — summed into `meta.usage_totals`
+  and shown as a `Tokens:` line in the dossier and terminal summary. Purely additive; behavior unchanged.
+
 ## Unreleased — v6 council integrity
 
 Root-cause pass driven by exact replay of run `20260717-1219` (`plan/AIKI-v6-council-integrity-plan.md`);
@@ -23,6 +45,14 @@ every fix is pinned by tests on the real payloads that failed live (`test/fixtur
   of announced. Rendered Markdown/HTML never contain local filesystem usernames.
 
 ### Added
+- **Local council workspace:** `aiki serve` opens a loopback-only three-pane browser workspace with cached
+  provider status, decision history, server-enforced file/URL/spend gates, live SSE stage and call telemetry,
+  cancellation, path-free verdict cards, and responsive desktop/mobile layouts.
+- Completed decisions accept one-call follow-up questions labeled `no council`; failed or cancelled runs with
+  cached calls can be resumed after an explicit spend review. Settings atomically persist provider model pins
+  and role assignments without exposing credentials, local paths, or arbitrary JSON to the browser.
+- A dependency-free hosted replay, real workspace screenshot, and timed three-minute demo script provide a
+  safe submission path when judges do not have the three provider CLIs installed.
 - **Semantic claim join at zero extra calls:** the S8 verifier may emit `claim_groups` over an
   anonymous all-claims index; validated groups (unknown ids and single-provider groups dropped)
   overlay CONSENSUS/DISAGREEMENT states through the existing state machine. Cross-provider

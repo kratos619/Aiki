@@ -14,7 +14,7 @@
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { z } from 'zod';
-import { ActionPlanArtifact, DecisionContractArtifact, DecisionGraph, DisagreementMap, IdeaRoleOutput, JudgeReport, PreflightArtifact, RebuttalEventSet, ReviewMap, RoleOutput, RunBrief, RunMeta, UrlSourceSet, VerificationArtifact } from '../schemas/index.js';
+import { ActionPlanArtifact, ChallengeDeltaSet, DecisionContractArtifact, DecisionGraph, DisagreementMap, IdeaRoleOutput, JudgeReport, PreflightArtifact, RebuttalEventSet, ReviewMap, RoleOutput, RunBrief, RunMeta, UrlSourceSet, VerificationArtifact } from '../schemas/index.js';
 
 export class OutOfOrderWriteError extends Error {
   constructor(slot: string, ord: number, maxOrd: number) {
@@ -45,6 +45,7 @@ const JSON_SLOTS = {
   'intent-contract': { ord: 1, path: '01-intent-contract.json', schema: DecisionContractArtifact },
   'preflight-readings': { ord: 2, path: '02-preflight-readings.json', schema: PreflightArtifact },
   'misunderstanding-guard': { ord: 2, path: '02-misunderstanding-guard.json', schema: null },
+  'challenge-deltas': { ord: 4.5, path: '04b-challenge-deltas.json', schema: ChallengeDeltaSet },
   'drift-report': { ord: 5, path: '05-drift-report.json', schema: null },
   positions: { ord: 6, path: '06-positions.json', schema: null },
   'coverage-fill': { ord: 6.5, path: '06b-coverage-fill.json', schema: IdeaRoleOutput },

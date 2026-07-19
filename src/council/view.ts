@@ -427,6 +427,10 @@ function dossierCoverageLabel(value: number): 'High' | 'Medium' | 'Low' {
 }
 
 function dossierCouncilRead(report: DecisionReportJson): string {
+  if (report.fastPath) return 'Single-pass analysis; council escalation was not required.';
+  if (report.adaptiveAuto) return report.autoEscalationReasons?.length
+    ? `The primary analysis tripped structural gates; two task readings checked the interpretation${report.autoChallengeUsed ? ', and one targeted challenger checked eligible claims' : '; no challenger could add information'}. No full council was convened.`
+    : 'Two task readings informed one primary decision analyst. No full council was convened.';
   if (report.mode === 'quick') return 'One structured analyst produced this result; no council, consensus, or independent-verification claim is being made.';
   const scouts = report.models.filter((model) => model.roles.includes('scout')).length;
   if (report.disagreements.length === 0) {
@@ -563,6 +567,7 @@ function renderDossierIdeaBody(report: DecisionReportJson): string {
   )}`;
   const receipt = `<div class="receipt">
     <span>mode ${escapeHtml(report.mode)}</span><span>${report.receipt.calls}/${report.receipt.budget} provider calls</span>
+    ${report.autoEscalationReasons?.length ? `<span>adaptive escalation ${escapeHtml(report.autoEscalationReasons.join('; '))}</span>` : ''}
     <span>discovery ${report.receipt.categories.discovery}</span><span>verification ${report.receipt.categories.verification}</span>
     <span>repair ${report.receipt.categories.repair}</span><span>planning ${report.receipt.categories.planning}</span>
     <span>by provider ${escapeHtml(Object.entries(report.receipt.byProvider).map(([provider, count]) => `${providerName(provider)} ${count}`).join(', ') || 'none')}</span>
