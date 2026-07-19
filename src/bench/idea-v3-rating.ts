@@ -158,7 +158,7 @@ export function blindIdeaV3Report(report: string, runId: string, caseDir?: strin
     .replace(/^(- Report ID:).*$/gm, '$1 [redacted]')
     .replace(/^(- Generated:).*$/gm, '$1 [redacted]')
     .replace(/^(- Models and roles:).*$/gm, '$1 [redacted]')
-    .replace(/^(- (?:Mode|Provider calls|Categories|By provider|Recorded model time|Degradation flags):).*$/gm, '$1 [redacted]')
+    .replace(/^(- (?:Mode|Provider calls|Categories|By provider|Recorded model time|Tokens|Degradation flags):).*$/gm, '$1 [redacted]')
     .replace(/^(> ⚠ DEGRADED): [a-z0-9_]+(?:, [a-z0-9_]+)*\.?$/gm, '$1 [redacted]');
 }
 

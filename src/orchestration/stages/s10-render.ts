@@ -13,7 +13,7 @@ import type { SeatOutput } from './s4-analyze.js';
 import type { RubricItem } from './s7-decision-graph.js';
 import { interpretClaimOutcome, type DecisionGraph } from '../decision-graph.js';
 import { evidenceOrigin } from '../evidence-origin.js';
-import { buildReaderProjection, renderDecisionDossierMarkdown, sanitizeReaderText } from '../decision-dossier.js';
+import { buildReaderProjection, formatTokenLine, renderDecisionDossierMarkdown, sanitizeReaderText } from '../decision-dossier.js';
 import { callCategory } from '../modes.js';
 
 export interface AuditRow {
@@ -249,6 +249,7 @@ export interface DecisionReportJson {
     byProvider: Record<string, number>;
     modelTimeMs: number;
     categories: { discovery: number; verification: number; repair: number; planning: number };
+    tokens?: { inputTokens: number; outputTokens: number; estimatedCalls: number }; // absent on legacy stored reports
   };
   dossier: DecisionDossier;
 }
@@ -718,9 +719,15 @@ export function buildDecisionReport(ctx: RunCtx, args: S10Args): DecisionReportJ
 
   const byProvider: Record<string, number> = {};
   let modelTimeMs = 0;
+  let inputTokens = 0, outputTokens = 0, estimatedCalls = 0;
   for (const call of ctx.calls) {
     byProvider[call.provider] = (byProvider[call.provider] ?? 0) + 1;
     modelTimeMs += call.durationMs;
+    if (call.usage) {
+      inputTokens += call.usage.inputTokens ?? 0;
+      outputTokens += call.usage.outputTokens ?? 0;
+      if (call.usage.estimated) estimatedCalls++;
+    }
   }
 
   const roles = ctx.roles;
@@ -852,7 +859,7 @@ export function buildDecisionReport(ctx: RunCtx, args: S10Args): DecisionReportJ
       : [],
     openQuestions,
     flags: [...flags],
-    receipt: { calls: ctx.calls.length, budget: ctx.budget.limit, byProvider, modelTimeMs, categories: receiptCategories(ctx) },
+    receipt: { calls: ctx.calls.length, budget: ctx.budget.limit, byProvider, modelTimeMs, categories: receiptCategories(ctx), tokens: { inputTokens, outputTokens, estimatedCalls } },
     dossier,
   };
 }
@@ -888,6 +895,7 @@ export function renderTerminalSummary(report: DecisionReportJson, paths: { markd
     ...takeaways.map((item) => `- ${item}`),
     '',
     `Next step: ${terminalLine(nextStep)}`,
+    ...(report.receipt.tokens ? [`Tokens: ${formatTokenLine(report.receipt.tokens)}`] : []),
     `Report: ${paths.markdownPath}`,
   ].join('\n');
 }

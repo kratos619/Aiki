@@ -63,6 +63,12 @@ Antigravity binary. Command/binary references in fixes (e.g. "run `agy`") keep t
   content ("rate limit", "login") in a successful transcript would false-positive AUTH/QUOTA.
 - cwd is set via the spawn cwd option (no `-C` needed for the common case). `--skip-git-repo-check`
   is required for run-anywhere support; it does not bypass approvals or the read-only sandbox.
+- **v7 Phase A — codex reported token usage NOT captured.** The stderr transcript mentions
+  "tokens used", but the exact line format is not on record in any fixture, so the claude-style
+  `usage()` extractor is deliberately NOT implemented for codex — codex falls to the A3 chars/4
+  estimate (`estimated:true`). To wire real codex numbers later: capture one real
+  `codex exec` **stderr** tail, add the line format here, then implement `codexSpec.usage(_, stderr)`.
+  agy has no known usage output → estimate path (same as codex).
 
 ## R4 provider-native investigation observations (2026-07-13)
 

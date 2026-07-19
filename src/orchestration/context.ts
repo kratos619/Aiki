@@ -11,7 +11,7 @@
 
 import { randomBytes } from 'node:crypto';
 import type { CallRecord, GrillAnswer, IdeaMode, RunBriefDraft, RunMeta, UrlSourceSet } from '../schemas/index.js';
-import type { Adapter, FlagProfile, ProviderId, ReadOnlyFlag, RunResultAdapter } from '../providers/types.js';
+import type { Adapter, FlagProfile, NormalizedUsage, ProviderId, ReadOnlyFlag, RunResultAdapter } from '../providers/types.js';
 import { PROVIDER_IDS } from '../providers/types.js';
 import { ADAPTERS } from '../providers/adapters.js';
 import { extractJson } from '../providers/adapter-core.js';
@@ -282,6 +282,7 @@ export class RunCtx {
         stage,
         category: callCategory(stage),
         durationMs: res.durationMs,
+        usage: (res.ok && res.usage) || estimateUsage(req.prompt, res.ok ? res.text : ''),
         ...(res.ok ? {} : { error: res.error }),
       });
     }
@@ -314,6 +315,7 @@ export class RunCtx {
     this.roles.s4.forEach((id, i) => (roles[`s4_${i + 1}`] = id));
     // Fold stage-raised flags in with any explicitly passed by the caller; dedupe.
     const allFlags = [...new Set([...(flags ?? []), ...this.flags])];
+    const usage_totals = this.sumUsage();
     return {
       run_id: this.runId,
       workflow: this.workflow,
@@ -326,11 +328,32 @@ export class RunCtx {
       call_count: this.calls.length,
       budget: { limit: this.budget.limit, used: this.budget.used },
       receipt: this.receipt(),
+      ...(usage_totals ? { usage_totals } : {}),
       exit_status: exitStatus,
       aborted,
       ...(allFlags.length ? { flags: allFlags } : {}),
     };
   }
+
+  /** Sum per-call usage into run totals. Undefined when no call carries usage (empty run). */
+  private sumUsage(): RunMeta['usage_totals'] {
+    let inputTokens = 0, outputTokens = 0, reportedCalls = 0, estimatedCalls = 0, reportedCostUsd = 0, anyCost = false;
+    for (const c of this.calls) {
+      if (!c.usage) continue;
+      inputTokens += c.usage.inputTokens ?? 0;
+      outputTokens += c.usage.outputTokens ?? 0;
+      if (c.usage.estimated) estimatedCalls++;
+      else reportedCalls++;
+      if (c.usage.reportedCostUsd !== undefined) { reportedCostUsd += c.usage.reportedCostUsd; anyCost = true; }
+    }
+    if (reportedCalls === 0 && estimatedCalls === 0) return undefined;
+    return { inputTokens, outputTokens, reportedCalls, estimatedCalls, ...(anyCost ? { reportedCostUsd } : {}) };
+  }
+}
+
+/** ponytail: chars/4 heuristic, labeled estimated — good enough until a provider reports. */
+function estimateUsage(prompt: string, out: string): NormalizedUsage {
+  return { inputTokens: Math.ceil(prompt.length / 4), outputTokens: Math.ceil(out.length / 4), estimated: true };
 }
 
 /** Run-fatal errors abort the whole run; everything else (e.g. a single provider failure in a

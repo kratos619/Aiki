@@ -1,5 +1,10 @@
-import type { Adapter, AdapterSpec, FlagProfile, ProviderError, RunRequest } from './types.js';
+import type { Adapter, AdapterSpec, FlagProfile, NormalizedUsage, ProviderError, RunRequest } from './types.js';
 import { runAdapter } from './adapter-core.js';
+
+/** Only accept a finite non-negative number; anything else → undefined (field omitted). */
+function num(v: unknown): number | undefined {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : undefined;
+}
 
 function envelope(stdout: string): Record<string, unknown> | undefined {
   try {
@@ -43,6 +48,19 @@ const claudeSpec: AdapterSpec = {
       subtype: env.subtype,
       total_cost_usd: env.total_cost_usd,
       usage: env.usage,
+    };
+  },
+  usage(stdout: string): NormalizedUsage | undefined {
+    const env = envelope(stdout);
+    if (!env) return undefined;
+    const u = (env.usage ?? {}) as Record<string, unknown>;
+    return {
+      inputTokens: num(u.input_tokens),
+      outputTokens: num(u.output_tokens),
+      cacheReadTokens: num(u.cache_read_input_tokens),
+      cacheWriteTokens: num(u.cache_creation_input_tokens),
+      estimated: false,
+      reportedCostUsd: num(env.total_cost_usd),
     };
   },
 };
