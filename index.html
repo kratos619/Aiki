@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>aiki — a council, on call</title>
+<meta name="description" content="aiki convenes the AI CLIs you already run — Claude Code, Codex, and Gemini — as a local, read-only council that genuinely disagrees, then hands you a decision brief you can audit.">
+<meta property="og:title" content="aiki — a council, on call">
+<meta property="og:description" content="Local, read-only multi-model council for code review and idea stress-testing. No API keys.">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:#07070b;color:#e8e8f0;font-family:'Space Grotesk',system-ui,sans-serif;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+  a{color:#a78bfa;text-decoration:none}
+  a:hover{color:#c4b5fd}
+  ::selection{background:rgba(167,139,250,.3);color:#fff}
+  ::-webkit-scrollbar{width:11px}
+  ::-webkit-scrollbar-track{background:#0a0a10}
+  ::-webkit-scrollbar-thumb{background:#26263a;border-radius:8px;border:2px solid #0a0a10}
+  @keyframes aifloat{0%,100%{transform:translateY(0) rotate(0)}50%{transform:translateY(-14px) rotate(2deg)}}
+  @keyframes aiblink{0%,50%{opacity:1}51%,100%{opacity:0}}
+  @keyframes aipulse{0%,100%{opacity:.5;transform:scale(1)}50%{opacity:1;transform:scale(1.35)}}
+  @keyframes aispin{to{transform:rotate(360deg)}}
+  @keyframes aishimmer{to{background-position:200% center}}
+  @keyframes aiglow{0%,100%{box-shadow:0 0 40px -8px rgba(124,92,255,.5)}50%{box-shadow:0 0 70px -4px rgba(124,92,255,.8)}}
+  @keyframes airise{0%{opacity:0;transform:translateY(30px)}100%{opacity:1;transform:none}}
+  @keyframes aiscan{0%{transform:translateY(-100%)}100%{transform:translateY(2400%)}}
+</style>
+<style>
+.hv1:hover{color:#e8e8f0 !important;background:rgba(255,255,255,.05) !important}
+.hv2:hover{color:#e8e8f0 !important;background:rgba(255,255,255,.05) !important}
+.hv3:hover{color:#e8e8f0 !important;background:rgba(255,255,255,.05) !important}
+.hv4:hover{color:#e8e8f0 !important;background:rgba(255,255,255,.05) !important}
+.hv5:hover{filter:brightness(1.08) !important}
+.hv6:hover{background:rgba(167,139,250,.18) !important;color:#fff !important;border-color:rgba(167,139,250,.4) !important}
+.hv7:hover{filter:brightness(1.08) !important}
+.hv8:hover{background:rgba(255,255,255,.08) !important}
+.hv9:hover{border-color:rgba(240,136,62,.5) !important;transform:translateY(-4px) !important}
+.hv10:hover{border-color:rgba(52,211,153,.5) !important;transform:translateY(-4px) !important}
+.hv11:hover{border-color:rgba(96,165,250,.5) !important;transform:translateY(-4px) !important}
+.hv12:hover{filter:brightness(1.08) !important}
+.hv13:hover{background:rgba(255,255,255,.1) !important}
+.hv14:hover{color:#e8e8f0 !important}
+.hv15:hover{color:#e8e8f0 !important}
+.hv16:hover{color:#e8e8f0 !important}
+.hv17:hover{color:#e8e8f0 !important}
+</style>
+</head>
+<body>
+<canvas id="aiki-bg" style="position:fixed;inset:0;width:100vw;height:100vh;z-index:0;pointer-events:none"></canvas>
+<div style="position:fixed;inset:0;z-index:0;pointer-events:none;background:radial-gradient(120% 80% at 50% 0%, rgba(124,92,255,.14), transparent 55%), radial-gradient(80% 60% at 85% 40%, rgba(96,165,250,.06), transparent 60%), linear-gradient(180deg, rgba(7,7,11,0) 60%, #07070b 92%)"></div>
+
+<div style="position:relative;z-index:1">
+
+<!-- NAV -->
+<nav style="position:fixed;top:0;left:0;right:0;z-index:50;display:flex;align-items:center;justify-content:space-between;padding:14px 28px;backdrop-filter:blur(14px);background:rgba(7,7,11,.62);border-bottom:1px solid rgba(255,255,255,.07)">
+  <a href="#top" style="display:flex;align-items:center;gap:11px;color:#e8e8f0">
+    <span style="width:32px;height:32px;border-radius:9px;background:linear-gradient(150deg,#a78bfa,#7c5cff);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:19px;color:#0b0616;box-shadow:0 4px 18px -4px rgba(124,92,255,.7)">a</span>
+    <span style="font-weight:600;font-size:18px;letter-spacing:-.01em">aiki</span>
+    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#5a5a68;letter-spacing:.14em;padding:3px 7px;border:1px solid rgba(255,255,255,.09);border-radius:5px">v0.3.3</span>
+  </a>
+  <div style="display:flex;align-items:center;gap:8px;font-family:'JetBrains Mono',monospace;font-size:13px">
+    <a href="#why" style="color:#8a8a99;padding:7px 12px;border-radius:8px" class="hv1">why</a>
+    <a href="#council" style="color:#8a8a99;padding:7px 12px;border-radius:8px" class="hv2">council</a>
+    <a href="#how" style="color:#8a8a99;padding:7px 12px;border-radius:8px" class="hv3">how</a>
+    <a href="#benchmark" style="color:#8a8a99;padding:7px 12px;border-radius:8px" class="hv4">benchmark</a>
+    <a href="https://github.com/kratos619/Aiki" style="margin-left:8px;padding:8px 16px;border-radius:9px;background:linear-gradient(150deg,#a78bfa,#7c5cff);color:#0b0616;font-weight:600" class="hv5">GitHub ↗</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<header id="top" style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:150px 24px 90px;position:relative">
+  <div style="width:92px;height:92px;border-radius:24px;background:linear-gradient(150deg,#b39dfb,#7c5cff);display:flex;align-items:center;justify-content:center;font-size:52px;font-weight:700;color:#0b0616;margin-bottom:34px;animation:aifloat 6s ease-in-out infinite, aiglow 4s ease-in-out infinite">a</div>
+
+  <div data-rv="0" style="display:inline-flex;align-items:center;gap:10px;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.18em;color:#a78bfa;border:1px solid rgba(167,139,250,.28);background:rgba(167,139,250,.06);padding:7px 16px;border-radius:100px;margin-bottom:28px">
+    <span style="width:7px;height:7px;border-radius:50%;background:#34d399;animation:aipulse 2s infinite"></span>LOCAL-FIRST · NO API KEYS · READ-ONLY
+  </div>
+
+  <h1 data-rv="60" style="margin:0;font-size:clamp(44px,8vw,104px);font-weight:700;letter-spacing:-.045em;line-height:.96;max-width:14ch;background:linear-gradient(180deg,#ffffff,#b7b2d6);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent">A council, on call.</h1>
+
+  <p data-rv="140" style="margin:30px auto 0;max-width:660px;font-size:clamp(17px,2.1vw,21px);line-height:1.6;color:#a2a2b3">aiki convenes the AI CLIs you already run — <span style="color:#f0883e">Claude&nbsp;Code</span>, <span style="color:#34d399">Codex</span>, and <span style="color:#60a5fa">Gemini</span> — as a panel that genuinely disagrees. They investigate independently, cross-examine, a judge adjudicates the disputes, and you get a decision brief you can audit.</p>
+
+  <!-- install command -->
+  <div data-rv="220" style="margin-top:40px;display:flex;align-items:center;gap:14px;font-family:'JetBrains Mono',monospace;font-size:15px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:13px;padding:13px 13px 13px 20px;box-shadow:0 20px 50px -20px rgba(0,0,0,.8)">
+    <span style="color:#5a5a68">$</span>
+    <span style="color:#e8e8f0">npm install -g <span style="color:#a78bfa">aiki-cli</span></span>
+    <button onclick="copyCmd(event)" style="border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:#c9c9d4;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.1em;text-transform:uppercase;padding:8px 13px;border-radius:8px;cursor:pointer;transition:all .2s" class="hv6"><span data-copylabel="1">copy</span></button>
+  </div>
+
+  <div data-rv="300" style="margin-top:20px;display:flex;flex-wrap:wrap;gap:12px;justify-content:center">
+    <a href="https://www.npmjs.com/package/aiki-cli" style="padding:12px 22px;border-radius:11px;background:linear-gradient(150deg,#a78bfa,#7c5cff);color:#0b0616;font-weight:600;font-size:15px" class="hv7">Get started →</a>
+    <a href="https://github.com/kratos619/Aiki" style="padding:12px 22px;border-radius:11px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);color:#e8e8f0;font-weight:500;font-size:15px" class="hv8">★ Star on GitHub</a>
+  </div>
+
+  <!-- provider chips -->
+  <div data-rv="380" style="margin-top:46px;display:flex;flex-wrap:wrap;gap:12px;justify-content:center">
+    <div style="display:flex;align-items:center;gap:10px;padding:9px 15px;border-radius:11px;background:rgba(255,255,255,.03);border:1px solid rgba(240,136,62,.25)">
+      <span style="width:24px;height:24px;border-radius:6px;background:rgba(240,136,62,.16);color:#f0883e;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px">C</span>
+      <span style="font-weight:500;font-size:14px">Claude</span><span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#34d399">CLI detected</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;padding:9px 15px;border-radius:11px;background:rgba(255,255,255,.03);border:1px solid rgba(52,211,153,.25)">
+      <span style="width:24px;height:24px;border-radius:6px;background:rgba(52,211,153,.16);color:#34d399;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px">C</span>
+      <span style="font-weight:500;font-size:14px">Codex</span><span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#34d399">CLI detected</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;padding:9px 15px;border-radius:11px;background:rgba(255,255,255,.03);border:1px solid rgba(96,165,250,.25)">
+      <span style="width:24px;height:24px;border-radius:6px;background:rgba(96,165,250,.16);color:#60a5fa;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px">G</span>
+      <span style="font-weight:500;font-size:14px">Gemini</span><span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#34d399">CLI detected</span>
+    </div>
+  </div>
+</header>
+
+<!-- TRUST STRIP -->
+<div data-rv="0" style="max-width:1120px;margin:0 auto;padding:0 24px">
+  <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:14px 40px;padding:26px 34px;border:1px solid rgba(255,255,255,.08);border-radius:16px;background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.01));font-family:'JetBrains Mono',monospace;font-size:13px;color:#8a8a99">
+    <span><span style="color:#34d399">✓</span> 262 tests passing</span>
+    <span><span style="color:#a78bfa">◆</span> No API keys</span>
+    <span><span style="color:#a78bfa">◆</span> Read-only orchestration</span>
+    <span><span style="color:#a78bfa">◆</span> Node ≥ 20 · macOS / Linux</span>
+    <span><span style="color:#a78bfa">◆</span> MIT licensed</span>
+  </div>
+</div>
+
+<!-- WHY -->
+<section id="why" style="max-width:1120px;margin:0 auto;padding:120px 24px 60px">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:64px;align-items:center">
+    <div data-rv="0">
+      <p style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:#a78bfa;margin:0 0 18px">The problem</p>
+      <h2 style="margin:0;font-size:clamp(30px,4.4vw,50px);font-weight:600;letter-spacing:-.03em;line-height:1.04">One model has<br>one blind spot.</h2>
+      <p style="margin:24px 0 0;font-size:17px;line-height:1.7;color:#a2a2b3">On a code review or an "is this idea sound?" call, a single model misses roughly <span style="color:#e8e8f0">1 in 4</span> real problems. Two or three <em>different</em> models — each analysing independently, then cross-examining — catch what any one misses.</p>
+      <p style="margin:18px 0 0;font-size:17px;line-height:1.7;color:#a2a2b3">aiki orchestrates that locally. No new subscriptions, no copy-pasting between tools by hand — it drives the CLIs and logins you already pay for.</p>
+    </div>
+    <div data-rv="120" style="position:relative;height:360px;display:flex;align-items:center;justify-content:center">
+      <div style="position:absolute;width:180px;height:180px;border-radius:50%;background:radial-gradient(circle,rgba(240,136,62,.28),rgba(240,136,62,.05) 70%);border:1px solid rgba(240,136,62,.4);mix-blend-mode:screen;transform:translate(-52px,-46px)"></div>
+      <div style="position:absolute;width:180px;height:180px;border-radius:50%;background:radial-gradient(circle,rgba(52,211,153,.26),rgba(52,211,153,.05) 70%);border:1px solid rgba(52,211,153,.4);mix-blend-mode:screen;transform:translate(52px,-46px)"></div>
+      <div style="position:absolute;width:180px;height:180px;border-radius:50%;background:radial-gradient(circle,rgba(96,165,250,.26),rgba(96,165,250,.05) 70%);border:1px solid rgba(96,165,250,.4);mix-blend-mode:screen;transform:translate(0,52px)"></div>
+      <div style="position:absolute;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 0 24px 6px rgba(255,255,255,.7)"></div>
+      <span style="position:absolute;top:14px;left:38px;font-family:'JetBrains Mono',monospace;font-size:12px;color:#f0883e">Claude</span>
+      <span style="position:absolute;top:14px;right:34px;font-family:'JetBrains Mono',monospace;font-size:12px;color:#34d399">Codex</span>
+      <span style="position:absolute;bottom:20px;left:50%;transform:translateX(-50%);font-family:'JetBrains Mono',monospace;font-size:12px;color:#60a5fa">Gemini</span>
+      <span style="position:absolute;top:50%;left:50%;transform:translate(-50%,26px);font-family:'JetBrains Mono',monospace;font-size:11px;color:#e8e8f0;letter-spacing:.1em">CAUGHT</span>
+    </div>
+  </div>
+</section>
+
+<!-- COUNCIL -->
+<section id="council" style="max-width:1120px;margin:0 auto;padding:80px 24px">
+  <div data-rv="0" style="text-align:center;margin-bottom:52px">
+    <p style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:#a78bfa;margin:0 0 16px">The council</p>
+    <h2 style="margin:0;font-size:clamp(30px,4.4vw,50px);font-weight:600;letter-spacing:-.03em">Three seats. Real disagreement.</h2>
+    <p style="margin:18px auto 0;max-width:600px;font-size:17px;line-height:1.6;color:#a2a2b3">Each provider runs as a local child process with read-only flags. Roles are configurable — pin who judges and who reviews in <span style="font-family:'JetBrains Mono',monospace;color:#a78bfa;font-size:15px">.aiki/config.json</span>.</p>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:22px">
+    <div data-rv="0" style="border:1px solid rgba(240,136,62,.22);border-radius:18px;padding:26px;background:linear-gradient(180deg,rgba(240,136,62,.06),rgba(255,255,255,.01));position:relative;overflow:hidden" class="hv9">
+      <div style="position:absolute;top:-40px;right:-40px;width:120px;height:120px;border-radius:50%;background:radial-gradient(circle,rgba(240,136,62,.22),transparent 70%)"></div>
+      <div style="display:flex;align-items:center;gap:13px;margin-bottom:20px">
+        <span style="width:44px;height:44px;border-radius:11px;background:rgba(240,136,62,.16);color:#f0883e;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:22px">C</span>
+        <div><div style="font-weight:600;font-size:19px">Claude</div><span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#f0883e;border:1px solid rgba(240,136,62,.35);padding:2px 8px;border-radius:5px">judge</span></div>
+      </div>
+      <p style="margin:0;font-size:14.5px;line-height:1.6;color:#a2a2b3">Adjudicates disputes and writes the chairman's reasoning. Runs via <span style="font-family:'JetBrains Mono',monospace;color:#e8e8f0">claude --permission-mode plan</span>.</p>
+      <div style="margin-top:18px;padding-top:16px;border-top:1px solid rgba(255,255,255,.07);font-family:'JetBrains Mono',monospace;font-size:12px;color:#5a5a68">CLI · <span style="color:#8a8a99">claude</span></div>
+    </div>
+    <div data-rv="90" style="border:1px solid rgba(52,211,153,.22);border-radius:18px;padding:26px;background:linear-gradient(180deg,rgba(52,211,153,.06),rgba(255,255,255,.01));position:relative;overflow:hidden" class="hv10">
+      <div style="position:absolute;top:-40px;right:-40px;width:120px;height:120px;border-radius:50%;background:radial-gradient(circle,rgba(52,211,153,.22),transparent 70%)"></div>
+      <div style="display:flex;align-items:center;gap:13px;margin-bottom:20px">
+        <span style="width:44px;height:44px;border-radius:11px;background:rgba(52,211,153,.16);color:#34d399;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:22px">C</span>
+        <div><div style="font-weight:600;font-size:19px">Codex</div><span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#34d399;border:1px solid rgba(52,211,153,.35);padding:2px 8px;border-radius:5px">verifier</span></div>
+      </div>
+      <p style="margin:0;font-size:14.5px;line-height:1.6;color:#a2a2b3">Independent review, then deterministic file:line validation — every finding must point at a real line. Runs via <span style="font-family:'JetBrains Mono',monospace;color:#e8e8f0">codex --sandbox read-only</span>.</p>
+      <div style="margin-top:18px;padding-top:16px;border-top:1px solid rgba(255,255,255,.07);font-family:'JetBrains Mono',monospace;font-size:12px;color:#5a5a68">CLI · <span style="color:#8a8a99">codex</span></div>
+    </div>
+    <div data-rv="180" style="border:1px solid rgba(96,165,250,.22);border-radius:18px;padding:26px;background:linear-gradient(180deg,rgba(96,165,250,.06),rgba(255,255,255,.01));position:relative;overflow:hidden" class="hv11">
+      <div style="position:absolute;top:-40px;right:-40px;width:120px;height:120px;border-radius:50%;background:radial-gradient(circle,rgba(96,165,250,.22),transparent 70%)"></div>
+      <div style="display:flex;align-items:center;gap:13px;margin-bottom:20px">
+        <span style="width:44px;height:44px;border-radius:11px;background:rgba(96,165,250,.16);color:#60a5fa;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:22px">G</span>
+        <div><div style="font-weight:600;font-size:19px">Gemini</div><span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#60a5fa;border:1px solid rgba(96,165,250,.35);padding:2px 8px;border-radius:5px">analyst</span></div>
+      </div>
+      <p style="margin:0;font-size:14.5px;line-height:1.6;color:#a2a2b3">Adversarial analysis from a fresh angle via Antigravity. Runs via <span style="font-family:'JetBrains Mono',monospace;color:#e8e8f0">agy --sandbox</span>.</p>
+      <div style="margin-top:18px;padding-top:16px;border-top:1px solid rgba(255,255,255,.07);font-family:'JetBrains Mono',monospace;font-size:12px;color:#5a5a68">CLI · <span style="color:#8a8a99">agy</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW -->
+<section id="how" style="max-width:1120px;margin:0 auto;padding:80px 24px">
+  <div data-rv="0" style="text-align:center;margin-bottom:56px">
+    <p style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:#a78bfa;margin:0 0 16px">How it works — no APIs</p>
+    <h2 style="margin:0;font-size:clamp(30px,4.4vw,50px);font-weight:600;letter-spacing:-.03em">Orchestration, not a hosted service.</h2>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px;position:relative">
+    <div data-rv="0" style="border:1px solid rgba(255,255,255,.08);border-radius:15px;padding:22px 18px;background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.01))">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#a78bfa;margin-bottom:14px">01</div>
+      <div style="font-weight:600;font-size:15px;margin-bottom:8px">Spawn CLIs</div>
+      <p style="margin:0;font-size:13px;line-height:1.55;color:#8a8a99">Your signed-in provider CLIs start as read-only child processes.</p>
+    </div>
+    <div data-rv="80" style="border:1px solid rgba(255,255,255,.08);border-radius:15px;padding:22px 18px;background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.01))">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#a78bfa;margin-bottom:14px">02</div>
+      <div style="font-weight:600;font-size:15px;margin-bottom:8px">Blind review</div>
+      <p style="margin:0;font-size:13px;line-height:1.55;color:#8a8a99">Each model gets the same task and returns structured JSON — no peeking.</p>
+    </div>
+    <div data-rv="160" style="border:1px solid rgba(255,255,255,.08);border-radius:15px;padding:22px 18px;background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.01))">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#a78bfa;margin-bottom:14px">03</div>
+      <div style="font-weight:600;font-size:15px;margin-bottom:8px">Cross-examine</div>
+      <p style="margin:0;font-size:13px;line-height:1.55;color:#8a8a99">Models see each other's findings and argue — consensus vs. dispute map.</p>
+    </div>
+    <div data-rv="240" style="border:1px solid rgba(255,255,255,.08);border-radius:15px;padding:22px 18px;background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.01))">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#a78bfa;margin-bottom:14px">04</div>
+      <div style="font-weight:600;font-size:15px;margin-bottom:8px">Judge decides</div>
+      <p style="margin:0;font-size:13px;line-height:1.55;color:#8a8a99">A judge adjudicates only the disputes — consensus is trusted as-is.</p>
+    </div>
+    <div data-rv="320" style="border:1px solid rgba(167,139,250,.35);border-radius:15px;padding:22px 18px;background:linear-gradient(180deg,rgba(167,139,250,.1),rgba(255,255,255,.01))">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#a78bfa;margin-bottom:14px">05</div>
+      <div style="font-weight:600;font-size:15px;margin-bottom:8px">Decision brief</div>
+      <p style="margin:0;font-size:13px;line-height:1.55;color:#8a8a99">Every stage zod-validated, audit trail under .aiki/, rendered as a brief.</p>
+    </div>
+  </div>
+</section>
+
+<!-- TERMINAL DEMO -->
+<section style="max-width:900px;margin:0 auto;padding:80px 24px">
+  <div data-rv="0" style="text-align:center;margin-bottom:40px">
+    <p style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:#a78bfa;margin:0 0 16px">Live run</p>
+    <h2 style="margin:0;font-size:clamp(28px,4vw,44px);font-weight:600;letter-spacing:-.03em">Watch the council deliberate.</h2>
+  </div>
+  <div data-rv="80" style="border:1px solid rgba(255,255,255,.12);border-radius:16px;overflow:hidden;background:#0a0a12;box-shadow:0 40px 90px -30px rgba(0,0,0,.9),0 0 60px -30px rgba(124,92,255,.5)">
+    <div style="display:flex;align-items:center;gap:8px;padding:13px 18px;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.02)">
+      <span style="width:12px;height:12px;border-radius:50%;background:#ff5f57"></span>
+      <span style="width:12px;height:12px;border-radius:50%;background:#febc2e"></span>
+      <span style="width:12px;height:12px;border-radius:50%;background:#28c840"></span>
+      <span style="margin-left:12px;font-family:'JetBrains Mono',monospace;font-size:12px;color:#5a5a68">aiki — council session</span>
+    </div>
+    <div id="term-body" style="padding:26px 26px 30px;font-family:'JetBrains Mono',monospace;font-size:13.5px;line-height:1.7;min-height:340px;color:#c9c9d4"></div>
+  </div>
+</section>
+
+<!-- BENCHMARK -->
+<section id="benchmark" style="max-width:1120px;margin:0 auto;padding:80px 24px">
+  <div id="bench-wrap">
+  <div data-rv="0" style="text-align:center;margin-bottom:50px">
+    <p style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:#a78bfa;margin:0 0 16px">Benchmark · pre-registered · held-out</p>
+    <h2 style="margin:0;font-size:clamp(30px,4.4vw,50px);font-weight:600;letter-spacing:-.03em;line-height:1.04">The council caught <span style="color:#34d399">every</span> planted bug.<br>The best single model missed <span style="color:#f87171">1 in 4</span>.</h2>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:28px;align-items:stretch">
+    <!-- bars -->
+    <div data-rv="0" style="border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:34px;background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.01))">
+      <div style="margin-bottom:34px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px">
+          <span style="font-weight:500;font-size:15px">Best single model <span style="color:#5a5a68;font-family:'JetBrains Mono',monospace;font-size:12px">· arm B</span></span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:600;color:#c9c9d4"><span data-count="77" data-suf="%">0%</span></span>
+        </div>
+        <div style="height:16px;border-radius:8px;background:rgba(255,255,255,.05);overflow:hidden">
+          <div data-barfill="77" style="height:100%;width:0;border-radius:8px;background:linear-gradient(90deg,#6b7280,#9ca3af);transition:width 1.5s cubic-bezier(.2,.7,.2,1)"></div>
+        </div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#5a5a68;margin-top:8px">33 / 43 seeded bugs · 10 provider calls</div>
+      </div>
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px">
+          <span style="font-weight:500;font-size:15px">aiki council <span style="color:#5a5a68;font-family:'JetBrains Mono',monospace;font-size:12px">· arm D</span></span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:20px;font-weight:700;color:#34d399"><span data-count="100" data-suf="%">0%</span></span>
+        </div>
+        <div style="height:16px;border-radius:8px;background:rgba(255,255,255,.05);overflow:hidden">
+          <div data-barfill="100" style="height:100%;width:0;border-radius:8px;background:linear-gradient(90deg,#34d399,#a78bfa);transition:width 1.5s cubic-bezier(.2,.7,.2,1);box-shadow:0 0 20px rgba(52,211,153,.5)"></div>
+        </div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#5a5a68;margin-top:8px">43 / 43 seeded bugs · Claude + Codex review, Gemini judges · 44 calls</div>
+      </div>
+    </div>
+    <!-- headline stats -->
+    <div data-rv="120" style="display:grid;grid-template-rows:1fr 1fr;gap:22px">
+      <div style="border:1px solid rgba(167,139,250,.3);border-radius:18px;padding:28px;background:linear-gradient(150deg,rgba(167,139,250,.12),rgba(255,255,255,.01));display:flex;flex-direction:column;justify-content:center">
+        <div style="font-size:clamp(40px,5vw,58px);font-weight:700;letter-spacing:-.03em;line-height:1;color:#fff"><span data-count="1.3" data-dec="1" data-suf="×">0×</span></div>
+        <div style="font-size:14px;color:#a2a2b3;margin-top:8px">the recall — at <span style="color:#e8e8f0">identical precision</span></div>
+      </div>
+      <div style="border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:28px;background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.01));display:flex;flex-direction:column;justify-content:center">
+        <div style="font-size:clamp(40px,5vw,58px);font-weight:700;letter-spacing:-.03em;line-height:1;color:#34d399"><span data-count="0">0</span></div>
+        <div style="font-size:14px;color:#a2a2b3;margin-top:8px">false positives across 59 adjudicated findings</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- per case table -->
+  <div data-rv="0" style="margin-top:24px;border:1px solid rgba(255,255,255,.08);border-radius:18px;overflow:hidden;background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.008))">
+    <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;padding:14px 24px;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#5a5a68;border-bottom:1px solid rgba(255,255,255,.08)">
+      <span>Case</span><span style="text-align:center">Seeded</span><span style="text-align:center">Single (B)</span><span style="text-align:center">Council (D)</span>
+    </div>
+    <div id="case-rows" style="font-family:'JetBrains Mono',monospace;font-size:13px"></div>
+  </div>
+
+  <div data-rv="0" style="margin-top:20px;font-size:13px;line-height:1.6;color:#5a5a68;text-align:center;max-width:760px;margin-left:auto;margin-right:auto">
+    <span style="color:#8a8a99">Honest caveat:</span> the win is a recall win — precision was non-discriminating on this bug-dense set. n = 10 cases, single run per arm — directional, not a p-value. Full method in RESULTS.md. Reproduce: <span style="color:#a78bfa">aiki bench code-review --arms B,D --set holdout --yes</span>
+  </div>
+  </div>
+</section>
+
+<!-- WORKFLOWS -->
+<section style="max-width:1120px;margin:0 auto;padding:80px 24px">
+  <div data-rv="0" style="text-align:center;margin-bottom:52px">
+    <p style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:#a78bfa;margin:0 0 16px">Two jobs, done well</p>
+    <h2 style="margin:0;font-size:clamp(30px,4.4vw,50px);font-weight:600;letter-spacing:-.03em">Review the code. Stress-test the idea.</h2>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:22px">
+    <div data-rv="0" style="border:1px solid rgba(255,255,255,.09);border-radius:20px;padding:32px;background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.01))">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#34d399;margin-bottom:14px">/review</div>
+      <h3 style="margin:0 0 12px;font-size:24px;font-weight:600;letter-spacing:-.02em">Code review</h3>
+      <p style="margin:0 0 22px;font-size:15px;line-height:1.6;color:#a2a2b3">Catch the bugs a single model misses on your working tree or a branch.</p>
+      <div style="display:flex;flex-direction:column;gap:11px;font-family:'JetBrains Mono',monospace;font-size:13px;color:#8a8a99">
+        <div style="display:flex;gap:10px"><span style="color:#a78bfa">→</span>Parallel blind review of the diff</div>
+        <div style="display:flex;gap:10px"><span style="color:#a78bfa">→</span>Deterministic file:line validation</div>
+        <div style="display:flex;gap:10px"><span style="color:#a78bfa">→</span>Mutual adversarial cross-examination</div>
+        <div style="display:flex;gap:10px"><span style="color:#a78bfa">→</span>Judge adjudicates only the disputes</div>
+      </div>
+      <div style="margin-top:22px;padding:12px 15px;border-radius:10px;background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.07);font-family:'JetBrains Mono',monospace;font-size:12.5px;color:#c9c9d4"><span style="color:#5a5a68">$</span> aiki run code-review --base main</div>
+      <div style="margin-top:12px;font-family:'JetBrains Mono',monospace;font-size:12px;color:#5a5a68">~5 provider calls per run</div>
+    </div>
+    <div data-rv="120" style="border:1px solid rgba(255,255,255,.09);border-radius:20px;padding:32px;background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.01))">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#a78bfa;margin-bottom:14px">/idea</div>
+      <h3 style="margin:0 0 12px;font-size:24px;font-weight:600;letter-spacing:-.02em">Idea stress-testing</h3>
+      <p style="margin:0 0 22px;font-size:15px;line-height:1.6;color:#a2a2b3">Pressure-test a plan before you build it — get a decision brief, not an essay.</p>
+      <div style="display:flex;flex-direction:column;gap:11px;font-family:'JetBrains Mono',monospace;font-size:13px;color:#8a8a99">
+        <div style="display:flex;gap:10px"><span style="color:#a78bfa">→</span>Contextual preflight pins your intent</div>
+        <div style="display:flex;gap:10px"><span style="color:#a78bfa">→</span>Parallel adversarial analysis</div>
+        <div style="display:flex;gap:10px"><span style="color:#a78bfa">→</span>Disagreement map → verifier → judge</div>
+        <div style="display:flex;gap:10px"><span style="color:#a78bfa">→</span>Anchored validation plan with kill signals</div>
+      </div>
+      <div style="margin-top:22px;padding:12px 15px;border-radius:10px;background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.07);font-family:'JetBrains Mono',monospace;font-size:12.5px;color:#c9c9d4"><span style="color:#5a5a68">$</span> aiki run idea-refinement "..."</div>
+      <div style="margin-top:12px;font-family:'JetBrains Mono',monospace;font-size:12px;color:#5a5a68">~12 provider calls · auto-opens the report</div>
+    </div>
+  </div>
+</section>
+
+<!-- BRIEF ANATOMY -->
+<section style="max-width:1120px;margin:0 auto;padding:80px 24px">
+  <div data-rv="0" style="text-align:center;margin-bottom:44px">
+    <p style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:#a78bfa;margin:0 0 16px">The decision brief</p>
+    <h2 style="margin:0;font-size:clamp(30px,4.4vw,50px);font-weight:600;letter-spacing:-.03em">A verdict you can audit.</h2>
+  </div>
+  <div data-rv="0" style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin-bottom:34px">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;padding:8px 16px;border-radius:8px;background:rgba(52,211,153,.14);color:#34d399;border:1px solid rgba(52,211,153,.35)">PROCEED</span>
+    <span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;padding:8px 16px;border-radius:8px;background:rgba(240,180,62,.14);color:#f0b43e;border:1px solid rgba(240,180,62,.35)">PROCEED WITH CONDITIONS</span>
+    <span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;padding:8px 16px;border-radius:8px;background:rgba(96,165,250,.14);color:#60a5fa;border:1px solid rgba(96,165,250,.35)">PIVOT</span>
+    <span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;padding:8px 16px;border-radius:8px;background:rgba(248,113,113,.14);color:#f87171;border:1px solid rgba(248,113,113,.35)">STOP</span>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
+    <div data-rv="0" style="border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;background:rgba(255,255,255,.02)"><div style="font-weight:600;font-size:16px;margin-bottom:7px">BLUF recommendation</div><p style="margin:0;font-size:13.5px;line-height:1.55;color:#8a8a99">The bottom line up front — proceed, pivot, or stop.</p></div>
+    <div data-rv="60" style="border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;background:rgba(255,255,255,.02)"><div style="font-weight:600;font-size:16px;margin-bottom:7px">Chairman's reasoning</div><p style="margin:0;font-size:13.5px;line-height:1.55;color:#8a8a99">What decided it, where the models split, whose side the judge took.</p></div>
+    <div data-rv="120" style="border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;background:rgba(255,255,255,.02)"><div style="font-weight:600;font-size:16px;margin-bottom:7px">Dimension scorecard</div><p style="margin:0;font-size:13.5px;line-height:1.55;color:#8a8a99">Which of 12 angles were examined, contested, or missed.</p></div>
+    <div data-rv="0" style="border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;background:rgba(255,255,255,.02)"><div style="font-weight:600;font-size:16px;margin-bottom:7px">Assumption audit</div><p style="margin:0;font-size:13.5px;line-height:1.55;color:#8a8a99">Held / failed / unverified — each with a confidence level.</p></div>
+    <div data-rv="60" style="border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:22px;background:rgba(255,255,255,.02)"><div style="font-weight:600;font-size:16px;margin-bottom:7px">The debate</div><p style="margin:0;font-size:13.5px;line-height:1.55;color:#8a8a99">Who argued what, and who won the point.</p></div>
+    <div data-rv="120" style="border:1px solid rgba(167,139,250,.3);border-radius:14px;padding:22px;background:linear-gradient(150deg,rgba(167,139,250,.09),rgba(255,255,255,.01))"><div style="font-weight:600;font-size:16px;margin-bottom:7px">Anchored validation plan</div><p style="margin:0;font-size:13.5px;line-height:1.55;color:#8a8a99">Concrete next actions, each with an effort estimate and a kill signal.</p></div>
+  </div>
+</section>
+
+<!-- SAFETY -->
+<section style="max-width:1120px;margin:0 auto;padding:80px 24px">
+  <div style="display:grid;grid-template-columns:.9fr 1.1fr;gap:56px;align-items:center">
+    <div data-rv="0">
+      <p style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:#a78bfa;margin:0 0 16px">Safety model</p>
+      <h2 style="margin:0;font-size:clamp(30px,4.4vw,48px);font-weight:600;letter-spacing:-.03em;line-height:1.05">Trustworthy to point at a real repo.</h2>
+      <p style="margin:22px 0 0;font-size:16px;line-height:1.7;color:#a2a2b3">aiki never uses <span style="font-family:'JetBrains Mono',monospace;color:#f87171;font-size:14px">--dangerously-skip-permissions</span> or any edit/exec mode. It reads, reasons, and writes only its own audit trail.</p>
+    </div>
+    <div data-rv="120" style="display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;gap:16px;padding:20px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(255,255,255,.02)"><span style="color:#34d399;font-size:20px">◆</span><div><div style="font-weight:600;font-size:15px;margin-bottom:4px">Read-only orchestration</div><p style="margin:0;font-size:13.5px;line-height:1.55;color:#8a8a99">Every provider runs with its read-only / sandbox flag. No edits, no exec.</p></div></div>
+      <div style="display:flex;gap:16px;padding:20px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(255,255,255,.02)"><span style="color:#34d399;font-size:20px">◆</span><div><div style="font-weight:600;font-size:15px;margin-bottom:4px">No credentials, ever</div><p style="margin:0;font-size:13.5px;line-height:1.55;color:#8a8a99">Never reads credential folders; filters KEY|TOKEN|SECRET from the env before spawning.</p></div></div>
+      <div style="display:flex;gap:16px;padding:20px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(255,255,255,.02)"><span style="color:#34d399;font-size:20px">◆</span><div><div style="font-weight:600;font-size:15px;margin-bottom:4px">Writes only under .aiki/</div><p style="margin:0;font-size:13.5px;line-height:1.55;color:#8a8a99">Nothing else on your disk is touched. Every stage is schema-validated before the next sees it.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- COMMANDS -->
+<section style="max-width:900px;margin:0 auto;padding:80px 24px">
+  <div data-rv="0" style="text-align:center;margin-bottom:44px">
+    <p style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:#a78bfa;margin:0 0 16px">The command palette</p>
+    <h2 style="margin:0;font-size:clamp(30px,4.4vw,48px);font-weight:600;letter-spacing:-.03em">Type a slash, or just describe an idea.</h2>
+  </div>
+  <div data-rv="0" style="border:1px solid rgba(255,255,255,.1);border-radius:16px;overflow:hidden;background:#0a0a12">
+    <div style="padding:16px 22px;border-bottom:1px solid rgba(255,255,255,.08);font-family:'JetBrains Mono',monospace;font-size:13px;color:#8a8a99"><span style="color:#a78bfa">/</span><span style="color:#e8e8f0">mo</span><span style="color:#5a5a68"> → filters as you type · Tab completes · ↑/↓ pick · Enter runs</span></div>
+    <div id="cmd-rows" style="font-family:'JetBrains Mono',monospace;font-size:13.5px"></div>
+  </div>
+</section>
+
+<!-- INSTALL CTA -->
+<section id="install" style="max-width:1120px;margin:0 auto;padding:80px 24px 40px">
+  <div data-rv="0" style="border:1px solid rgba(167,139,250,.3);border-radius:24px;padding:60px 40px;text-align:center;background:radial-gradient(120% 120% at 50% 0%, rgba(124,92,255,.16), rgba(255,255,255,.01) 60%);position:relative;overflow:hidden">
+    <div style="position:absolute;inset:0;background:radial-gradient(60% 80% at 50% 120%, rgba(52,211,153,.1), transparent 70%);pointer-events:none"></div>
+    <h2 style="margin:0;font-size:clamp(32px,5vw,56px);font-weight:700;letter-spacing:-.04em;background:linear-gradient(180deg,#fff,#b7b2d6);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent">Convene your council.</h2>
+    <p style="margin:20px auto 0;max-width:520px;font-size:17px;line-height:1.6;color:#a2a2b3">Three steps to a verdict you can audit — using the CLIs you already have.</p>
+    <div style="max-width:560px;margin:34px auto 0;text-align:left;font-family:'JetBrains Mono',monospace;font-size:14px;background:#0a0a12;border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:22px 24px;line-height:2.1">
+      <div><span style="color:#5a5a68"># 1 · install</span></div>
+      <div><span style="color:#5a5a68">$</span> npm install -g <span style="color:#a78bfa">aiki-cli</span></div>
+      <div style="margin-top:10px"><span style="color:#5a5a68"># 2 · verify your providers</span></div>
+      <div><span style="color:#5a5a68">$</span> aiki <span style="color:#34d399">doctor</span></div>
+      <div style="margin-top:10px"><span style="color:#5a5a68"># 3 · open the home screen</span></div>
+      <div><span style="color:#5a5a68">$</span> aiki</div>
+    </div>
+    <div style="margin-top:32px;display:flex;flex-wrap:wrap;gap:12px;justify-content:center">
+      <a href="https://www.npmjs.com/package/aiki-cli" style="padding:13px 26px;border-radius:11px;background:linear-gradient(150deg,#a78bfa,#7c5cff);color:#0b0616;font-weight:600;font-size:15px" class="hv12">View on npm →</a>
+      <a href="https://github.com/kratos619/Aiki" style="padding:13px 26px;border-radius:11px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);color:#e8e8f0;font-weight:500;font-size:15px" class="hv13">Read the docs</a>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer style="max-width:1120px;margin:0 auto;padding:50px 24px 60px;border-top:1px solid rgba(255,255,255,.07);margin-top:40px">
+  <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:20px">
+    <div style="display:flex;align-items:center;gap:11px">
+      <span style="width:30px;height:30px;border-radius:8px;background:linear-gradient(150deg,#a78bfa,#7c5cff);display:flex;align-items:center;justify-content:center;font-weight:700;color:#0b0616">a</span>
+      <div><div style="font-weight:600">aiki</div><div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#5a5a68">local model council · MIT</div></div>
+    </div>
+    <div style="display:flex;gap:24px;font-family:'JetBrains Mono',monospace;font-size:13px">
+      <a href="https://www.npmjs.com/package/aiki-cli" style="color:#8a8a99" class="hv14">npm</a>
+      <a href="https://github.com/kratos619/Aiki" style="color:#8a8a99" class="hv15">GitHub</a>
+      <a href="https://github.com/kratos619/Aiki/blob/main/BENCHMARK.md" style="color:#8a8a99" class="hv16">Benchmark</a>
+      <a href="https://github.com/kratos619/Aiki/blob/main/LICENSE" style="color:#8a8a99" class="hv17">License</a>
+    </div>
+  </div>
+  <p style="margin:28px 0 0;font-size:12.5px;color:#5a5a68;line-height:1.6">Analysis, not advice — verify before acting. aiki drives your existing CLIs and never ships, hosts, or asks for model credentials. Runs spend real provider calls against your own subscriptions.</p>
+</footer>
+
+</div>
+<script>
+
+class Page {
+  componentDidMount() {
+    this._raf = 0; this._ios = [];
+    try { this.initBg(); } catch (e) {}
+    this.buildTables();
+    this.setupReveals();
+  }
+  componentWillUnmount() {
+    cancelAnimationFrame(this._raf);
+    (this._ios || []).forEach(o => o.disconnect());
+    if (this._onResize) window.removeEventListener('resize', this._onResize);
+    if (this._mm) window.removeEventListener('mousemove', this._mm);
+  }
+  renderVals() {
+    return { copyCmd: (e) => this.copyCmd(e) };
+  }
+  copyCmd(e) {
+    const el = e.currentTarget;
+    try { navigator.clipboard && navigator.clipboard.writeText('npm install -g aiki-cli'); } catch (x) {}
+    const lbl = el.querySelector('[data-copylabel]');
+    if (lbl) { const o = lbl.textContent; lbl.textContent = 'copied ✓'; setTimeout(() => { lbl.textContent = o; }, 1500); }
+  }
+
+  buildTables() {
+    const cases = [
+      ['01 payments', 4, '4/4', '4/4', 0], ['02 inventory', 4, '4/4', '4/4', 0],
+      ['03 comments', 4, '1/4', '4/4', 1], ['04 search', 5, '2/5', '5/5', 1],
+      ['05 notifications', 4, '2/4', '4/4', 1], ['06 profile', 4, '4/4', '4/4', 0],
+      ['07 dashboard', 5, '3/5', '5/5', 1], ['08 upload', 4, '4/4', '4/4', 0],
+      ['09 sessions', 4, '4/4', '4/4', 0], ['10 analytics', 5, '5/5', '5/5', 0],
+    ];
+    const cr = document.getElementById('case-rows');
+    if (cr) {
+      cr.innerHTML = cases.map((c, i) => {
+        const miss = c[4];
+        return '<div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;padding:11px 24px;align-items:center;' +
+          (i < cases.length - 1 ? 'border-bottom:1px solid rgba(255,255,255,.05);' : '') +
+          (miss ? 'background:rgba(248,113,113,.04);' : '') + '">' +
+          '<span style="color:#c9c9d4">' + c[0] + '</span>' +
+          '<span style="text-align:center;color:#8a8a99">' + c[1] + '</span>' +
+          '<span style="text-align:center;color:' + (miss ? '#f87171' : '#8a8a99') + ';font-weight:' + (miss ? '600' : '400') + '">' + c[2] + '</span>' +
+          '<span style="text-align:center;color:#34d399;font-weight:600">' + c[3] + '</span>' +
+          '</div>';
+      }).join('') +
+      '<div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;padding:14px 24px;align-items:center;border-top:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.02)">' +
+      '<span style="color:#e8e8f0;font-weight:600">Total</span>' +
+      '<span style="text-align:center;color:#e8e8f0;font-weight:600">43</span>' +
+      '<span style="text-align:center;color:#c9c9d4;font-weight:600">33/43 · 77%</span>' +
+      '<span style="text-align:center;color:#34d399;font-weight:700">43/43 · 100%</span></div>';
+    }
+
+    const cmds = [
+      ['/idea &lt;text&gt;', 'stress-test an idea with the council'],
+      ['/review [--branch]', 'review your working-tree changes or this branch'],
+      ['/resume &lt;id&gt;', 'continue a killed/timed-out run — replays finished work'],
+      ['/sessions', 'list past runs, newest first'],
+      ['/models', 'show / choose the model each provider uses'],
+      ['/config', 'show the effective config'],
+      ['/help', 'the command list'],
+    ];
+    const cmr = document.getElementById('cmd-rows');
+    if (cmr) {
+      cmr.innerHTML = cmds.map((c, i) =>
+        '<div style="display:grid;grid-template-columns:230px 1fr;padding:14px 22px;align-items:center;gap:16px;' +
+        (i < cmds.length - 1 ? 'border-bottom:1px solid rgba(255,255,255,.05);' : '') + '">' +
+        '<span style="color:#a78bfa">' + c[0] + '</span>' +
+        '<span style="color:#8a8a99;font-family:\'Space Grotesk\',sans-serif;font-size:14px">' + c[1] + '</span></div>'
+      ).join('');
+    }
+  }
+
+  setupReveals() {
+    const els = [].slice.call(document.querySelectorAll('[data-rv]'));
+    els.forEach(el => {
+      el.style.opacity = '0';
+      el.style.transform = 'translateY(28px)';
+      el.style.transition = 'opacity .9s cubic-bezier(.2,.7,.2,1), transform .9s cubic-bezier(.2,.7,.2,1)';
+    });
+    const io = new IntersectionObserver((ents) => {
+      ents.forEach(e => {
+        if (e.isIntersecting) {
+          const d = parseFloat(e.target.getAttribute('data-rv')) || 0;
+          setTimeout(() => { e.target.style.opacity = '1'; e.target.style.transform = 'none'; }, d);
+          io.unobserve(e.target);
+        }
+      });
+    }, { threshold: 0.12, rootMargin: '0px 0px -6% 0px' });
+    els.forEach(el => io.observe(el));
+    this._ios.push(io);
+
+    const term = document.getElementById('term-body');
+    if (term) {
+      const t = new IntersectionObserver((ents, ob) => {
+        ents.forEach(e => { if (e.isIntersecting) { this.playTerminal(); ob.disconnect(); } });
+      }, { threshold: 0.4 });
+      t.observe(term); this._ios.push(t);
+    }
+    const bench = document.getElementById('bench-wrap');
+    if (bench) {
+      const b = new IntersectionObserver((ents, ob) => {
+        ents.forEach(e => { if (e.isIntersecting) { this.playBench(); ob.disconnect(); } });
+      }, { threshold: 0.25 });
+      b.observe(bench); this._ios.push(b);
+    }
+  }
+
+  playBench() {
+    document.querySelectorAll('[data-barfill]').forEach(el => {
+      const to = el.getAttribute('data-barfill');
+      requestAnimationFrame(() => { el.style.width = to + '%'; });
+    });
+    document.querySelectorAll('[data-count]').forEach(el => {
+      const to = parseFloat(el.getAttribute('data-count'));
+      const dec = parseInt(el.getAttribute('data-dec') || '0', 10);
+      const suf = el.getAttribute('data-suf') || '';
+      const dur = 1300, st = performance.now();
+      const step = (now) => {
+        const p = Math.min(1, (now - st) / dur);
+        const v = to * (1 - Math.pow(1 - p, 3));
+        el.textContent = (dec ? v.toFixed(dec) : Math.round(v)) + suf;
+        if (p < 1) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    });
+  }
+
+  playTerminal() {
+    if (this._tp) return; this._tp = 1;
+    const body = document.getElementById('term-body');
+    if (!body) return;
+    body.innerHTML = '';
+    const mk = (html, color, mt) => {
+      const d = document.createElement('div');
+      d.style.cssText = 'white-space:pre-wrap;line-height:1.75;' + (color ? ('color:' + color + ';') : '') + (mt ? ('margin-top:' + mt + ';') : '');
+      d.innerHTML = html;
+      d.style.opacity = '0'; d.style.transform = 'translateY(6px)';
+      d.style.transition = 'opacity .35s, transform .35s';
+      body.appendChild(d); return d;
+    };
+    const cmdWrap = mk('', null, 0);
+    cmdWrap.style.opacity = '1'; cmdWrap.style.transform = 'none';
+    const prompt = document.createElement('span');
+    prompt.style.cssText = 'color:#a78bfa;font-weight:600'; prompt.textContent = '\u279c project ';
+    const typed = document.createElement('span'); typed.style.color = '#e8e8f0';
+    const cur = document.createElement('span'); cur.textContent = '\u258b';
+    cur.style.cssText = 'color:#a78bfa;animation:aiblink 1s steps(1) infinite';
+    cmdWrap.appendChild(prompt); cmdWrap.appendChild(typed); cmdWrap.appendChild(cur);
+
+    const cmd = 'aiki run idea-refinement "add a plugin marketplace to boost retention"';
+    const outputs = [
+      { h: '<span style="color:#5a5a68">\u29d7</span>  preflight \u00b7 pinning intent \u2026\u2026\u2026\u2026  <span style="color:#34d399">ok</span>', c: '#8a8a99', mt: '16px' },
+      { h: '<span style="color:#f0883e">\u25c6</span>  Claude   <span style="color:#5a5a68">judge</span>     deliberating \u2026 <span style="color:#34d399">done</span>', c: '#c9c9d4', mt: '2px' },
+      { h: '<span style="color:#34d399">\u25c6</span>  Codex    <span style="color:#5a5a68">verifier</span>  deliberating \u2026 <span style="color:#34d399">done</span>', c: '#c9c9d4', mt: '2px' },
+      { h: '<span style="color:#60a5fa">\u25c6</span>  Gemini   <span style="color:#5a5a68">analyst</span>   deliberating \u2026 <span style="color:#34d399">done</span>', c: '#c9c9d4', mt: '2px' },
+      { h: '<span style="color:#a78bfa">\u2696</span>  judge \u00b7 adjudicating 3 disputes \u2026  <span style="color:#34d399">done</span>', c: '#c9c9d4', mt: '2px' },
+      { h: '', c: null, mt: '6px' },
+      { h: '  <span style="color:#5a5a68">RECOMMENDATION</span>  <span style="background:rgba(248,113,113,.16);color:#fca5a5;padding:3px 12px;border-radius:6px;border:1px solid rgba(248,113,113,.4);font-weight:700;letter-spacing:.08em">\u25b8 STOP</span>', c: null, mt: '0' },
+      { h: '  The premise \u2014 churn is caused by missing features \u2014 is <span style="color:#e8e8f0">unproven</span>.', c: '#8a8a99', mt: '12px' },
+      { h: '  A marketplace adds a security-vs-capability dilemma and a', c: '#8a8a99', mt: '0' },
+      { h: '  developer cold-start problem. Simpler alternatives dominate.', c: '#8a8a99', mt: '0' },
+      { h: '  <span style="color:#a78bfa">\u2192 7 anchored validation actions queued.</span>', c: null, mt: '12px' },
+      { h: '  <span style="color:#5a5a68">cost receipt</span>  claude 4 \u00b7 codex 4 \u00b7 gemini 4   <span style="color:#5a5a68">(12 calls)</span>', c: '#8a8a99', mt: '14px' },
+    ];
+    let i = 0;
+    const typeStep = () => {
+      if (i <= cmd.length) { typed.textContent = cmd.slice(0, i); i++; setTimeout(typeStep, 24); }
+      else { setTimeout(() => revealOut(0), 300); }
+    };
+    const revealOut = (k) => {
+      if (k >= outputs.length) return;
+      const o = outputs[k];
+      const el = mk(o.h, o.c, o.mt);
+      requestAnimationFrame(() => { el.style.opacity = '1'; el.style.transform = 'none'; });
+      setTimeout(() => revealOut(k + 1), o.h === '' ? 120 : (k < 5 ? 540 : 280));
+    };
+    setTimeout(typeStep, 350);
+  }
+
+  initBg() {
+    const c = document.getElementById('aiki-bg');
+    if (!c) return;
+    const ctx = c.getContext('2d');
+    let W = 0, H = 0, DPR = 1;
+    const resize = () => {
+      DPR = Math.min(window.devicePixelRatio || 1, 2);
+      W = window.innerWidth; H = window.innerHeight;
+      c.width = W * DPR; c.height = H * DPR;
+      c.style.width = W + 'px'; c.style.height = H + 'px';
+      ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    };
+    this._onResize = resize; resize();
+    window.addEventListener('resize', resize);
+    const N = Math.min(110, Math.round(W * H / 16000));
+    const P = [];
+    const cols = ['167,139,250', '167,139,250', '160,155,210', '240,136,62', '52,211,153', '96,165,250'];
+    for (let i = 0; i < N; i++) {
+      P.push({
+        x: Math.random() * W, y: Math.random() * H, z: Math.random(),
+        vx: (Math.random() - .5) * .16, vy: (Math.random() - .5) * .16,
+        col: i < 3 ? cols[3 + i] : cols[(Math.random() * 3 | 0)],
+        r: Math.random() * 1.3 + .5
+      });
+    }
+    let mx = W / 2, my = H / 2, tmx = W / 2, tmy = H / 2;
+    this._mm = (e) => { tmx = e.clientX; tmy = e.clientY; };
+    window.addEventListener('mousemove', this._mm);
+    const council = [{ c: '240,136,62', a: 0 }, { c: '52,211,153', a: 2.094 }, { c: '96,165,250', a: 4.188 }];
+    let t = 0;
+    const MAXD = 140, MAXD2 = MAXD * MAXD;
+    const loop = () => {
+      t += .006; mx += (tmx - mx) * .04; my += (tmy - my) * .04;
+      const ox = (mx - W / 2) * .02, oy = (my - H / 2) * .02;
+      ctx.clearRect(0, 0, W, H);
+      for (const p of P) {
+        p.x += p.vx; p.y += p.vy;
+        if (p.x < -20) p.x = W + 20; if (p.x > W + 20) p.x = -20;
+        if (p.y < -20) p.y = H + 20; if (p.y > H + 20) p.y = -20;
+      }
+      for (let i = 0; i < N; i++) {
+        for (let j = i + 1; j < N; j++) {
+          const a = P[i], b = P[j], dx = a.x - b.x, dy = a.y - b.y, d2 = dx * dx + dy * dy;
+          if (d2 < MAXD2) {
+            const al = (1 - d2 / MAXD2) * .13;
+            ctx.strokeStyle = 'rgba(150,140,220,' + al + ')'; ctx.lineWidth = .6;
+            ctx.beginPath();
+            ctx.moveTo(a.x + ox * a.z, a.y + oy * a.z);
+            ctx.lineTo(b.x + ox * b.z, b.y + oy * b.z);
+            ctx.stroke();
+          }
+        }
+      }
+      const cx = W * .5 + ox * 3, cy = H * .4 + oy * 3, R = Math.min(W, H) * .18;
+      const pos = council.map(o => { const a = o.a + t * .25; return { x: cx + Math.cos(a) * R, y: cy + Math.sin(a) * R * .55, c: o.c }; });
+      for (let i = 0; i < 3; i++) for (let j = i + 1; j < 3; j++) {
+        const A = pos[i], B = pos[j], pu = (Math.sin(t * 2 + i + j) + 1) / 2;
+        ctx.strokeStyle = 'rgba(167,139,250,' + (.04 + pu * .1) + ')'; ctx.lineWidth = 1 + pu * 1.4;
+        ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke();
+      }
+      for (const o of pos) {
+        const rr = Math.min(W, H) * .06;
+        const g = ctx.createRadialGradient(o.x, o.y, 0, o.x, o.y, rr);
+        g.addColorStop(0, 'rgba(' + o.c + ',.3)'); g.addColorStop(.35, 'rgba(' + o.c + ',.1)'); g.addColorStop(1, 'rgba(' + o.c + ',0)');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(o.x, o.y, rr, 0, 7); ctx.fill();
+      }
+      for (const p of P) {
+        const px = p.x + ox * p.z, py = p.y + oy * p.z, rr = p.r * (.7 + p.z) * 5;
+        const g = ctx.createRadialGradient(px, py, 0, px, py, rr);
+        g.addColorStop(0, 'rgba(' + p.col + ',.85)'); g.addColorStop(1, 'rgba(' + p.col + ',0)');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(px, py, rr, 0, 7); ctx.fill();
+      }
+      this._raf = requestAnimationFrame(loop);
+    };
+    loop();
+  }
+}
+
+  const _pg = new Page();
+  const _start = () => _pg.componentDidMount();
+  if (document.readyState !== 'loading') _start();
+  else document.addEventListener('DOMContentLoaded', _start);
+  window.copyCmd = (e) => _pg.copyCmd(e);
+
+</script>
+</body>
+</html>
