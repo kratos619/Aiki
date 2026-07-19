@@ -8,7 +8,7 @@ import type { ArmId } from '../bench/arms.js';
 import { setupProviders } from '../orchestration/context.js';
 import { chooseLaneDefault, importLaneAdjudications, planIdeaLaneBench, runIdeaLaneBench } from '../bench/idea-lane-rotation.js';
 import { IDEA_V3_ARM_IDS, planIdeaV3Bench, runIdeaV3Bench, type IdeaV3Arm } from '../bench/idea-v3-bench.js';
-import { exportIdeaV3BlindBundle, importIdeaV3Ratings, writeFrozenIdeaV3Protocol, writeIdeaV3Results } from '../bench/idea-v3-rating.js';
+import { exportIdeaV3BlindBundle, importIdeaV3Ratings, publishIdeaV3Results, writeFrozenIdeaV3Protocol } from '../bench/idea-v3-rating.js';
 import { DISPLAY_NAME, type ProviderId } from '../providers/types.js';
 
 const VALID_ARMS: ArmId[] = ['A', 'B', 'C', 'D', 'E', 'L'];
@@ -54,9 +54,9 @@ export async function benchCommand(
     }
     if (opts.publishResults) {
       try {
-        const result = await writeIdeaV3Results({ scoredPath: opts.publishResults });
+        const result = await publishIdeaV3Results({ scoredPath: opts.publishResults });
         process.stdout.write(`\nresults: ${result.path}\n`);
-        process.stdout.write(`frozen ship gate: ${result.gates.ship ? 'PASS' : 'FAIL'}\n\n`);
+        process.stdout.write(`${result.label}: ${result.passed ? 'PASS' : 'FAIL'}\n\n`);
         return 0;
       } catch (error) {
         process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
@@ -99,7 +99,7 @@ export async function benchCommand(
       : set === 'build' ? ['B', 'C', 'D2', 'R'] : ['B', 'C', 'R'];
     const invalid = requested.filter((arm) => !(IDEA_V3_ARM_IDS as readonly string[]).includes(arm));
     if (invalid.length) {
-      process.stderr.write(`invalid idea-v3 arm(s): ${invalid.join(', ')}. Valid: B,C,D2,R\n`);
+      process.stderr.write(`invalid idea-v3 arm(s): ${invalid.join(', ')}. Valid: A,B,B2,C,D2,R\n`);
       return 1;
     }
     const arms = requested as IdeaV3Arm[];
@@ -116,7 +116,7 @@ export async function benchCommand(
       return 1;
     }
     process.stdout.write(`\nidea-v3 protocol comparison — ${set} — ${plan.cases.length} case(s) × arms ${arms.join(',')}\n`);
-    process.stdout.write(`B/C baseline provider: ${DISPLAY_NAME[provider as ProviderId]}\n`);
+    process.stdout.write(`B/B2/C baseline provider: ${DISPLAY_NAME[provider as ProviderId]}\n`);
     if (plan.resumedFrom) process.stdout.write(`resume: continuing ${plan.resumedFrom} — ${plan.skipCompleted} recorded pair(s) kept\n`);
     process.stdout.write(`to run: ${plan.toRun.length} case×arm pair(s) → ≤${plan.estimatedProviderCalls} nominal provider call(s)\n`);
     if (arms.includes('D2')) process.stdout.write('D2 source: archived R0 runner at commit 680fba3 (supply --d2-import when executing)\n');

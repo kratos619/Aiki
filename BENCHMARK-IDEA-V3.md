@@ -163,3 +163,48 @@ Build manifests use the `IdeaV3CaseManifest` schema in the frozen scorer module.
 
 The regression captures are defect-reproduction data, not ground truth. They exclude prompts, home paths,
 credentials, tokens, provider configuration, run metadata, and unrelated artifacts.
+
+## 9. Amendment F1 — adaptive product validation (2026-07-19)
+
+**Status: PRE-REGISTERED BEFORE ANY PHASE F PROVIDER CALL.** This amendment is append-only. It does not
+change §§1–8, retroactively alter an earlier score, open holdout, or modify the frozen B/C/R ship gate.
+It adds a build-set product validation for the v7 adaptive workflow after Phase A made per-call token
+accounting available. All provider runs, rating locks, freezes, and commits remain user-owned.
+
+### Added arms
+
+| Arm | Pre-registered description |
+|---|---|
+| **A** | The committed v7 `auto` mode. Its deterministic task profile resolves the shipped quick/council entry, then the auto-only workflow spends 1–4 nominal calls based on validated structural gates. Planning uses 4 calls per case and a 7-call execution guard; all attempted calls and repairs are reported. |
+| **B2** | The same provider, model, primary prompt, and first call as B, followed by one focused same-provider self-verification call. The second call sees the task/source-pack manifest and primary report, checks only load-bearing claims, and may correct, narrow, mark unresolved, or remove unsupported claims. Nominal cost: 2 calls. |
+
+A and B2 are build-only amendment arms. They may not enter the original holdout campaign. Existing idea-v3
+CLI defaults remain B/C/D2/R; the amendment matrix is selected explicitly as `A,B,B2,D2,R`. D2 still comes
+only from the archived R0 runner at commit `680fba3`. Arm R is the evidence-grounded council control for
+the token comparison even though its committed execution mode is named `research`.
+
+### Added metric
+
+**Verified decision-critical insights per 1,000 tokens** is:
+
+`1,000 × micro matched expert claims / Σ(recorded input tokens + recorded output tokens)`.
+
+“Matched” is the existing frozen scorer's one-to-one, evidence-eligible matched count; no new adjudication
+label is introduced. Token totals come from the Phase A call ledger. Provider-reported values take priority;
+the existing labeled `chars/4` fallback is retained when a provider supplies no usage. Results must show the
+number of estimated calls beside this metric. Missing usage fails the token target closed.
+
+### Build-set product targets
+
+The complete eight-case A/B/B2/D2/R build matrix passes the adaptive product target only when all hold:
+
+1. `F1(A) > F1(B)` on the existing primary metric;
+2. `F1(A) >= F1(D2) - 0.05` and `F1(A) >= F1(R) - 0.05`;
+3. A's median per-case input-plus-output tokens are at least 40% below R's;
+4. A's median observed calls are at most 3; and
+5. A's nearest-rank p95 observed calls are at most 6.
+
+B2 is a diagnostic showing what one focused same-provider check buys over B; it is not allowed to rescue a
+failed A target. Failures remain in the matrix under §7. These thresholds are build-set product targets, not
+holdout superiority claims. No deferred council finalizer change may ship from this pre-registration alone;
+the user must first run, blind-rate, and publish the completed amendment matrix.

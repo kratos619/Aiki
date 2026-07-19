@@ -107,7 +107,7 @@ program
   .command('bench')
   .description('Run code-review, idea lane, or frozen idea-v3 benchmark arms; writes bench/results/*.json.')
   .argument('<workflow>', 'code-review | idea-refinement | idea-v3')
-  .option('--arms <list>', 'comma-separated arms to run (code review defaults A,B,C,D; idea-v3 defaults B,C,D2,R on build)')
+  .option('--arms <list>', 'comma-separated arms to run (code review defaults A,B,C,D; idea-v3 defaults B,C,D2,R; Phase F adds explicit A,B2)')
   .option('--set <name>', 'task set: build | holdout', 'build')
   .option('--resume', 'continue the latest results file: keep already-scored case×arm pairs, retry the rest')
   .option('--yes', 'actually run; without it, print the pre-run Opus-call estimate and exit')
