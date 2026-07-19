@@ -1,6 +1,6 @@
 {
   "name": "aiki-cli",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Local-first AI model council for code review and idea stress-testing using Claude Code, Codex, and Gemini/Antigravity CLIs. No API keys.",
   "type": "module",
   "license": "MIT",

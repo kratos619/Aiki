@@ -199,7 +199,7 @@ Upgrade an existing installation:
 
 ```bash
 npm install -g aiki-cli@latest
-aiki --version                 # 0.3.3
+aiki --version                 # 0.3.4
 ```
 
 From source:
