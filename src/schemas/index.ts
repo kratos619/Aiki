@@ -1128,6 +1128,17 @@ export const QuickDecisionModel = z.object({
 //
 // Written by the artifact writer; assembled by the engine's RunCtx (T5). Internal → not strict.
 
+/** Per-call token accounting. `estimated:true` = local chars/4 estimate, never blended
+ *  silently with provider-reported numbers. */
+export const NormalizedUsageSchema = z.object({
+  inputTokens: z.number().int().nonnegative().optional(),
+  outputTokens: z.number().int().nonnegative().optional(),
+  cacheReadTokens: z.number().int().nonnegative().optional(),
+  cacheWriteTokens: z.number().int().nonnegative().optional(),
+  estimated: z.boolean(),
+  reportedCostUsd: z.number().nonnegative().optional(),
+});
+
 /** One provider call's accounting entry (§15 "per-call timings"). */
 export const CallRecord = z.object({
   provider: ProviderIdSchema,
@@ -1135,6 +1146,7 @@ export const CallRecord = z.object({
   category: z.enum(['discovery', 'verification', 'repair', 'planning']).optional(),
   durationMs: z.number().nonnegative(),
   error: z.enum(['NOT_FOUND', 'AUTH', 'QUOTA', 'TIMEOUT', 'BAD_OUTPUT', 'CRASH']).optional(),
+  usage: NormalizedUsageSchema.optional(),
 });
 
 /** How read-only was actually enforced per provider (§15, §19). Mirrors providers ReadOnlyFlag. */
@@ -1164,6 +1176,13 @@ export const RunMeta = z.object({
     verification: z.number().int().nonnegative(),
     repair: z.number().int().nonnegative(),
     planning: z.number().int().nonnegative(),
+  }).optional(),
+  usage_totals: z.object({
+    inputTokens: z.number().int().nonnegative(),
+    outputTokens: z.number().int().nonnegative(),
+    reportedCalls: z.number().int().nonnegative(),
+    estimatedCalls: z.number().int().nonnegative(),
+    reportedCostUsd: z.number().nonnegative().optional(),
   }).optional(),
   exit_status: z.enum(['ok', 'failed', 'aborted', 'partial']),
   aborted: z.boolean(), // §16: Ctrl+C finalizes meta with aborted:true
@@ -1252,3 +1271,4 @@ export type ActionPlanArtifact = z.infer<typeof ActionPlanArtifact>;
 export type QuickDecisionModel = z.infer<typeof QuickDecisionModel>;
 export type RunMeta = z.infer<typeof RunMeta>;
 export type CallRecord = z.infer<typeof CallRecord>;
+export type NormalizedUsage = z.infer<typeof NormalizedUsageSchema>;

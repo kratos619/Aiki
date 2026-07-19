@@ -82,6 +82,22 @@ describe('claude adapter', () => {
     expect(calls[0]!.args).toEqual(['-p', 'hi', '--output-format', 'json', '--permission-mode', 'plan']);
   });
 
+  it('normalizes envelope usage + cost (estimated:false)', async () => {
+    const env = JSON.stringify({
+      type: 'result', is_error: false, result: '{"ok":true}', total_cost_usd: 0.42,
+      usage: { input_tokens: 100, output_tokens: 20, cache_read_input_tokens: 5, cache_creation_input_tokens: 7 },
+    });
+    const { fn } = scriptedSpawn([raw({ stdout: env })]);
+    const res = await claude.run(req(), CLAUDE_FLAGS, { spawn: fn });
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.usage).toEqual({
+        inputTokens: 100, outputTokens: 20, cacheReadTokens: 5, cacheWriteTokens: 7,
+        estimated: false, reportedCostUsd: 0.42,
+      });
+    }
+  });
+
   it('maps envelope is_error:true to CRASH (then retries once → 2 calls)', async () => {
     const errEnv = JSON.stringify({ type: 'result', is_error: true, result: '' });
     const { fn, calls } = scriptedSpawn([raw({ stdout: errEnv }), raw({ stdout: errEnv })]);

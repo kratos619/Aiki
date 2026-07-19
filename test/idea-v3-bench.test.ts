@@ -208,6 +208,7 @@ describe('R8 idea-v3 protocol benchmark', () => {
       '- Categories: discovery 2 · verification 3 · repair 1 · planning 1',
       '- By provider: Model Alpha 6, Model Beta 4, Model Gamma 2',
       '- Recorded model time: 812.4s',
+      '- Tokens: ~184.2k in / ~31.8k out (12 calls estimated)',
       '- Degradation flags: headless_intent, synthesis_suspect',
       '',
     ].join('\n');
@@ -220,6 +221,7 @@ describe('R8 idea-v3 protocol benchmark', () => {
     expect(blinded).not.toMatch(/discovery 2 · verification 3/);
     expect(blinded).not.toMatch(/Model Alpha 6/); // per-provider call counts are a cost tell
     expect(blinded).not.toMatch(/812\.4s/);
+    expect(blinded).not.toMatch(/184\.2k in/); // token totals are a cost tell
     expect(blinded).not.toMatch(/headless_intent/); // flag names are mode/arm tells
     expect(blinded).not.toMatch(/DEGRADED: synthesis_suspect/); // inline flag list is a tell
     // The DEGRADED marker and prose notes stay — raters still see quality self-assessments.
