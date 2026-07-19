@@ -16,9 +16,12 @@ import {
 } from '../src/bench/idea-v3-bench.js';
 import {
   blindIdeaV3Report,
+  evaluateIdeaV3AdaptiveGates,
   evaluateIdeaV3Gates,
   exportIdeaV3BlindBundle,
+  ideaV3TokenEfficiency,
   importIdeaV3Ratings,
+  writeIdeaV3AdaptiveResults,
   writeFrozenIdeaV3Protocol,
   writeIdeaV3Results,
   type IdeaV3ScoredCampaign,
@@ -89,6 +92,61 @@ describe('R8 idea-v3 protocol benchmark', () => {
     expect(plan.estimatedProviderCalls).toBe(8 * (1 + 4 + 8 + 10));
   });
 
+  it('plans Phase F A/B2 explicitly without changing the frozen default arms', async () => {
+    const plan = await planIdeaV3Bench({ arms: ['A', 'B2'] });
+    expect(plan.arms).toEqual(['A', 'B2']);
+    expect(plan.toRun).toHaveLength(16);
+    expect(plan.estimatedProviderCalls).toBe(8 * (4 + 2));
+    expect(IDEA_V3_CALLS_PER_CASE).toMatchObject({ A: 4, B2: 2 });
+  });
+
+  it('runs B2 as the B primary call plus one focused same-provider verification', async () => {
+    const root = await fixtureRoot();
+    const prompts: string[] = [];
+    const report = (verified: boolean) => ({
+      recommendation: 'INCONCLUSIVE',
+      summary: verified ? 'Verified summary.' : 'Primary summary.',
+      rationale: 'Evidence remains incomplete.',
+      load_bearing_claims: [{
+        id: 'C1', proposition: 'Demand is unverified.', stance: 'UNRESOLVED', fact_kind: 'INFERENCE',
+        evidence_status: 'NOT_REQUIRED', reasoning: 'No demand evidence was supplied.',
+      }],
+      risks: ['Demand may be weak.'],
+      actions: [{
+        action: 'Run a demand test.', method: 'Landing page', sample_or_source: '100 visitors',
+        metric: 'signup rate', threshold: '10%', kill_or_pivot_signal: 'below 5%', timebox: 'one week',
+        claim_ids: ['C1'],
+      }],
+    });
+    const scripted: ProviderHandle = {
+      ...handle('claude'),
+      adapter: {
+        id: 'claude',
+        run: async (request) => {
+          prompts.push(request.prompt);
+          const value = report(request.prompt.includes('FOCUSED SELF-VERIFICATION'));
+          return {
+            ok: true as const,
+            text: JSON.stringify(value),
+            json: value,
+            durationMs: 1,
+            usage: { inputTokens: 100, outputTokens: 20, estimated: false },
+          };
+        },
+      },
+    };
+
+    const result = await runIdeaV3Bench({ root, arms: ['B2'], handles: [scripted] });
+
+    expect(prompts).toHaveLength(16);
+    expect(prompts.filter((prompt) => prompt.includes('FOCUSED SELF-VERIFICATION'))).toHaveLength(8);
+    expect(result.campaign.observations[0]).toMatchObject({
+      arm: 'B2', calls: 2,
+      usage: { inputTokens: 200, outputTokens: 40, reportedCalls: 2, estimatedCalls: 0 },
+    });
+    expect(result.campaign.observations[0]!.report_markdown).toContain('Verified summary.');
+  });
+
   it('keeps baseline-provider build candidates in separate campaigns', async () => {
     const root = await fixtureRoot();
     const claude = await planIdeaV3Bench({ root, arms: ['B'], baselineProvider: 'claude' });
@@ -100,6 +158,11 @@ describe('R8 idea-v3 protocol benchmark', () => {
 
   it('refuses D2 on holdout because the frozen arm is build diagnostic only', async () => {
     await expect(planIdeaV3Bench({ set: 'holdout', arms: ['D2'] })).rejects.toThrow(/build-set diagnostic only/);
+  });
+
+  it('keeps Phase F A/B2 build-only so the frozen holdout protocol cannot drift', async () => {
+    await expect(planIdeaV3Bench({ set: 'holdout', arms: ['A', 'B2'] }))
+      .rejects.toThrow(/Phase F arms are build-set validation only/);
   });
 
   it('keeps holdout sealed until the protocol, roles, models, and hashes are frozen', async () => {
@@ -389,6 +452,86 @@ describe('R8 idea-v3 protocol benchmark', () => {
     expect(markdown).toContain('Ship gate: FAIL');
     expect(markdown).toContain('| h0 | R |');
     expect(markdown).toContain('| h11 | R |');
+  });
+
+  it('scores Phase F token efficiency and adaptive product targets offline', async () => {
+    const arms = ['A', 'B', 'B2', 'D2', 'R'] as const;
+    const score = (arm: typeof arms[number]) => ({
+      expected: 100,
+      matched: arm === 'A' ? 80 : arm === 'B' ? 70 : arm === 'B2' ? 75 : 82,
+      reported: 100,
+      true_positive_reports: 90,
+      recall: arm === 'A' ? 0.8 : arm === 'B' ? 0.7 : arm === 'B2' ? 0.75 : 0.82,
+      precision: 0.9,
+      f1: arm === 'A' ? 0.84 : arm === 'B' ? 0.76 : arm === 'B2' ? 0.81 : arm === 'D2' ? 0.87 : 0.88,
+    });
+    const calls = [1, 2, 3, 3, 3, 3, 4, 6];
+    const observations = Array.from({ length: 8 }, (_, index) => arms.map((arm) => ({
+      ...observation(`b${index}`, arm),
+      calls: arm === 'A' ? calls[index]! : IDEA_V3_CALLS_PER_CASE[arm],
+      usage: {
+        inputTokens: arm === 'A' ? 400 : arm === 'R' ? 900 : 500,
+        outputTokens: 100,
+        reportedCalls: arm === 'A' || arm === 'R' ? 0 : IDEA_V3_CALLS_PER_CASE[arm],
+        estimatedCalls: arm === 'A' ? calls[index]! : arm === 'R' ? 10 : 0,
+      },
+    }))).flat();
+    const campaign: IdeaV3Campaign = {
+      version: 1,
+      set: 'build',
+      at: '2026-07-19T00:00:00.000Z',
+      baseline_provider: 'claude',
+      arms: [...arms],
+      observations,
+    };
+    const secondary = {
+      factual_claims: { eligible: 0, honest_or_supported: 0 }, citations: { total: 0, exact_support: 0 },
+      coverage: { required: 12, accounted: 12 }, disagreements: { labeled: 0, genuine: 0 },
+      actions: { total: 0, complete: 0, score_4_or_5: 0 }, honesty_violations: 0,
+    };
+    const scored: IdeaV3ScoredCampaign = {
+      version: 1,
+      at: campaign.at,
+      campaign: '/tmp/phase-f-campaign.json',
+      set: 'build',
+      raw_ratings: ['r1', 'r2', 'r3'].map((rater_id) => ({ rater_id, path: `/tmp/${rater_id}`, sha256: 'a'.repeat(64) })),
+      reports: observations.map((item) => ({ case_id: item.case_id, arm: item.arm, score: score(item.arm), secondary })),
+      summary: arms.map((arm) => ({ arm, score: score(arm) })),
+      pairwise_preferences: [],
+    };
+
+    expect(ideaV3TokenEfficiency(scored, campaign).find((row) => row.arm === 'A')).toEqual({
+      arm: 'A', matched: 80, tokens: 4_000, matched_per_1k_tokens: 20, estimated_calls: 25,
+    });
+    expect(evaluateIdeaV3AdaptiveGates(scored, campaign)).toMatchObject({
+      pass: true,
+      primary_vs_b: true,
+      quality_floor_d2: true,
+      quality_floor_r: true,
+      token_savings: true,
+      calls_median: true,
+      calls_p95: true,
+      a_median_calls: 3,
+      a_p95_calls: 6,
+      token_reduction: 0.5,
+    });
+
+    temp = await mkdtemp(join(tmpdir(), 'aiki-idea-v3-adaptive-results-'));
+    const campaignPath = join(temp, 'campaign.json');
+    const scoresPath = join(temp, 'scores.json');
+    scored.campaign = campaignPath;
+    await writeFile(campaignPath, JSON.stringify(campaign), 'utf8');
+    await writeFile(scoresPath, JSON.stringify(scored), 'utf8');
+    const written = await writeIdeaV3AdaptiveResults({ scoredPath: scoresPath, root: temp });
+    const markdown = await readFile(written.path, 'utf8');
+    expect(markdown).toContain('Adaptive build targets: PASS');
+    expect(markdown).toContain('| A | 80 | 4000 | 20.000 | 25 |');
+    expect(markdown).toContain('Build-set product validation; not a frozen holdout claim.');
+
+    for (const item of campaign.observations.filter((candidate) => candidate.arm === 'A')) {
+      item.usage = { ...item.usage!, inputTokens: 600 };
+    }
+    expect(evaluateIdeaV3AdaptiveGates(scored, campaign)).toMatchObject({ pass: false, token_savings: false });
   });
 
   it('freezes only a complete scored build matrix and refuses to overwrite it', async () => {

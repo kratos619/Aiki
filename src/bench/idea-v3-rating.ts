@@ -413,6 +413,115 @@ function median(values: number[]): number {
   return sorted.length % 2 ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2;
 }
 
+function nearestRank(values: number[], percentile: number): number {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((left, right) => left - right);
+  return sorted[Math.ceil(percentile * sorted.length) - 1]!;
+}
+
+export interface IdeaV3TokenEfficiencyRow {
+  arm: IdeaV3Arm;
+  matched: number;
+  tokens: number | null;
+  matched_per_1k_tokens: number | null;
+  estimated_calls: number;
+}
+
+/** Phase F additive metric: adjudicated matched expert claims per 1,000 recorded input+output tokens. */
+export function ideaV3TokenEfficiency(
+  scored: IdeaV3ScoredCampaign,
+  campaign: IdeaV3Campaign,
+): IdeaV3TokenEfficiencyRow[] {
+  scored = IdeaV3ScoredCampaign.parse(scored);
+  campaign = IdeaV3Campaign.parse(campaign);
+  return campaign.arms.map((arm) => {
+    const observations = campaign.observations.filter((item) => item.arm === arm);
+    const complete = observations.length > 0 && observations.every((item) => item.usage !== undefined);
+    const tokens = complete
+      ? observations.reduce((sum, item) => sum + item.usage!.inputTokens + item.usage!.outputTokens, 0)
+      : null;
+    const matched = scored.summary.find((item) => item.arm === arm)?.score.matched ?? 0;
+    return {
+      arm,
+      matched,
+      tokens,
+      matched_per_1k_tokens: tokens ? matched * 1_000 / tokens : null,
+      estimated_calls: observations.reduce((sum, item) => sum + (item.usage?.estimatedCalls ?? 0), 0),
+    };
+  });
+}
+
+export interface IdeaV3AdaptiveGateResult {
+  matrix_complete: boolean;
+  usage_complete: boolean;
+  primary_vs_b: boolean;
+  quality_floor_d2: boolean;
+  quality_floor_r: boolean;
+  token_savings: boolean;
+  calls_median: boolean;
+  calls_p95: boolean;
+  pass: boolean;
+  a_median_calls: number;
+  a_p95_calls: number;
+  a_median_tokens: number | null;
+  r_median_tokens: number | null;
+  token_reduction: number | null;
+}
+
+/** Phase F build-only product targets. Original frozen holdout ship gates remain separate. */
+export function evaluateIdeaV3AdaptiveGates(
+  scored: IdeaV3ScoredCampaign,
+  campaign: IdeaV3Campaign,
+): IdeaV3AdaptiveGateResult {
+  scored = IdeaV3ScoredCampaign.parse(scored);
+  campaign = IdeaV3Campaign.parse(campaign);
+  if (scored.set !== 'build' || campaign.set !== 'build') {
+    throw new Error('adaptive product targets require the Phase F build campaign');
+  }
+  const required = ['A', 'B', 'B2', 'D2', 'R'] as const;
+  const caseIds = new Set(campaign.observations.filter((item) => item.arm === 'A').map((item) => item.case_id));
+  const expectedPairs = [...caseIds].flatMap((caseId) => required.map((arm) => `${caseId}:${arm}`));
+  const observedPairs = campaign.observations.filter((item) => required.includes(item.arm as typeof required[number]));
+  const scoredPairs = new Set(scored.reports.map((item) => `${item.case_id}:${item.arm}`));
+  const matrixComplete = caseIds.size > 0
+    && observedPairs.length === expectedPairs.length
+    && expectedPairs.every((pair) => observedPairs.some((item) => `${item.case_id}:${item.arm}` === pair) && scoredPairs.has(pair))
+    && required.every((arm) => scored.summary.some((item) => item.arm === arm));
+  const score = (arm: IdeaV3Arm) => scored.summary.find((item) => item.arm === arm)?.score.f1;
+  const a = score('A'), b = score('B'), d2 = score('D2'), r = score('R');
+  const aObservations = campaign.observations.filter((item) => item.arm === 'A');
+  const rObservations = campaign.observations.filter((item) => item.arm === 'R');
+  const usageComplete = aObservations.length > 0 && rObservations.length > 0
+    && [...aObservations, ...rObservations].every((item) => item.usage !== undefined);
+  const perCaseTokens = (items: typeof aObservations) => items.map((item) => item.usage!.inputTokens + item.usage!.outputTokens);
+  const aMedianTokens = usageComplete ? median(perCaseTokens(aObservations)) : null;
+  const rMedianTokens = usageComplete ? median(perCaseTokens(rObservations)) : null;
+  const tokenReduction = aMedianTokens !== null && rMedianTokens
+    ? 1 - aMedianTokens / rMedianTokens
+    : null;
+  const aMedianCalls = median(aObservations.map((item) => item.calls));
+  const aP95Calls = nearestRank(aObservations.map((item) => item.calls), 0.95);
+  const gates = {
+    matrix_complete: matrixComplete,
+    usage_complete: usageComplete,
+    primary_vs_b: a !== undefined && b !== undefined && a > b,
+    quality_floor_d2: a !== undefined && d2 !== undefined && a >= d2 - 0.05,
+    quality_floor_r: a !== undefined && r !== undefined && a >= r - 0.05,
+    token_savings: tokenReduction !== null && tokenReduction >= 0.4,
+    calls_median: aObservations.length > 0 && aMedianCalls <= 3,
+    calls_p95: aObservations.length > 0 && aP95Calls <= 6,
+  };
+  return {
+    ...gates,
+    pass: Object.values(gates).every(Boolean),
+    a_median_calls: aMedianCalls,
+    a_p95_calls: aP95Calls,
+    a_median_tokens: aMedianTokens,
+    r_median_tokens: rMedianTokens,
+    token_reduction: tokenReduction,
+  };
+}
+
 export interface IdeaV3GateResult {
   primary_vs_b: boolean;
   primary_vs_c: boolean;
@@ -482,6 +591,80 @@ export function evaluateIdeaV3Gates(scored: IdeaV3ScoredCampaign, campaign: Idea
     r_preference_wins: preferenceWins,
     holdout_cases: cases.size,
   };
+}
+
+/** Publish Phase F build validation without turning it into a frozen holdout claim. */
+export async function writeIdeaV3AdaptiveResults(opts: {
+  scoredPath: string;
+  outPath?: string;
+  root?: string;
+}): Promise<{ path: string; gates: IdeaV3AdaptiveGateResult }> {
+  const root = opts.root ?? process.cwd();
+  const scoredPath = resolve(opts.scoredPath);
+  const scored = IdeaV3ScoredCampaign.parse(JSON.parse(await readFile(scoredPath, 'utf8')));
+  const campaignPath = resolveFrom(dirname(scoredPath), scored.campaign);
+  const campaign = IdeaV3Campaign.parse(JSON.parse(await readFile(campaignPath, 'utf8')));
+  const gates = evaluateIdeaV3AdaptiveGates(scored, campaign);
+  const efficiency = ideaV3TokenEfficiency(scored, campaign);
+  const summary = new Map(scored.summary.map((item) => [item.arm, item.score]));
+  const rows: Array<[string, boolean, string]> = [
+    ['Complete scored A/B/B2/D2/R matrix', gates.matrix_complete, gates.matrix_complete ? 'complete' : 'missing or duplicate pairs'],
+    ['A/R token usage complete', gates.usage_complete, gates.usage_complete ? 'complete' : 'usage missing'],
+    ['A strictly beats B on F1', gates.primary_vs_b, `${summary.get('A')?.f1.toFixed(3)} vs ${summary.get('B')?.f1.toFixed(3)}`],
+    ['A within 0.05 F1 of D2', gates.quality_floor_d2, `${summary.get('A')?.f1.toFixed(3)} vs ${summary.get('D2')?.f1.toFixed(3)}`],
+    ['A within 0.05 F1 of R', gates.quality_floor_r, `${summary.get('A')?.f1.toFixed(3)} vs ${summary.get('R')?.f1.toFixed(3)}`],
+    ['A median tokens ≥40% below R', gates.token_savings, gates.token_reduction === null ? 'usage missing' : pct(gates.token_reduction)],
+    ['A median calls ≤3', gates.calls_median, gates.a_median_calls.toFixed(1)],
+    ['A p95 calls ≤6', gates.calls_p95, gates.a_p95_calls.toFixed(0)],
+  ];
+  const lines = [
+    '# RESULTS-IDEA-V3-ADAPTIVE — Phase F build validation',
+    '',
+    `**Adaptive build targets: ${gates.pass ? 'PASS' : 'FAIL'}**`,
+    '',
+    'Build-set product validation; not a frozen holdout claim.',
+    '',
+    '## Product targets',
+    '',
+    '| Target | Result | Evidence |',
+    '|---|---|---|',
+    ...rows.map(([name, pass, evidence]) => `| ${name} | ${pass ? 'PASS' : 'FAIL'} | ${evidence} |`),
+    '',
+    '## Primary metric',
+    '',
+    '| Arm | Matched | Recall | Precision | F1 |',
+    '|---|---:|---:|---:|---:|',
+    ...campaign.arms.map((arm) => {
+      const item = summary.get(arm)!;
+      return `| ${arm} | ${item.matched} | ${pct(item.recall)} | ${pct(item.precision)} | ${item.f1.toFixed(3)} |`;
+    }),
+    '',
+    '## Verified insights per 1,000 tokens',
+    '',
+    '| Arm | Matched | Tokens | Matched / 1k tokens | Estimated calls |',
+    '|---|---:|---:|---:|---:|',
+    ...efficiency.map((item) => `| ${item.arm} | ${item.matched} | ${item.tokens ?? 'missing'} | ${item.matched_per_1k_tokens?.toFixed(3) ?? 'missing'} | ${item.estimated_calls} |`),
+    '',
+    '## Every case and arm',
+    '',
+    '| Case | Arm | Status | Calls | Tokens | Repairs | Wall time | Flags / failure |',
+    '|---|---|---|---:|---:|---:|---:|---|',
+    ...[...campaign.observations]
+      .sort((left, right) => left.case_id.localeCompare(right.case_id) || left.arm.localeCompare(right.arm))
+      .map((item) => {
+        const tokens = item.usage ? item.usage.inputTokens + item.usage.outputTokens : 'missing';
+        const detail = item.status === 'error' ? item.error! : item.flags.join(', ') || 'none';
+        return `| ${item.case_id} | ${item.arm} | ${item.status} | ${item.calls} | ${tokens} | ${item.repair_calls} | ${(item.latency_ms / 1000).toFixed(1)}s | ${mdCell(detail)} |`;
+      }),
+    '',
+    `Token values include input plus output. ${efficiency.some((item) => item.estimated_calls > 0) ? 'At least one call uses Phase A labeled estimation.' : 'All recorded calls use provider-reported totals.'}`,
+    '',
+  ];
+  const path = opts.outPath ?? join(root, 'RESULTS-IDEA-V3-ADAPTIVE.md');
+  const tmp = `${path}.tmp`;
+  await writeFile(tmp, lines.join('\n'), 'utf8');
+  await rename(tmp, path);
+  return { path, gates };
 }
 
 function mdCell(value: string): string {
@@ -555,6 +738,20 @@ export async function writeIdeaV3Results(opts: {
   return { path, gates };
 }
 
+/** CLI publication dispatch: build amendments and frozen holdout results stay visibly separate. */
+export async function publishIdeaV3Results(opts: {
+  scoredPath: string;
+  root?: string;
+}): Promise<{ path: string; passed: boolean; label: string }> {
+  const scored = IdeaV3ScoredCampaign.parse(JSON.parse(await readFile(resolve(opts.scoredPath), 'utf8')));
+  if (scored.set === 'build') {
+    const result = await writeIdeaV3AdaptiveResults(opts);
+    return { path: result.path, passed: result.gates.pass, label: 'adaptive build targets' };
+  }
+  const result = await writeIdeaV3Results(opts);
+  return { path: result.path, passed: result.gates.ship, label: 'frozen ship gate' };
+}
+
 export const IdeaV3ProtocolDraft = z.object({
   build_scores: z.string().min(1),
   baseline_provider: z.enum(['claude', 'codex', 'agy']),
@@ -568,7 +765,7 @@ export const IdeaV3ProtocolDraft = z.object({
   lane_assignment: z.enum(['agy-market', 'codex-market']),
 }).strict();
 
-/** Freeze only a complete, already-scored B/C/D2/R build campaign; the file is one-shot. */
+/** Freeze only the original complete, already-scored B/C/D2/R build campaign; the file is one-shot. */
 export async function writeFrozenIdeaV3Protocol(opts: {
   draftPath: string;
   root?: string;
@@ -586,7 +783,7 @@ export async function writeFrozenIdeaV3Protocol(opts: {
   if (campaign.baseline_provider !== draft.baseline_provider) {
     throw new Error(`draft baseline ${draft.baseline_provider} does not match campaign ${campaign.baseline_provider}`);
   }
-  const arms = [...IDEA_V3_ARM_IDS];
+  const arms = ['B', 'C', 'D2', 'R'] as const;
   if (arms.some((arm) => !campaign.arms.includes(arm) || !scored.summary.some((item) => item.arm === arm))) {
     throw new Error('protocol freeze requires scored B, C, D2, and R build arms');
   }
