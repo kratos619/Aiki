@@ -519,6 +519,8 @@ function canonicalizeIdeaRoleOutputModel(input: unknown): unknown {
       const evidence = item as Record<string, unknown>;
       return {
         ...evidence,
+        source_kind: canonicalEnum(evidence.source_kind, ['USER', 'PRIMARY', 'SECONDARY', 'MODEL_KNOWLEDGE'],
+          { USER_MATERIAL: 'USER' }), // observed live in a Q1 quick run
         support: canonicalEnumLeadingToken(evidence.support, ['SUPPORTS', 'CONTRADICTS', 'CONTEXT_ONLY'],
           { SUPPORT: 'SUPPORTS', OPPOSES: 'CONTRADICTS', OPPOSE: 'CONTRADICTS' }),
         freshness: canonicalEnum(evidence.freshness, ['CURRENT', 'DATED', 'UNKNOWN']),

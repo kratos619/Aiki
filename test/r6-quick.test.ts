@@ -302,4 +302,39 @@ describe('R6 quick mode', () => {
     const meta = JSON.parse(await readFile(join(outcome.dir, 'meta.json'), 'utf8'));
     expect(meta.flags ?? []).not.toContain('plan_fallback');
   });
+
+  // Live 20260719 Q1 failure: the quick prompt only NAMED the analysis keys, so the model invented
+  // field shapes (falsity_impact, USER_MATERIAL, description) and the repair failed the same way.
+  it('quick prompt spells out the exact analysis field shapes', async () => {
+    const { prompts } = await runQuick();
+    const q1 = prompts.find((prompt) => prompt.includes('ROLE: Single decision analyst'))!;
+    expect(q1).toContain('if_false STOP|PIVOT|CONDITION|MINOR');
+    expect(q1).toContain('source_kind USER|PRIMARY|SECONDARY|MODEL_KNOWLEDGE');
+    expect(q1).toContain('freshness CURRENT|DATED|UNKNOWN');
+    expect(q1).toContain('output FEATURE_BACKLOG|IMPLEMENTATION_PLAN, title, detail, user_value, why_distinctive');
+    expect(q1).toContain('result_step');
+    expect(q1).toContain('no extra or renamed keys');
+  });
+
+  it('salvages a quick decision whose evidence uses observed alias enums and unknown keys', async () => {
+    const broken = {
+      ...gatedDecision,
+      analysis: {
+        ...gatedDecision.analysis,
+        evidence: [{
+          ...gatedDecision.analysis.evidence[0]!,
+          source_kind: 'USER_MATERIAL', // observed live in the 20260719 Q1 run
+          statement: 'Developers need cross-model review.', // unknown key, observed live
+        }],
+      },
+    };
+
+    const { outcome } = await runQuick(broken as typeof quickDecision);
+
+    expect(outcome.ok).toBe(true);
+    expect(outcome.callCount).toBe(4); // 3 quick calls + the one failed §14 repair before salvage
+    const seat = JSON.parse(await readFile(join(outcome.dir, '04-role-outputs', 'claude.json'), 'utf8'));
+    expect(seat.evidence[0]).toMatchObject({ id: 'E1', source_kind: 'USER' });
+    expect(seat.evidence[0]).not.toHaveProperty('statement');
+  });
 });

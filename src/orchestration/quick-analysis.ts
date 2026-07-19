@@ -4,6 +4,7 @@ import {
   JudgeReport,
   QuickDecisionModel,
   readerBriefIssues,
+  salvageIdeaRoleOutputModel,
   type ActionPlanArtifact,
   type DecisionContract,
   type JudgeReport as JudgeReportT,
@@ -24,8 +25,23 @@ EVIDENCE PACK MANIFEST: {{EVIDENCE_PACK_JSON}}
 
 Output ONLY JSON:
 {
-  "analysis": <the idea analyst object: task_echo, strongest_version, positions, evidence,
-    calculations, coverage, decision_questions, deliverable_proposals>,
+  "analysis": <the idea analyst object with EXACTLY these fields:
+    task_echo: restate the task in ≤2 sentences.
+    strongest_version: the best honest version of this idea in ≤150 words.
+    positions: [{local_id, proposition, dimension_id, stance SUPPORT|OPPOSE|MIXED|UNKNOWN,
+      basis EVIDENCE|INFERENCE|ASSUMPTION, nature FACTUAL|JUDGMENT, load_bearing,
+      if_false STOP|PIVOT|CONDITION|MINOR, reasoning, evidence_ids, depends_on}]
+    evidence: [{id, claim_supported, source_kind USER|PRIMARY|SECONDARY|MODEL_KNOWLEDGE (exact token),
+      support SUPPORTS|CONTRADICTS|CONTEXT_ONLY, freshness CURRENT|DATED|UNKNOWN (exact token),
+      locator/url, accessed_at for current external sources}]. MODEL_KNOWLEDGE freshness is UNKNOWN.
+    calculations: [] or per derived numeric claim {id, claim_id, inputs: [{id,name,value,unit,evidence_ids}],
+      steps: [{id,operation ADD|SUBTRACT|MULTIPLY|DIVIDE,left,right,result,unit}], result_step}
+    coverage: one entry per rubric dimension {dimension_id, status COVERED|NOT_APPLICABLE,
+      position_ids ([] when none), rationale (required for NOT_APPLICABLE)} — no other keys.
+    decision_questions: [{question, claim_ids}]
+    deliverable_proposals: [] unless requested_outputs asks for FEATURE_BACKLOG or IMPLEMENTATION_PLAN,
+      then [{output FEATURE_BACKLOG|IMPLEMENTATION_PLAN, title, detail, user_value, why_distinctive, evidence_ids}].
+    Use ONLY these field names — no extra or renamed keys anywhere in analysis.>,
   "verdict": "<2-5 sentence decision and core reason>",
   "recommendation": "PROCEED|PROCEED_WITH_CONDITIONS|PIVOT|STOP",
   "conditions": ["<only for PROCEED_WITH_CONDITIONS>"],
@@ -79,7 +95,12 @@ export async function s4QuickAnalyze(
   opts: { persist?: boolean; stage?: string } = {},
 ): Promise<{ seat: SeatOutput; decision: QuickDecisionModelT }> {
   const provider = ctx.roles.judge;
-  const decision = await jsonCall(ctx, ctx.handle(provider), opts.stage ?? 'Q1', prompt, QuickDecisionModel);
+  const decision = await jsonCall(ctx, ctx.handle(provider), opts.stage ?? 'Q1', prompt, QuickDecisionModel, {
+    // Same deterministic last resort as council S4, applied to the nested analysis object.
+    salvage: (json) => (json && typeof json === 'object' && !Array.isArray(json)
+      ? { ...(json as Record<string, unknown>), analysis: salvageIdeaRoleOutputModel((json as Record<string, unknown>).analysis) }
+      : json),
+  });
   const output = { workflow: 'idea-refinement' as const, ...decision.analysis };
   if (opts.persist !== false) await ctx.writer.writeRoleOutput(provider, output);
   return { seat: { provider, sample: provider, output }, decision };
