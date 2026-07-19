@@ -268,6 +268,8 @@ export const SafeReportProjection = z
   .object({
     runId: z.string(),
     verdict: z.object({ tone: z.enum(['go', 'conditions', 'stop', 'inconclusive']), label: z.string() }).strict(),
+    /** Structural confidence 0–100 + band label; optional so legacy reports still project. */
+    confidence: z.object({ score: z.number().int().min(0).max(100), label: z.string() }).strict().optional(),
     headline: z.string(),
     bottomLine: z.string(),
     sections: z.array(SafeSection),

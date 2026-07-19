@@ -12,7 +12,7 @@
   <img alt="Node ≥ 20" src="https://img.shields.io/badge/node-%E2%89%A5%2020-brightgreen.svg">
   <img alt="Local-first, no API keys" src="https://img.shields.io/badge/local--first-no%20API%20keys-informational.svg">
   <img alt="Read-only orchestration" src="https://img.shields.io/badge/orchestration-read--only-success.svg">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-381%20passing-success.svg">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-579%20passing-success.svg">
 </p>
 
 ---
@@ -30,7 +30,26 @@ It does two jobs, well:
 aiki is **not** a general assistant. Trivia and chat are routed away, not answered — a council adds cost, not
 accuracy, when there's one right answer.
 
-**Jump to:** [Why](#why) · [What's new](#whats-new-in-030) · [How it works](#how-aiki-works-no-apis) · [Benchmarks](#benchmarks) · [Requirements](#requirements) · [Install](#install) · [Quickstart](#quickstart) · [The two workflows](#the-two-workflows) · [Example](#example-a-real-idea-run) · [Configuration](#configuration) · [Sessions & resume](#sessions--resume) · [Safety](#safety-model) · [Costs & limits](#costs--limits)
+**Jump to:** [Workspace](#local-council-workspace) · [Why](#why) · [What's new](#whats-new-in-030) · [How it works](#how-aiki-works-no-apis) · [Benchmarks](#benchmarks) · [Requirements](#requirements) · [Install](#install) · [Quickstart](#quickstart) · [The two workflows](#the-two-workflows) · [Example](#example-a-real-idea-run) · [Configuration](#configuration) · [Sessions & resume](#sessions--resume) · [Safety](#safety-model) · [Costs & limits](#costs--limits)
+
+---
+
+## Local council workspace
+
+**[Open the hosted recorded replay](https://kratos619.github.io/Aiki/)** — a safe, accelerated replay of a
+real council run; no models execute in the hosted page. To use the live local workspace:
+
+```bash
+npm i -g aiki-cli && aiki serve
+```
+
+`aiki serve` opens a loopback-only browser workspace with decision history, explicit file/URL/spend approval,
+live council stages, a verdict card, one-call follow-ups, and per-role model settings. It makes no provider
+calls until you approve and convene a run. See the [three-minute demo script](docs/HACKATHON_DEMO.md).
+
+<p align="center">
+  <img src="docs/aiki-serve-workspace.jpg" alt="Aiki local council workspace with decision history, council answer, and provider seat roster" width="1200">
+</p>
 
 ---
 
@@ -197,7 +216,8 @@ npm link             # puts `aiki` on your PATH   (or run directly: node dist/cl
 
 ```bash
 cd /path/to/your/project
-aiki                 # opens the interactive home screen
+aiki serve           # opens the local council workspace in your browser
+aiki                 # or open the interactive terminal home screen
 ```
 
 ## Use Aiki For

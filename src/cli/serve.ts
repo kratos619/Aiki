@@ -21,7 +21,11 @@ function resolveStaticDir(): string {
 
 export async function serveCommand(opts: { port?: number; open?: boolean } = {}): Promise<number> {
   const runsRoot = await resolveRunsRoot();
-  const flightDeck = new FlightDeck({ runsRoot, version: VERSION });
+  const log = (line: string) => {
+    const time = new Date().toLocaleTimeString('en-US', { hour12: false });
+    process.stdout.write(`  \x1b[2m${time}\x1b[0m  ${line}\n`);
+  };
+  const flightDeck = new FlightDeck({ runsRoot, version: VERSION, log });
   const staticDir = resolveStaticDir();
 
   let server;

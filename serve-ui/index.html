@@ -11,18 +11,23 @@
   <a class="skip-link" href="#conversation">Skip to conversation</a>
 
   <div class="workspace" role="application" aria-label="aiki decision workspace">
-    <!-- Left — Sessions rail (the reading room) -->
+    <!-- Left — Sessions rail -->
     <aside id="sessions-rail" class="rail" aria-label="Sessions and provider status">
       <header class="rail__head">
-        <span class="wordmark">aiki</span>
-        <div class="rail__controls">
-          <button id="quorum" class="quorum" type="button" aria-live="polite" title="Council readiness">
-            <span class="lamp" data-tone="neutral"></span>
-            <span class="quorum__label">checking…</span>
-          </button>
-          <button class="btn btn--icon rail__close" type="button" data-close-panel aria-label="Close sessions">✕</button>
-        </div>
+        <span class="brand" aria-hidden="true">a</span>
+        <span class="rail__id">
+          <span class="wordmark">aiki</span>
+          <span class="rail__sub">serve · localhost</span>
+        </span>
+        <button class="btn btn--icon rail__close" type="button" data-close-panel aria-label="Close sessions">✕</button>
       </header>
+
+      <button id="quorum" class="quorum" type="button" aria-live="polite" title="Council readiness">
+        <span class="lamp" data-tone="neutral"></span>
+        <span class="quorum__label">checking…</span>
+      </button>
+
+      <button id="new-decision" class="btn btn--primary" type="button">＋ New decision</button>
 
       <section class="providers" aria-label="Provider status">
         <ul id="provider-list" class="providers__list"></ul>
@@ -32,10 +37,8 @@
         </button>
       </section>
 
-      <button id="new-decision" class="btn btn--primary" type="button">＋ New decision</button>
-
       <nav class="threads" aria-label="Decision history">
-        <h2 class="eyebrow">History</h2>
+        <h2 class="eyebrow">Sessions</h2>
         <ul id="thread-list" class="threads__list"></ul>
       </nav>
 
@@ -47,28 +50,41 @@
 
     <!-- Center — Conversation -->
     <main id="conversation" class="center" aria-label="Conversation">
-      <header class="workspace-bar">
-        <button id="rail-toggle" class="btn btn--icon" type="button" aria-controls="sessions-rail" aria-expanded="false">☰ Sessions</button>
-        <span class="wordmark">aiki</span>
-        <button id="deck-toggle" class="btn btn--icon" type="button" aria-controls="council-deck" aria-expanded="false">
+      <header class="center__head">
+        <button id="rail-toggle" class="btn btn--icon" type="button" aria-controls="sessions-rail" aria-expanded="false" aria-label="Sessions">☰</button>
+        <span id="session-title" class="center__title">New decision</span>
+        <span id="session-type" class="center__type" hidden></span>
+        <span class="center__ro" title="Providers run read-only"><span class="lamp" data-tone="green"></span>read-only</span>
+        <div id="header-models" class="center__models" aria-hidden="true"></div>
+        <button id="deck-toggle" class="btn btn--icon" type="button" aria-controls="council-deck" aria-expanded="false" aria-label="Council deck">
           Deck <span class="lamp" data-tone="neutral"></span>
         </button>
       </header>
+
       <div id="center-scroll" class="center__scroll">
         <section id="empty-state" class="empty">
           <img class="empty__art" src="/Five.png" alt="" aria-hidden="true" />
+          <div class="empty__mark" aria-hidden="true">a</div>
           <h1 class="empty__title">A council, on call.</h1>
           <p class="empty__lede">
             Describe a decision and aiki convenes your installed models — they investigate,
-            disagree, and hand back a verdict you can audit. Pick a past decision from the left,
+            disagree, and hand back a verdict you can audit. Pick a past session from the left,
             or start a new one.
           </p>
         </section>
-        <article id="thread-view" class="thread-view" hidden aria-live="polite"></article>
+        <article id="thread-view" class="thread-view thread-inner" hidden aria-live="polite"></article>
+        <div id="thinking" class="thinking" hidden aria-hidden="true">
+          <span class="thinking__mark">a</span>
+          <span class="thinking__body">
+            <span>The council is deliberating</span>
+            <span class="thinking__meta">working</span>
+          </span>
+          <span class="thinking__dots"><span></span><span></span><span></span></span>
+        </div>
       </div>
+
       <div class="composer-shell">
         <form id="composer" class="composer">
-          <textarea id="decision-text" rows="3" maxlength="100000" required placeholder="Describe the decision, constraints, and what a good answer must include…"></textarea>
           <div id="attachment-chips" class="attachment-chips" aria-label="Attachments"></div>
           <div class="composer__tools">
             <button id="attach" class="btn btn--icon" type="button">＋ Attach</button>
@@ -80,8 +96,12 @@
               </select>
             </label>
             <span id="estimate" class="composer__estimate">8–10 calls · council of installed models</span>
-            <button id="composer-send" class="btn btn--primary composer__send" type="submit">Convene</button>
           </div>
+          <div class="composer__row">
+            <textarea id="decision-text" rows="1" maxlength="100000" required placeholder="Describe the decision, constraints, and what a good answer must include…"></textarea>
+            <button id="composer-send" class="btn btn--primary composer__send" type="submit" title="Convene" aria-label="Convene">↑</button>
+          </div>
+          <div class="composer__note">The council spends real provider calls · <strong>plain text is confirmed before any run</strong> · read-only orchestration</div>
         </form>
         <div id="live-session" class="live-session" hidden>
           <span><span class="lamp" data-tone="amber"></span> <span id="session-label">Council in session</span> · <strong id="live-stage">awaiting approval</strong></span>
@@ -91,19 +111,41 @@
       <div id="announcer" class="sr-only" aria-live="polite"></div>
     </main>
 
-    <!-- Right — Council Deck (the engine room) -->
+    <!-- Right — Council deck -->
     <aside id="council-deck" class="deck" aria-label="Council deck">
       <header class="deck__head">
-        <span class="deck__eyebrow">Council deck</span>
+        <span class="deck__head-title">
+          <span class="deck__eyebrow">Council session</span>
+          <span id="deck-state" class="deck__state" data-live="idle">idle</span>
+        </span>
         <span class="deck__head-end">
-          <span id="deck-state" class="deck__state">idle</span>
+          <span id="run-id" class="deck__runid"></span>
           <button class="btn btn--icon deck__close" type="button" data-close-panel aria-label="Close council deck">✕</button>
         </span>
       </header>
       <div id="deck-body" class="deck__body">
-        <h3 class="deck__section">Seat roster</h3>
-        <ul id="seat-roster" class="roster"></ul>
-        <p class="deck__hint">The deck lights up when a decision is convened — stages, seats, and a live call budget.</p>
+        <section class="deck-sec">
+          <div class="deck-sec__head"><span class="deck-sec__label">Pipeline</span></div>
+          <ol id="stage-spine" class="stage-spine"></ol>
+        </section>
+        <section class="deck-sec">
+          <div class="deck-sec__head"><span class="deck-sec__label">The council</span></div>
+          <ul id="seat-roster" class="council"></ul>
+        </section>
+        <section class="deck-sec">
+          <div class="deck-sec__head"><span class="deck-sec__label">Signals</span></div>
+          <div class="deck-counters">
+            <div class="deck-counter" data-counter="positions"><strong>0</strong><span>positions</span></div>
+            <div class="deck-counter" data-counter="evidence"><strong>0</strong><span>evidence</span></div>
+            <div class="deck-counter" data-counter="disagreements"><strong>0</strong><span>disputes</span></div>
+            <div class="deck-counter" data-counter="repairs"><strong>0</strong><span>repairs</span></div>
+          </div>
+        </section>
+        <section class="deck-sec">
+          <div class="deck-sec__head"><span class="deck-sec__label">Cost receipt</span><span id="cost-total" class="deck-sec__value">0 / 0 calls</span></div>
+          <div id="cost-receipt" class="cost"></div>
+        </section>
+        <p class="deck__hint">The deck lights up when a decision is convened — pipeline, seats, and a live call budget.</p>
       </div>
     </aside>
   </div>
