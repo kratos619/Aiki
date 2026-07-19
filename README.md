@@ -36,8 +36,7 @@ accuracy, when there's one right answer.
 
 ## Local council workspace
 
-**[Open the hosted recorded replay](https://kratos619.github.io/Aiki/)** — a safe, accelerated replay of a
-real council run; no models execute in the hosted page. To use the live local workspace:
+Open the live local workspace with:
 
 ```bash
 npm i -g aiki-cli && aiki serve
@@ -45,11 +44,7 @@ npm i -g aiki-cli && aiki serve
 
 `aiki serve` opens a loopback-only browser workspace with decision history, explicit file/URL/spend approval,
 live council stages, a verdict card, one-call follow-ups, and per-role model settings. It makes no provider
-calls until you approve and convene a run. See the [three-minute demo script](docs/HACKATHON_DEMO.md).
-
-<p align="center">
-  <img src="docs/aiki-serve-workspace.jpg" alt="Aiki local council workspace with decision history, council answer, and provider seat roster" width="1200">
-</p>
+calls until you approve and convene a run.
 
 ---
 
@@ -204,7 +199,7 @@ Upgrade an existing installation:
 
 ```bash
 npm install -g aiki-cli@latest
-aiki --version                 # 0.3.0
+aiki --version                 # 0.3.3
 ```
 
 From source:
@@ -224,6 +219,42 @@ cd /path/to/your/project
 aiki serve           # opens the local council workspace in your browser
 aiki                 # or open the interactive terminal home screen
 ```
+
+## The serve workspace
+
+`aiki serve` is the recommended way to use Aiki. It starts a **loopback-only** web workspace (bound to
+`127.0.0.1`, never exposed to your network) and opens it in your browser. **No provider is called until you
+type a request and approve the run** — opening the workspace is free.
+
+```bash
+aiki serve                 # binds the first free port in 4173–4183 and opens the browser
+aiki serve --port 4180     # pin a specific port
+aiki serve --no-open       # start the server but don't auto-open the browser
+```
+
+**What you'll see and do:**
+
+1. **Sessions rail (left).** Every past run, newest first. Click one to reopen its full decision brief;
+   runs that were killed or timed out are flagged **Resume**.
+2. **Composer (center).** Describe an idea to stress-test, or ask for a code review, and press **Enter**.
+   Plain text never spends anything on its own — you always get a convene step first.
+3. **Approval gates (inline).** Before any paid work, Aiki asks — per action — to read a **file**, fetch a
+   **URL**, or **spend** provider calls. Each gate offers **allow once**, **allow for this session**, or
+   **deny**. Nothing runs until you approve.
+4. **Live council.** A pipeline timeline shows each stage; the provider seat cards (Claude, Codex, Gemini)
+   light up as they work, with a running **call counter and budget bar** so you always see the spend.
+5. **Verdict card.** When the council finishes: a plain-language banner (go / proceed-with-conditions /
+   stop / inconclusive), a **confidence meter**, the anchored validation plan, expandable reasoning and
+   evidence, and a **Copy summary** button.
+6. **Cost receipt.** Per-provider call counts plus the token/cost receipt for the run, against your budget.
+7. **Follow-ups.** After a run completes you can ask a follow-up question — answered in **exactly one
+   read-only call, no new council** — or **Re-convene** to run a fresh full council on a revised question.
+8. **Settings.** Choose the model each provider uses and override per-role assignments (judge, verifier,
+   analyst, the two review seats, the follow-up responder). It shows the effective value vs. your local
+   override and never exposes credentials, keys, or paths.
+
+Everything the workspace shows is backed by the same schema-validated, on-disk audit trail as the headless
+CLI, so nothing on screen can drift from what was actually stored.
 
 ## Use Aiki For
 
@@ -387,6 +418,9 @@ This is the part that makes aiki trustworthy to point at a real repo:
   **3 calls in quick** or **8–10 in the full council** (`research` is the same behavior; schema repairs can add
   calls within the mode-aware budget); code review is about **5**. `aiki run` shows the mode, range, budget, and reserved
   chair/planner calls before asking to confirm (skip with `--yes`).
+- **Every run reports token usage.** The decision report and the serve cost receipt show input/output tokens
+  and reported cost per run — provider-reported where the CLI returns it, a labeled estimate otherwise — so
+  you see the real spend, not just the call count.
 - **Not a general assistant.** Questions and "explore my whole codebase" requests are redirected, not answered
   — aiki reviews a *diff* and vets a *stated idea*.
 - **Analysis, not advice.** Every report is a decision aid. Verify before acting.
