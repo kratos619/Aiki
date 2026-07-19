@@ -59,7 +59,7 @@ program
   .option('--head <ref>', 'code-review: head git ref to diff to (default HEAD)')
   .option('--diff <file>', 'code-review: review a patch file instead of computing a git diff')
   .option('--evidence <path>', 'idea-refinement: local source file/directory (stores paths + hashes, not copies)')
-  .option('--mode <mode>', 'idea-refinement: quick | council (research is an alias for council)')
+  .option('--mode <mode>', 'idea-refinement: quick | council | auto (research is an alias for council)')
   .option('--allow-blocked-sources', 'idea-refinement: proceed even when a supplied URL cannot be read (default: stop and ask)')
   .option('--cheap', 'code-review: Gemini+Codex review, Claude judges only disputes (~⅓ the Opus; experimental)')
   .option('--yes', 'skip the run-cost confirmation prompt')

@@ -11,7 +11,7 @@ import { recordSession, updateSessionStatus } from '../storage/sessions.js';
 import { runIdeaRefinement } from '../workflows/idea-refinement.js';
 import { runCodeReview } from '../workflows/code-review.js';
 import type { EvidencePack } from './evidence-pack.js';
-import type { IdeaMode, UrlSourceSet } from '../schemas/index.js';
+import type { IdeaMode, RunMeta, UrlSourceSet } from '../schemas/index.js';
 
 export type WorkflowFn = (ctx: RunCtx, input: string) => Promise<void>;
 
@@ -75,6 +75,7 @@ export interface RunOptions {
   evidencePack?: EvidencePack; // idea-refinement: user-scoped source paths + sha256 manifest
   allowBlockedSources?: boolean; // v6 T10: proceed past an unreadable supplied URL (default: stop and ask)
   urlSources?: UrlSourceSet; // v6 T10b: snapshot already taken (and user-approved) by the CLI — don't refetch
+  autoDecision?: RunMeta['auto_decision']; // v7 Phase B: `--mode auto` routing record, persisted to meta
 }
 
 /**
@@ -115,6 +116,7 @@ export async function run(workflow: WorkflowId, input: string, opts: RunOptions 
     evidencePack: opts.evidencePack,
     allowBlockedSources: opts.allowBlockedSources,
     urlSources: opts.urlSources,
+    autoDecision: opts.autoDecision,
   });
 
   // Register the session (V6.3) so `aiki sessions`/`resume` can find it from anywhere. run() is a

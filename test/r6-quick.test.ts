@@ -79,6 +79,34 @@ const quickDecision = {
   },
 };
 
+const cleanFastDecision = {
+  ...quickDecision,
+  analysis: {
+    ...quickDecision.analysis,
+    positions: [{ ...quickDecision.analysis.positions[0]!, if_false: 'CONDITION' as const }],
+  },
+};
+
+const gatedDecision = {
+  ...cleanFastDecision,
+  analysis: {
+    ...cleanFastDecision.analysis,
+    positions: [{
+      ...cleanFastDecision.analysis.positions[0]!,
+      basis: 'EVIDENCE' as const,
+      evidence_ids: ['E1'],
+    }],
+    evidence: [{
+      id: 'E1',
+      claim_supported: 'Developers need cross-model review.',
+      source_kind: 'USER' as const,
+      support: 'CONTRADICTS' as const,
+      freshness: 'CURRENT' as const,
+      locator: 'user-supplied demand notes',
+    }],
+  },
+};
+
 function adapter(prompts: string[], decision = quickDecision): Adapter {
   return {
     id: 'claude',
@@ -100,7 +128,7 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-async function runQuick(decision = quickDecision) {
+async function runQuick(decision = quickDecision, fastPath = false) {
   const prompts: string[] = [];
   const id: ProviderId = 'claude';
   const handle: ProviderHandle = {
@@ -120,8 +148,57 @@ async function runQuick(decision = quickDecision) {
     roles: resolveRoles('idea-refinement', [id]),
     writer,
     cwd: writer.dir,
+    autoDecision: fastPath
+      ? { resolved: 'quick', reasons: ['plain single-decision prompt'], fast_path: true }
+      : undefined,
   });
   return { prompts, ctx, outcome: await executeRun(ctx, INPUT, runIdeaRefinement) };
+}
+
+async function runAutoAdaptive(mode: 'quick' | 'council', fastPath: boolean) {
+  const prompts: string[] = [];
+  const ids: ProviderId[] = ['agy', 'codex', 'claude'];
+  const handles: ProviderHandle[] = ids.map((id) => ({
+    id,
+    adapter: {
+      id,
+      run: async (request): Promise<RunResultAdapter> => {
+        prompts.push(request.prompt);
+        const value = request.prompt.includes('TWO-VIEW PREFLIGHT')
+          ? preflightReading
+          : request.prompt.includes('Independent delta challenger')
+            ? {
+                deltas: [{
+                  claimId: 'G1', response: 'COUNTER',
+                  reasoning: 'The supplied demand note contradicts the proposition.',
+                  newEvidenceIds: ['E1'], changedDecisionImpact: 'Keep demand unresolved.',
+                }],
+              }
+            : gatedDecision;
+        return { ok: true, text: JSON.stringify(value), json: value, durationMs: 1 };
+      },
+    },
+    flags: { id, jsonOutput: true, readOnlyFlag: id === 'claude' ? 'plan' : 'sandbox' },
+    readOnly: id === 'claude' ? 'plan' : 'sandbox',
+    version: 'test',
+  }));
+  const runId = `20260719-1200-idea-refinement-auto-${mode}`;
+  const writer = new RunWriter(runId, root);
+  const ctx = new RunCtx({
+    runId,
+    workflow: 'idea-refinement',
+    mode,
+    handles,
+    roles: resolveRoles('idea-refinement', ids),
+    writer,
+    cwd: writer.dir,
+    autoDecision: {
+      resolved: mode,
+      reasons: mode === 'quick' ? ['plain single-decision prompt'] : ['research wording detected'],
+      ...(fastPath ? { fast_path: true } : {}),
+    },
+  });
+  return { prompts, outcome: await executeRun(ctx, INPUT, runIdeaRefinement) };
 }
 
 describe('R6 quick mode', () => {
@@ -148,6 +225,64 @@ describe('R6 quick mode', () => {
       receipt: { discovery: 3, verification: 0, repair: 0, planning: 0 },
     });
     expect(meta.flags).toEqual(expect.arrayContaining(['single_model', 'low_diversity', 'headless_intent']));
+  });
+
+  it('auto fast path spends one call and renders the honest single-pass label', async () => {
+    const { prompts, outcome } = await runQuick(cleanFastDecision, true);
+
+    expect(outcome.ok).toBe(true);
+    expect(outcome.callCount).toBe(1);
+    expect(prompts.filter((prompt) => prompt.includes('TWO-VIEW PREFLIGHT'))).toHaveLength(0);
+    expect(prompts.filter((prompt) => prompt.includes('ROLE: Single decision analyst'))).toHaveLength(1);
+
+    const report = await readFile(join(outcome.dir, 'final-report.md'), 'utf8');
+    expect(report).toContain('Single-pass analysis; council escalation was not required.');
+
+    const meta = JSON.parse(await readFile(join(outcome.dir, 'meta.json'), 'utf8'));
+    expect(meta).toMatchObject({
+      mode: 'quick',
+      call_count: 1,
+      receipt: { discovery: 1, verification: 0, repair: 0, planning: 0 },
+      auto_decision: { resolved: 'quick', fast_path: true },
+    });
+  });
+
+  it('gated auto fast path fails over to preflight and one targeted challenger', async () => {
+    const { prompts, outcome } = await runAutoAdaptive('quick', true);
+
+    expect(outcome.ok).toBe(true);
+    expect(outcome.callCount).toBe(4);
+    expect(prompts.filter((prompt) => prompt.includes('TWO-VIEW PREFLIGHT'))).toHaveLength(2);
+    expect(prompts.filter((prompt) => prompt.includes('ROLE: Single decision analyst'))).toHaveLength(1);
+    expect(prompts.filter((prompt) => prompt.includes('Independent delta challenger'))).toHaveLength(1);
+
+    const report = await readFile(join(outcome.dir, 'final-report.md'), 'utf8');
+    expect(report).not.toContain('Single-pass analysis; council escalation was not required.');
+    expect(report).toContain('Adaptive escalation: user-supplied evidence contradicts a load-bearing claim');
+    expect(report).toContain('No full council was convened.');
+
+    const meta = JSON.parse(await readFile(join(outcome.dir, 'meta.json'), 'utf8'));
+    expect(meta).toMatchObject({
+      mode: 'quick',
+      call_count: 4,
+      receipt: { discovery: 3, verification: 1, repair: 0, planning: 0 },
+      auto_decision: {
+        resolved: 'quick',
+        fast_path: true,
+        escalation_reasons: ['user-supplied evidence contradicts a load-bearing claim'],
+      },
+    });
+  });
+
+  it('auto standard path uses preflight, one primary analyst, and at most one challenger', async () => {
+    const { prompts, outcome } = await runAutoAdaptive('council', false);
+
+    expect(outcome.ok).toBe(true);
+    expect(outcome.callCount).toBe(4);
+    expect(prompts.filter((prompt) => prompt.includes('TWO-VIEW PREFLIGHT'))).toHaveLength(2);
+    expect(prompts.filter((prompt) => prompt.includes('ROLE: Primary decision analyst'))).toHaveLength(1);
+    expect(prompts.filter((prompt) => prompt.includes('Independent delta challenger'))).toHaveLength(1);
+    expect(prompts.join('\n')).not.toContain('ROLE: Judge');
   });
 
   it('keeps a valid quick answer when its only validation action is unanchored', async () => {

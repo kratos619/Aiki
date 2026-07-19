@@ -60,7 +60,7 @@ export type CallCategory = 'discovery' | 'verification' | 'repair' | 'planning';
 export function callCategory(stage: string): CallCategory {
   if (stage.toLowerCase().includes('repair')) return 'repair';
   if (stage.startsWith('S9b')) return 'planning';
-  if (stage.startsWith('S8') || stage === 'S9' || stage.startsWith('S9-')) return 'verification';
+  if (stage === 'S4b' || stage.startsWith('S8') || stage === 'S9' || stage.startsWith('S9-')) return 'verification';
   return 'discovery';
 }
 

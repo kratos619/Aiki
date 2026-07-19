@@ -739,6 +739,20 @@ export const ClaimVerificationSet = z.object({
   claim_groups: z.array(ClaimGroup).max(12).optional().catch(undefined),
 }).strict();
 
+// ── v7 Phase D: targeted auto-mode challenge delta ─────────────────────────
+
+export const ChallengeDelta = z.object({
+  claimId: z.string().min(1),
+  response: z.enum(['CONFIRM', 'COUNTER', 'NARROW', 'REPLACE', 'UNRESOLVED']),
+  reasoning: z.string().min(1),
+  newEvidenceIds: z.array(z.string().min(1)),
+  changedDecisionImpact: z.string().min(1),
+}).strict();
+
+export const ChallengeDeltaSet = z.object({
+  deltas: z.array(ChallengeDelta).max(3),
+}).strict();
+
 // ── R5: bounded, append-only rebuttal events ───────────────────────────────
 
 const RebuttalResponseBase = z.object({
@@ -1184,6 +1198,13 @@ export const RunMeta = z.object({
     estimatedCalls: z.number().int().nonnegative(),
     reportedCostUsd: z.number().nonnegative().optional(),
   }).optional(),
+  // v7 Phase B: present only when the user ran `--mode auto`; records the resolved mode + why.
+  auto_decision: z.object({
+    resolved: z.enum(['quick', 'council']),
+    reasons: z.array(z.string()),
+    fast_path: z.boolean().optional(),
+    escalation_reasons: z.array(z.string().min(1)).optional(),
+  }).optional(),
   exit_status: z.enum(['ok', 'failed', 'aborted', 'partial']),
   aborted: z.boolean(), // §16: Ctrl+C finalizes meta with aborted:true
   // §16 report-header flags; absent = none.
@@ -1250,6 +1271,8 @@ export type VerificationSet = z.infer<typeof VerificationSet>;
 export type ClaimVerification = z.infer<typeof ClaimVerification>;
 export type ClaimGroup = z.infer<typeof ClaimGroup>;
 export type ClaimVerificationSet = z.infer<typeof ClaimVerificationSet>;
+export type ChallengeDelta = z.infer<typeof ChallengeDelta>;
+export type ChallengeDeltaSet = z.infer<typeof ChallengeDeltaSet>;
 export type RebuttalResponse = z.infer<typeof RebuttalResponse>;
 export type RebuttalResponseSet = z.infer<typeof RebuttalResponseSet>;
 export type RebuttalEvent = z.infer<typeof RebuttalEvent>;

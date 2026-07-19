@@ -209,6 +209,10 @@ export interface DecisionReportJson {
   reportId: string;
   generatedAt: string;
   mode: IdeaMode;
+  fastPath?: boolean;
+  adaptiveAuto?: boolean;
+  autoEscalationReasons?: string[];
+  autoChallengeUsed?: boolean;
   task: { original: string; normalized: string; type: string; constraints: string[]; successCriteria: string[]; confirmation?: string };
   verdict: {
     status: ReportStatus;
@@ -612,6 +616,8 @@ function buildDossier(args: {
 export function buildDecisionReport(ctx: RunCtx, args: S10Args): DecisionReportJson {
   const { contract, seats, graph, verifications, judgeReport, actionPlan } = args;
   const mode = ctx.mode ?? 'council';
+  const adaptiveAuto = ctx.isAuto === true;
+  const autoEscalationReasons = ctx.autoEscalationReasons ?? [];
   const flags = new Set(ctx.flags);
   const newDecisionContract = 'success_bar' in contract;
   const hasReaderBrief = Boolean(actionPlan && !('kind' in actionPlan) && actionPlan.reader_brief);
@@ -670,7 +676,7 @@ export function buildDecisionReport(ctx: RunCtx, args: S10Args): DecisionReportJ
     .map((position) => ({ provider: disp(position.provider), proposition: position.proposition }));
 
   const unresolvedDecisive = disagreements.some((d) => d.status === 'UNRESOLVED' && claimById.get(d.id)?.sensitivity === 'DECISIVE');
-  const consensusType = mode === 'quick' ? 'single_analyst' as const : disagreements.length === 0
+  const consensusType = adaptiveAuto || mode === 'quick' ? 'single_analyst' as const : disagreements.length === 0
     ? (claims.some((claim) => claim.ruling === 'UNRESOLVED') ? 'convergent_with_unresolved_claims' as const : 'unanimous' as const)
     : disagreements.every((d) => d.status === 'RESOLVED') ? 'majority_with_dissent' as const : 'contested' as const;
 
@@ -731,11 +737,17 @@ export function buildDecisionReport(ctx: RunCtx, args: S10Args): DecisionReportJ
   }
 
   const roles = ctx.roles;
-  const reportProviders = mode === 'quick' ? [...new Set(seats.map((seat) => seat.provider))] : ctx.available();
+  const reportProviders = adaptiveAuto
+    ? [...new Set([...seats.map((seat) => seat.provider), ...ctx.calls.map((call) => call.provider)])]
+    : mode === 'quick' ? [...new Set(seats.map((seat) => seat.provider))] : ctx.available();
   const models = reportProviders.map((provider) => ({
     provider,
     name: disp(provider),
-    roles: mode === 'quick' ? ['single analyst'] : [
+    roles: adaptiveAuto ? [
+      ...(seats.some((seat) => seat.provider === provider) ? ['primary analyst'] : []),
+      ...(ctx.calls.some((call) => call.provider === provider && call.stage.startsWith('P0-')) ? ['preflight reader'] : []),
+      ...(ctx.calls.some((call) => call.provider === provider && call.stage === 'S4b') ? ['delta challenger'] : []),
+    ] : mode === 'quick' ? ['single analyst'] : [
       ...(roles.analyst === provider ? ['analyst'] : []),
       ...(roles.judge === provider ? ['judge'] : []),
       ...(roles.verifier === provider ? ['verifier'] : []),
@@ -809,6 +821,10 @@ export function buildDecisionReport(ctx: RunCtx, args: S10Args): DecisionReportJ
     reportId: ctx.runId,
     generatedAt: new Date().toISOString(),
     mode,
+    ...(ctx.fastPath ? { fastPath: true } : {}),
+    ...(adaptiveAuto ? { adaptiveAuto: true } : {}),
+    ...(autoEscalationReasons.length ? { autoEscalationReasons } : {}),
+    ...(adaptiveAuto && ctx.attemptedStages?.includes('S4b') ? { autoChallengeUsed: true } : {}),
     task: {
       original: args.original ?? contract.task,
       normalized: contract.task,
@@ -885,7 +901,8 @@ export function renderTerminalSummary(report: DecisionReportJson, paths: { markd
   const takeaways = [...new Set(candidates.map(terminalLine).filter(Boolean))].slice(0, 3);
   const nextStep = projection?.nextStep ?? report.recommendedActions[0]?.action ?? 'Open the report and choose the smallest decisive next action.';
   return [
-    report.mode === 'quick' ? 'AIKI · SINGLE-MODEL DECISION' : 'AIKI · COUNCIL DECISION',
+    report.adaptiveAuto ? 'AIKI · ADAPTIVE DECISION'
+      : report.mode === 'quick' ? 'AIKI · SINGLE-MODEL DECISION' : 'AIKI · COUNCIL DECISION',
     RULE,
     `Verdict: ${terminalLine(projection?.headline ?? report.verdict.summary)}`,
     terminalLine(projection?.bottomLine ?? report.verdict.primaryReason),
